@@ -65,7 +65,7 @@ npm start
 
 ### Рефералы
 
-В профиле кнопки `👤 Реф | 🎒 Инвентарь`, ниже `📕 Меню`. При первом открытии реферального раздела `utils.getShortLink` сокращает адрес `https://vk.me/clubGROUP_ID?ref=kreox_VK_ID` до `vk.cc`, с приватной статистикой. Ссылка кешируется в документе игрока. Вызов VK всегда вне транзакции.
+В профиле кнопки `👤 Реф | 🎒 Инвентарь`, ниже `📕 Меню`. При первом открытии реферального раздела `utils.getShortLink` сокращает адрес `https://vk.me/clubGROUP_ID?ref=kreox_VK_ID` до `vk.cc`, с приватной статистикой. Параметр `private` передаётся числом `1`: vk-io 4.10.1 сериализует обычные API-запросы через `URLSearchParams`, поэтому boolean `true` превращается в строку `true`, а не в требуемое `1`. Ссылка кешируется в документе игрока. Вызов VK всегда вне транзакции. При ошибке сокращения лог `referral_short_link` содержит метод, код и только безопасную подсказку `private`/`url`, если она есть в сообщении ошибки, без полного сообщения и параметров запроса.
 
 Сам клик по ссылке бот не видит: атрибуция возможна только когда VK передал `ref` в первом входящем сообщении незарегистрированного игрока в личке. `referrerId` из payload игнорируется; самоприглашения, несуществующие пригласившие и уже зарегистрированные аккаунты не дают награды. Дополнительных требований к новичку не добавлено. Уникальность человека за несколькими VK ID не проверяется и без отдельной согласованной антифрод-механики не гарантируется.
 
@@ -138,6 +138,7 @@ npm run test:integration
 - [vk-io: Long Poll, middleware и контексты](https://github.com/negezor/vk-io/blob/master/docs/ru/guide/updates.md)
 - [vk-io: очередь API, групповой лимит и пакетные вызовы](https://github.com/negezor/vk-io/blob/master/docs/ru/guide/api.md)
 - [vk-io: текстовые кнопки и ограничения клавиатуры](https://github.com/negezor/vk-io/blob/master/docs/ru/guide/keyboard.md)
+- [vk-io: сериализация параметров API в URLSearchParams](https://github.com/negezor/vk-io/blob/master/packages/vk-io/src/api/request.ts)
 - [VK API: сокращение ссылок через utils.getShortLink](https://github.com/VKCOM/vk-api-schema/blob/master/utils/methods.json)
 - [VK API: messages.send, random_id и disable_mentions](https://github.com/VKCOM/vk-api-schema/blob/master/messages/methods.json)
 - [MongoDB: findOneAndUpdate и includeResultMetadata](https://github.com/mongodb/node-mongodb-native/blob/main/src/collection.ts)

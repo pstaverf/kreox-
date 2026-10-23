@@ -8,14 +8,17 @@ import type { Notification } from '../src/types/game.js';
 import type { NotificationQueue } from '../src/types/storage.js';
 import { isRecord } from '../src/utils/validation.js';
 
-test('vk.cc shortener receives the group deep link, with private statistics', async context => {
+test('vk.cc shortener sends the private flag as numeric 1 rather than the invalid true string', async context => {
   const vk = new VK({ token: 'test-token' });
   const api = mock.method(vk.api, 'callWithRequest', async (request: APIRequest) => {
     assert.equal(request.method, 'utils.getShortLink');
     const params: unknown = request.params;
     assert.ok(isRecord(params));
     assert.equal(params.url, 'https://vk.me/club123?ref=kreox_456');
-    assert.equal(params.private, true);
+    assert.equal(params.private, 1);
+    const body = new URLSearchParams({ url: String(params.url), private: String(params.private) });
+    assert.equal(body.get('private'), '1');
+    assert.equal(body.get('url'), 'https://vk.me/club123?ref=kreox_456');
     return { short_url: 'https://vk.cc/abc123', key: 'abc123', url: params.url };
   });
   context.after(() => api.mock.restore());
@@ -108,4 +111,30 @@ test('closed DMs permanently fail only the notification, without retrying the ec
   assert.equal(await finished.promise, 'failed');
   await stop();
   assert.equal(api.mock.callCount(), 1);
+});
+
+
+test('shortener error diagnostics expose only a parameter hint, not the token or request data', async context => {
+  const vk = new VK({ token: 'test-secret' });
+  const error = new APIError({
+    error_code: 100,
+    error_msg: 'One of the parameters specified was missing or invalid: private should be boolean; test-secret',
+    request_params: [{ key: 'access_token', value: 'test-secret' }, { key: 'private', value: 'true' }]
+  });
+  const api = mock.method(vk.api, 'callWithRequest', async () => { throw error; });
+  const lines: string[] = [];
+  const logger = mock.method(console, 'error', (value: unknown) => { lines.push(String(value)); });
+  context.after(() => { api.mock.restore(); logger.mock.restore(); });
+  await assert.rejects(createReferralLinkResolver(vk, 123)(456), (caught: unknown) => caught === error);
+  assert.equal(lines.length, 1);
+  const line = lines[0];
+  assert.ok(line);
+  assert.equal(line.includes('test-secret'), false);
+  assert.equal(line.includes('access_token'), false);
+  const details: unknown = JSON.parse(line);
+  assert.ok(isRecord(details));
+  assert.equal(details.scope, 'referral_short_link');
+  assert.equal(details.method, 'utils.getShortLink');
+  assert.equal(details.code, 100);
+  assert.equal(details.parameterHint, 'private');
 });
