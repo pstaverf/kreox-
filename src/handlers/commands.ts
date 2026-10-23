@@ -1,3 +1,4 @@
+import { parseAdminBalance } from './admin-balance.js';
 import { isPromoCurrency, isPromoName } from '../services/promo-rules.js';
 import { game } from '../config/game.js';
 import type { Command } from '../types/game.js';
@@ -8,6 +9,10 @@ import { isRecord } from '../utils/validation.js';
 export function parseCommand(text: string | undefined, payload: unknown, isChat = false): Command {
   if (text?.trim() === '/dk') {
     return { kind: 'delete_keyboards' };
+  }
+  const adminBalance = parseAdminBalance(text);
+  if (adminBalance !== null) {
+    return adminBalance;
   }
   let value: unknown = payload;
   if (typeof payload === 'string') {

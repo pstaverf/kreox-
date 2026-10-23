@@ -1,3 +1,4 @@
+import type { AdminBalanceCommand } from './admin-balance.js';
 import type { PromoCommand, PromoDraft } from './promo.js';
 
 export interface Player {
@@ -29,6 +30,7 @@ export interface InventoryItem {
 
 export type Command =
   | { kind: 'delete_keyboards' }
+  | AdminBalanceCommand
   | { kind: 'profile' }
   | { kind: 'menu' }
   | { kind: 'bonus' }
@@ -80,6 +82,7 @@ export interface GameInput {
   text?: string;
   hasPayload?: boolean;
   referrerId?: number;
+  replySenderId?: number;
 }
 
 export type Reward = {

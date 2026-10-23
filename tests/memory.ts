@@ -1,3 +1,5 @@
+import type { BalanceOperation } from '../src/types/admin-balance.js';
+import { validBalanceChange } from '../src/services/admin-balance.js';
 import type { Promo, PromoActivation, PromoCreation, PromoDraft } from '../src/types/promo.js';
 import { promoRedemptionId, promoTotal, validatePromo } from '../src/services/promo-rules.js';
 import { accountCapacity, game } from '../src/config/game.js';
@@ -115,6 +117,19 @@ class MemoryStore implements GameStore {
     promo.remaining -= 1;
     this.state.redemptions.add(id);
     return 'redeemed';
+  }
+
+  async updateKC(vkId: number, operation: BalanceOperation, amount: number): Promise<boolean> {
+    if (!validBalanceChange(operation, amount)) {
+      throw new Error('Invalid balance change');
+    }
+    const player = this.state.players.get(vkId);
+    if (player === undefined || (operation === 'add' && (!Number.isSafeInteger(player.kc)
+      || player.kc < 0 || player.kc > game.maxAmount - amount))) {
+      return false;
+    }
+    player.kc = operation === 'set' ? amount : player.kc + amount;
+    return true;
   }
 
   async processed(eventId: string): Promise<ProcessedMessage | null> {

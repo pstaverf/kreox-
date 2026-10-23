@@ -1,7 +1,9 @@
+import type { BalanceOperation } from './admin-balance.js';
 import type { Promo, PromoActivation, PromoCreation, PromoDraft } from './promo.js';
 import type { GameInput, InventoryItem, MiningFarm, Notification, Player, Ranking, RankingMetric, PreparedReply, ProcessedMessage, Reply, Reward } from './game.js';
 
 export interface GameStore {
+  updateKC(vkId: number, operation: BalanceOperation, amount: number): Promise<boolean>;
   setPromoDraft(vkId: number, draft: PromoDraft | null): Promise<void>;
   promo(name: string): Promise<Promo | null>;
   promos(vkId: number, after: string | null): Promise<Promo[]>;

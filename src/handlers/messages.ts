@@ -51,17 +51,22 @@ export function createMessageHandler(vk: VK, game: GameService, groupId: number)
     try {
       const payload: unknown = context.messagePayload;
       const command = parseCommand(context.text, payload, context.isChat);
+      if ((command.kind === 'admin_balance' || command.kind === 'admin_balance_invalid') && !adminIds.has(context.senderId)) {
+        return;
+      }
       if (command.kind === 'delete_keyboards' && (!context.isChat || !adminIds.has(context.senderId))) {
         return;
       }
       if (context.isChat && command.kind === 'development' && !Object.values(labels).some(label => label === context.text?.trim())) {
         return;
       }
+      const replySenderId = context.replyMessage?.senderId;
       const referrerId = context.isChat ? undefined : parseReferrer(context.referralValue, context.senderId);
       reply = await game.handle({
         eventId,
         vkId: context.senderId,
         command,
+        ...(replySenderId === undefined ? {} : { replySenderId }),
         ...(payload === undefined || payload === null ? {} : { hasPayload: true }),
         ...(context.text === undefined ? {} : { text: context.text }),
         ...(context.isChat ? { isChat: true } : {}),

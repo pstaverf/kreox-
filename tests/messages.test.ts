@@ -15,6 +15,7 @@ function message(vk: VK, options: {
   text?: string;
   payload?: string;
   ref?: string;
+  replySenderId?: number;
 } = {}): MessageContext {
   return new MessageContext({
     api: vk.api, upload: vk.upload, source: UpdateSource.WEBHOOK, updateType: 'message_new', groupId: 123,
@@ -26,7 +27,11 @@ function message(vk: VK, options: {
         text: options.text ?? labels.profile, date: 1_792_713_600,
         random_id: 0, attachments: [], important: false,
         ...(options.payload === undefined ? {} : { payload: options.payload }),
-        ...(options.ref === undefined ? {} : { ref: options.ref })
+        ...(options.ref === undefined ? {} : { ref: options.ref }),
+        ...(options.replySenderId === undefined ? {} : { reply_message: {
+          id: 100, conversation_message_id: 100, out: 0, peer_id: options.peerId ?? 1,
+          random_id: 0, important: false, from_id: options.replySenderId, date: 1_792_713_600, text: 'Исходное сообщение', attachments: []
+        } })
       }
     }
   });
@@ -238,4 +243,52 @@ test('DM promo wizard forwards free text, sends inline confirmation and replays 
   assert.equal(sent.at(-1)?.random_id, randomId);
   assert.equal(database.player().kc, 0);
   assert.equal(database.state.promos.size, 1);
+});
+
+test('admin balance commands use the real VK reply author or mention, ignore spoofed payloads and silence non-admins', async context => {
+  const vk = new VK({ token: 'test-token' });
+  const database = new MemoryDatabase();
+  const service = new GameService(database);
+  await service.handle({ eventId: 'balance-target', vkId: 1, command: { kind: 'profile' } }, async () => 'Игрок');
+  const handle = createMessageHandler(vk, service, 123);
+  const sent: Record<string, unknown>[] = [];
+  const api = mock.method(vk.api, 'callWithRequest', async (request: APIRequest) => {
+    assert.equal(request.method, 'messages.send');
+    const params: unknown = request.params;
+    assert.ok(isRecord(params));
+    sent.push(params);
+    return [];
+  });
+  context.after(() => api.mock.restore());
+  const reply = message(vk, {
+    senderId: 888801846, peerId: 2_000_000_001, text: '!set 100k', replySenderId: 1,
+    payload: '{"targetId":999,"amount":1,"command":"profile"}'
+  });
+  await handle(reply);
+  assert.equal(database.player(1).kc, 10_000_000);
+  assert.equal(sent.at(-1)?.message, 'Done.');
+  assert.equal(sent.at(-1)?.disable_mentions, true);
+  const randomId = sent.at(-1)?.random_id;
+  await handle(reply);
+  assert.equal(sent.at(-1)?.random_id, randomId);
+  assert.equal(database.player(1).kc, 10_000_000);
+  await handle(message(vk, {
+    senderId: 888801846, peerId: 888801846, messageId: 2,
+    text: '!add [id1|Игрок Тест] 100', replySenderId: 999
+  }));
+  assert.equal(sent.at(-1)?.message, 'Done.');
+  assert.equal(sent.at(-1)?.keyboard, undefined);
+  assert.equal(database.player(1).kc, 10_010_000);
+  assert.equal(database.state.players.has(888801846), false);
+  const before = structuredClone(database.state);
+  const count = sent.length;
+  for (const peerId of [2, 2_000_000_001]) {
+    await handle(message(vk, {
+      senderId: 2, peerId, messageId: 3, text: '!add @id1 100k',
+      payload: '{"vkId":888801846,"admin":true}'
+    }));
+    await handle(message(vk, { senderId: 2, peerId, messageId: 4, text: '!set -1' }));
+  }
+  assert.equal(sent.length, count);
+  assert.deepEqual(database.state, before);
 });

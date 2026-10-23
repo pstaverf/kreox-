@@ -1,3 +1,5 @@
+import type { BalanceOperation } from '../types/admin-balance.js';
+import { validBalanceChange } from '../services/admin-balance.js';
 import { randomInt } from 'node:crypto';
 import { MongoPromoStore } from './mongo-promos.js';
 import type { Promo, PromoRedemption } from '../types/promo.js';
@@ -121,6 +123,20 @@ class MongoGameStore extends MongoPromoStore implements GameStore {
     this.messages = db.collection<ProcessedMessage>('processed_messages');
     this.counters = db.collection<Counter>('counters');
     this.notifications = db.collection<Notification>('notifications');
+  }
+
+  async updateKC(vkId: number, operation: BalanceOperation, amount: number): Promise<boolean> {
+    if (!validBalanceChange(operation, amount)) {
+      throw new Error('Invalid balance change');
+    }
+    const filter = operation === 'set' ? { _id: vkId } : {
+      _id: vkId,
+      kc: { $gte: 0, $lte: game.maxAmount - amount },
+      $expr: { $eq: ['$kc', { $trunc: '$kc' }] }
+    };
+    const update = operation === 'set' ? { $set: { kc: amount } } : { $inc: { kc: amount } };
+    const result = await this.players.updateOne(filter, update, { session: this.session });
+    return result.matchedCount === 1;
   }
 
   async processed(eventId: string): Promise<ProcessedMessage | null> {

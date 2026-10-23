@@ -1,3 +1,4 @@
+import { adminBalanceAction } from './admin-balance.js';
 import { adminIds } from '../config/admin.js';
 import { game } from '../config/game.js';
 import type { GameInput, PreparedReply, Reply } from '../types/game.js';
@@ -20,6 +21,9 @@ export class GameService {
     }
     if (input.command.kind === 'delete_keyboards' && (!input.isChat || !adminIds.has(input.vkId))) {
       throw new Error('Administrator chat access is required');
+    }
+    if ((input.command.kind === 'admin_balance' || input.command.kind === 'admin_balance_invalid') && !adminIds.has(input.vkId)) {
+      throw new Error('Administrator access is required');
     }
     let name: string | null = null;
     let referralUrl: string | null = null;
@@ -68,6 +72,9 @@ export class GameService {
   private async execute(store: GameStore, input: GameInput, name: string | null, referralUrl: string | null): Promise<Reply | 'name' | 'link'> {
     if (input.command.kind === 'delete_keyboards') {
       return { text: texts.keyboardsDeleted, keyboard: { kind: 'none' } };
+    }
+    if (input.command.kind === 'admin_balance' || input.command.kind === 'admin_balance_invalid') {
+      return adminBalanceAction(store, input, input.command);
     }
     const player = await store.player(input.vkId);
     if (player === null) {
