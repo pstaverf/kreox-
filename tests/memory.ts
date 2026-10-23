@@ -1,3 +1,5 @@
+import type { Promo, PromoActivation, PromoCreation, PromoDraft } from '../src/types/promo.js';
+import { promoRedemptionId, promoTotal, validatePromo } from '../src/services/promo-rules.js';
 import { accountCapacity, game } from '../src/config/game.js';
 import type { GameInput, InventoryItem, MiningFarm, Notification, Player, PreparedReply, Ranking, RankingMetric, ProcessedMessage, Reply, Reward } from '../src/types/game.js';
 import { initialFarm } from '../src/services/mining.js';
@@ -5,6 +7,8 @@ import { rankingScore } from '../src/services/rankings.js';
 import type { GameDatabase, GameStore } from '../src/types/storage.js';
 
 interface State {
+  promos: Map<string, Promo>;
+  redemptions: Set<string>;
   players: Map<number, Player>;
   items: InventoryItem[];
   messages: Map<string, ProcessedMessage>;
@@ -14,7 +18,7 @@ interface State {
 }
 
 export class MemoryDatabase implements GameDatabase {
-  state: State = { players: new Map(), items: [], messages: new Map(), registrations: 0, responses: 0, notifications: [] };
+  state: State = { promos: new Map(), redemptions: new Set(), players: new Map(), items: [], messages: new Map(), registrations: 0, responses: 0, notifications: [] };
   time = new Date('2026-10-23T00:00:00.000Z');
   failRemember = false;
   private queue: Promise<void> = Promise.resolve();
@@ -49,6 +53,69 @@ export class MemoryDatabase implements GameDatabase {
 
 class MemoryStore implements GameStore {
   constructor(private readonly state: State, private readonly database: MemoryDatabase) {}
+
+  async setPromoDraft(vkId: number, draft: PromoDraft | null): Promise<void> {
+    const player = this.state.players.get(vkId);
+    if (player === undefined) {
+      throw new Error('Promo owner was not found');
+    }
+    if (draft === null) {
+      delete player.promoDraft;
+    } else {
+      player.promoDraft = draft;
+    }
+  }
+
+  async promo(name: string): Promise<Promo | null> {
+    const value = this.state.promos.get(name) ?? null;
+    if (value !== null) {
+      validatePromo(value);
+    }
+    return value;
+  }
+
+  async promos(vkId: number, after: string | null): Promise<Promo[]> {
+    return [...this.state.promos.values()].filter(value => value.ownerId === vkId && (after === null || value._id > after))
+      .sort((a, b) => a._id < b._id ? -1 : a._id > b._id ? 1 : 0).slice(0, game.promo.pageSize + 1);
+  }
+
+  async createPromo(player: Player, promo: Promo): Promise<PromoCreation> {
+    validatePromo(promo);
+    const total = promoTotal(promo.amount, promo.quantity);
+    if (promo.ownerId !== player._id || promo.remaining !== promo.quantity || total === null) {
+      throw new Error('Invalid promo funding');
+    }
+    if (this.state.promos.has(promo._id)) {
+      return 'exists';
+    }
+    if (player[promo.currency] < total || player[promo.currency] > game.maxAmount) {
+      return 'funds';
+    }
+    player[promo.currency] -= total;
+    this.state.promos.set(promo._id, promo);
+    return 'created';
+  }
+
+  async activatePromo(player: Player, promo: Promo): Promise<PromoActivation> {
+    validatePromo(promo);
+    if (promo.ownerId === player._id) {
+      return 'own';
+    }
+    const id = promoRedemptionId(promo._id, player._id);
+    if (this.state.redemptions.has(id)) {
+      return 'already';
+    }
+    if (promo.remaining === 0) {
+      return 'empty';
+    }
+    if (player[promo.currency] < 0 || player[promo.currency] > game.maxAmount - promo.amount) {
+      return 'balance_limit';
+    }
+    player[promo.currency] += promo.amount;
+    promo.remaining -= 1;
+    this.state.redemptions.add(id);
+    return 'redeemed';
+  }
 
   async processed(eventId: string): Promise<ProcessedMessage | null> {
     return this.state.messages.get(eventId) ?? null;

@@ -13,6 +13,13 @@ export const game = {
   maxMessageLength: 4_096,
   chatInventoryLimit: 256,
   leaderboardSize: 20,
+  promo: {
+    minNameLength: 5,
+    maxNameLength: 20,
+    minQuantity: 5,
+    pageSize: 10,
+    minimum: { kc: 10_000, euro: 5, bitcoin: 5 }
+  },
   referralRewardKC: 1_500_000,
   notificationIntervalMs: 2_000,
   notificationLeaseMs: 120_000,

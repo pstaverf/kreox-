@@ -8,6 +8,32 @@ export function buildKeyboard(spec: KeyboardSpec): KeyboardBuilder {
   switch (spec.kind) {
     case 'none':
       return Keyboard.keyboard([]);
+    case 'promo':
+      return Keyboard.keyboard([
+        [Keyboard.textButton({ label: labels.createPromo, payload: { command: 'promo_create' } })],
+        [Keyboard.textButton({ label: labels.activatePromo, color: Keyboard.POSITIVE_COLOR, payload: { command: 'promo_activate' } })],
+        [Keyboard.textButton({ label: labels.myPromos, payload: { command: 'promo_list', after: null } })]
+      ]).oneTime(false);
+    case 'promo_currency':
+      return Keyboard.keyboard([
+        [
+          Keyboard.textButton({ label: 'KC', payload: { command: 'promo_currency', currency: 'kc' } }),
+          Keyboard.textButton({ label: '💶', payload: { command: 'promo_currency', currency: 'euro' } }),
+          Keyboard.textButton({ label: '💠', payload: { command: 'promo_currency', currency: 'bitcoin' } })
+        ],
+        [Keyboard.textButton({ label: labels.back, payload: { command: 'promo_back' } })]
+      ]).oneTime(false);
+    case 'promo_back':
+      return Keyboard.keyboard([[Keyboard.textButton({ label: labels.back, payload: { command: 'promo_back' } })]]).oneTime(false);
+    case 'promo_confirm':
+      return Keyboard.keyboard([[Keyboard.textButton({
+        label: labels.confirmPromo, payload: { command: 'promo_confirm', token: spec.token }
+      })]]).inline();
+    case 'promo_list':
+      return Keyboard.keyboard([
+        ...(spec.after === null ? [] : [[Keyboard.textButton({ label: labels.next, payload: { command: 'promo_list', after: spec.after } })]]),
+        [Keyboard.textButton({ label: labels.back, payload: { command: 'promo_back' } })]
+      ]).oneTime(false);
     case 'main':
       return Keyboard.keyboard([
         [button(labels.battlePass)],

@@ -1,3 +1,5 @@
+import type { PromoCommand, PromoDraft } from './promo.js';
+
 export interface Player {
   _id: number;
   accountId: number;
@@ -15,6 +17,7 @@ export interface Player {
   referrals?: number;
   stolenKC?: number;
   referralUrl?: string;
+  promoDraft?: PromoDraft;
 }
 
 export interface InventoryItem {
@@ -32,12 +35,17 @@ export type Command =
   | { kind: 'inventory'; page: number }
   | { kind: 'item'; itemId: number }
   | { kind: 'development' }
+  | { kind: 'city' }
+  | PromoCommand
   | MiningCommand
   | { kind: 'referrals' }
   | { kind: 'ranking'; metric: RankingMetric };
 
 export type KeyboardSpec =
   | { kind: 'none' }
+  | { kind: 'promo' | 'promo_currency' | 'promo_back' }
+  | { kind: 'promo_confirm'; token: string }
+  | { kind: 'promo_list'; after: string | null }
   | { kind: 'mining' | 'ranking' | 'referrals' }
   | { kind: 'mining_upgrade'; level: number }
   | { kind: 'main' }
@@ -69,6 +77,8 @@ export interface GameInput {
   vkId: number;
   command: Command;
   isChat?: boolean;
+  text?: string;
+  hasPayload?: boolean;
   referrerId?: number;
 }
 

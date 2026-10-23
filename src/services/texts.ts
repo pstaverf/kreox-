@@ -2,6 +2,10 @@ import { game } from '../config/game.js';
 import type { InventoryItem, MiningFarm, Player, Ranking, RankingMetric, Reward } from '../types/game.js';
 
 export const labels = {
+  createPromo: '📝 Создать промо',
+  activatePromo: '🔑 Активировать',
+  myPromos: '📖 Мои промо',
+  confirmPromo: '✅ Подтвердить',
   battlePass: '🎟️ BattlePass',
   profile: '👨‍🦰 Профиль',
   bonus: '🎁 Бонус',
@@ -33,6 +37,7 @@ export const labels = {
 } as const;
 
 export const texts = {
+  city: '🏙️ Стройка уже идёт!\n\n💫 Скоро город будет сиять раньше остальных…',
   keyboardsDeleted: 'Done.',
   welcome: '👋🏻 Добро пожаловать в Kreox Bot!\n\nТут ты сможешь развиваться и влетать в топы по всему боту.\n\nТебя ждет интересный и увлекательный функционал.\n\nУдачи.',
   development: '⚙️ В разработке…',

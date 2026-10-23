@@ -1,3 +1,4 @@
+import { isPromoCurrency, isPromoName } from '../services/promo-rules.js';
 import { game } from '../config/game.js';
 import type { Command } from '../types/game.js';
 import { isRankingMetric } from '../services/rankings.js';
@@ -20,6 +21,18 @@ export function parseCommand(text: string | undefined, payload: unknown, isChat 
     }
   }
   if (isRecord(value)) {
+    if (value.command === 'promo_currency' && isPromoCurrency(value.currency)) {
+      return { kind: 'promo_currency', currency: value.currency };
+    }
+    if (value.command === 'promo_confirm' && typeof value.token === 'string' && value.token.length > 0 && value.token.length <= 200) {
+      return { kind: 'promo_confirm', token: value.token };
+    }
+    if (value.command === 'promo_list' && (value.after === null || isPromoName(value.after))) {
+      return { kind: 'promo_list', after: value.after };
+    }
+    if (value.command === 'promo' || value.command === 'promo_create' || value.command === 'promo_activate' || value.command === 'promo_back') {
+      return { kind: value.command };
+    }
     if (value.command === 'inventory' && typeof value.page === 'number'
       && Number.isSafeInteger(value.page) && value.page >= 0
       && value.page <= Math.floor(game.maxAmount / game.inventoryPageSize) - 1) {
@@ -46,6 +59,14 @@ export function parseCommand(text: string | undefined, payload: unknown, isChat 
     }
   }
   switch (normalized) {
+    case labels.promo: return { kind: 'promo' };
+    case labels.city: return { kind: 'city' };
+    case labels.createPromo: return { kind: 'promo_create' };
+    case labels.activatePromo: return { kind: 'promo_activate' };
+    case labels.myPromos: return { kind: 'promo_list', after: null };
+    case 'KC': return { kind: 'promo_currency', currency: 'kc' };
+    case '💶': return { kind: 'promo_currency', currency: 'euro' };
+    case '💠': return { kind: 'promo_currency', currency: 'bitcoin' };
     case labels.profile:
     case labels.back: return { kind: 'profile' };
     case labels.menu: return { kind: 'menu' };

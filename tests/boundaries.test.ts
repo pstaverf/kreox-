@@ -16,13 +16,15 @@ function isUnknownArray(value: unknown): value is unknown[] {
 test('command parsing supports the requested buttons without trusting payload identities', () => {
   assert.deepEqual(parseCommand(labels.profile, undefined), { kind: 'profile' });
   assert.deepEqual(parseCommand(labels.back, undefined), { kind: 'profile' });
+  assert.deepEqual(parseCommand(labels.promo, undefined), { kind: 'promo' });
+  assert.deepEqual(parseCommand(labels.city, undefined), { kind: 'city' });
   assert.deepEqual(parseCommand(labels.menu, undefined), { kind: 'menu' });
   assert.deepEqual(parseCommand(labels.inventory, undefined), { kind: 'inventory', page: 0 });
   assert.deepEqual(parseCommand(labels.bonus, { vkId: 999, amount: -1 }), { kind: 'bonus' });
   assert.deepEqual(parseCommand('🆔 1', undefined), { kind: 'item', itemId: 1 });
   assert.deepEqual(parseCommand('▶️', { command: 'inventory', page: 1, vkId: 999 }), { kind: 'inventory', page: 1 });
   assert.deepEqual(parseCommand('▶️', '{"command":"inventory","page":2}'), { kind: 'inventory', page: 2 });
-  for (const name of ['battlePass', 'promo', 'city', 'donate', 'boss', 'tasks', 'help'] as const) {
+  for (const name of ['battlePass', 'donate', 'boss', 'tasks', 'help'] as const) {
     assert.deepEqual(parseCommand(labels[name], undefined), { kind: 'development' });
   }
 });

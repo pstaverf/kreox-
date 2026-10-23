@@ -4,9 +4,12 @@ import type { GameInput, PreparedReply, Reply } from '../types/game.js';
 import { DuplicateWriteError, type GameDatabase, type GameStore } from '../types/storage.js';
 import { assertNever, isPositiveId } from '../utils/validation.js';
 import { bonusDay, normalizeName, rewardForDay } from './rules.js';
+import { isPromoCommand } from './promo-rules.js';
+import { promoAction, promoText } from './promos.js';
+import { promoTexts } from './promo-texts.js';
 import { miningAction } from './mining-actions.js';
 import { rankingScore } from './rankings.js';
-import { bonusText, cooldownText, inventoryText, mention, profileText, rankingText, referralRewardText, referralText, texts } from './texts.js';
+import { bonusText, cooldownText, inventoryText, labels, mention, profileText, rankingText, referralRewardText, referralText, texts } from './texts.js';
 
 export class GameService {
   constructor(private readonly database: GameDatabase, private readonly resolveReferralUrl?: (vkId: number) => Promise<string>) {}
@@ -81,7 +84,23 @@ export class GameService {
       return { text: registered === null ? texts.registrationLimit : texts.welcome, keyboard: { kind: 'main' } };
     }
     const command = input.command;
+    if (!input.isChat && !input.hasPayload && player.promoDraft !== undefined && input.text !== undefined) {
+      if (input.text.trim() === labels.back) {
+        return promoAction(store, player, { kind: 'promo_back' });
+      }
+      if (command.kind !== 'menu' && !(player.promoDraft.step === 'currency' && command.kind === 'promo_currency')) {
+        return promoText(store, player, player.promoDraft, input);
+      }
+    }
+    if (isPromoCommand(command)) {
+      return input.isChat ? { text: promoTexts.private, keyboard: { kind: 'none' } } : promoAction(store, player, command);
+    }
+    if (!input.isChat && player.promoDraft !== undefined) {
+      await store.setPromoDraft(player._id, null);
+    }
     switch (command.kind) {
+      case 'city':
+        return { text: texts.city, keyboard: { kind: 'main' } };
       case 'profile':
         return { text: profileText(player), keyboard: { kind: 'profile' } };
       case 'menu':

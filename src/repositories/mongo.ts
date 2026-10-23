@@ -1,4 +1,6 @@
 import { randomInt } from 'node:crypto';
+import { MongoPromoStore } from './mongo-promos.js';
+import type { Promo, PromoRedemption } from '../types/promo.js';
 import { MongoBulkWriteError, MongoClient, MongoServerError, type ClientSession, type Db, type WriteError } from 'mongodb';
 import { accountCapacity, game } from '../config/game.js';
 import type { Counter, GameInput, InventoryItem, MiningFarm, Notification, Player, PreparedReply, RankedPlayer, Ranking, RankingMetric, ProcessedMessage, Reply, Reward } from '../types/game.js';
@@ -20,6 +22,8 @@ export class MongoGameDatabase implements GameDatabase {
     if (!isRecord(hello) || (typeof hello.setName !== 'string' && hello.msg !== 'isdbgrid')) {
       throw new Error('MongoDB replica set is required');
     }
+    await this.db.collection<Promo>('promos').createIndex({ ownerId: 1, _id: 1 }, { collation: { locale: 'simple' } });
+    await this.db.collection<PromoRedemption>('promo_redemptions').createIndex({ promoName: 1, vkId: 1 }, { unique: true, collation: { locale: 'simple' } });
     await this.db.collection<Player>('players').createIndex({ accountId: 1 }, { unique: true });
     await this.db.collection<InventoryItem>('inventory').createIndex({ vkId: 1, itemId: 1 }, { unique: true });
     await this.db.collection<ProcessedMessage>('processed_messages').createIndex({ _id: 1 });
@@ -103,7 +107,7 @@ export class MongoGameDatabase implements GameDatabase {
   }
 }
 
-class MongoGameStore implements GameStore {
+class MongoGameStore extends MongoPromoStore implements GameStore {
   private readonly players;
   private readonly items;
   private readonly messages;
@@ -111,6 +115,7 @@ class MongoGameStore implements GameStore {
   private readonly notifications;
 
   constructor(db: Db, private readonly session: ClientSession) {
+    super(db, session);
     this.players = db.collection<Player>('players');
     this.items = db.collection<InventoryItem>('inventory');
     this.messages = db.collection<ProcessedMessage>('processed_messages');

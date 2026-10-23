@@ -197,3 +197,45 @@ test('/dk permissions are enforced by the service too, even for a previously pro
   assert.equal(database.state.players.size, 0);
   assert.equal(database.state.messages.size, 1);
 });
+
+test('DM promo wizard forwards free text, sends inline confirmation and replays without a second debit', async context => {
+  const vk = new VK({ token: 'test-token' });
+  const database = new MemoryDatabase();
+  const service = new GameService(database);
+  await service.handle({ eventId: 'promo-register', vkId: 1, command: { kind: 'profile' } }, async () => 'Игрок');
+  database.player().kc = 5_000_000;
+  const sent: Record<string, unknown>[] = [];
+  const api = mock.method(vk.api, 'callWithRequest', async (request: APIRequest) => {
+    assert.equal(request.method, 'messages.send');
+    const params: unknown = request.params;
+    assert.ok(isRecord(params));
+    sent.push(params);
+    return [];
+  });
+  context.after(() => api.mock.restore());
+  const handle = createMessageHandler(vk, service, 123);
+  let id = 1;
+  for (const text of [labels.promo, labels.createPromo, 'KC', 'Подарок', '10.000', '5']) {
+    await handle(message(vk, { messageId: id++, text }));
+  }
+  const confirmation = sent.at(-1);
+  assert.ok(confirmation);
+  assert.equal(confirmation.message, '☑️ Подтвердите создание промокода.');
+  assert.equal(typeof confirmation.keyboard, 'string');
+  if (typeof confirmation.keyboard !== 'string') {
+    assert.fail('Missing keyboard');
+  }
+  const keyboard: unknown = JSON.parse(confirmation.keyboard);
+  assert.ok(isRecord(keyboard));
+  assert.equal(keyboard.inline, true);
+  const payload = JSON.stringify({ command: 'promo_confirm', token: '123:1:6', amount: 0, vkId: 999 });
+  const input = message(vk, { messageId: id++, text: labels.confirmPromo, payload });
+  await handle(input);
+  assert.equal(sent.at(-1)?.message, '✅ Промокод создан');
+  assert.equal(database.player().kc, 0);
+  const randomId = sent.at(-1)?.random_id;
+  await handle(input);
+  assert.equal(sent.at(-1)?.random_id, randomId);
+  assert.equal(database.player().kc, 0);
+  assert.equal(database.state.promos.size, 1);
+});

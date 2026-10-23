@@ -9,8 +9,7 @@ export function createReferralLinkResolver(vk: VK, groupId: number): (vkId: numb
     }
     try {
       const response = await vk.api.utils.getShortLink({
-        url: `https://vk.me/club${groupId}?ref=kreox_${vkId}`,
-        private: 1
+        url: `https://vk.me/club${groupId}?ref=kreox_${vkId}`
       });
       return response.short_url;
     } catch (error: unknown) {

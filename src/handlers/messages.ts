@@ -62,6 +62,8 @@ export function createMessageHandler(vk: VK, game: GameService, groupId: number)
         eventId,
         vkId: context.senderId,
         command,
+        ...(payload === undefined || payload === null ? {} : { hasPayload: true }),
+        ...(context.text === undefined ? {} : { text: context.text }),
         ...(context.isChat ? { isChat: true } : {}),
         ...(referrerId === undefined ? {} : { referrerId })
       }, async () => {

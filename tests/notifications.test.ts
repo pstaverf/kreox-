@@ -8,16 +8,17 @@ import type { Notification } from '../src/types/game.js';
 import type { NotificationQueue } from '../src/types/storage.js';
 import { isRecord } from '../src/utils/validation.js';
 
-test('vk.cc shortener sends the private flag as numeric 1 rather than the invalid true string', async context => {
+test('vk.cc shortener omits the optional private flag for the community token', async context => {
   const vk = new VK({ token: 'test-token' });
   const api = mock.method(vk.api, 'callWithRequest', async (request: APIRequest) => {
     assert.equal(request.method, 'utils.getShortLink');
     const params: unknown = request.params;
     assert.ok(isRecord(params));
     assert.equal(params.url, 'https://vk.me/club123?ref=kreox_456');
-    assert.equal(params.private, 1);
-    const body = new URLSearchParams({ url: String(params.url), private: String(params.private) });
-    assert.equal(body.get('private'), '1');
+    assert.equal(Object.hasOwn(params, 'private'), false);
+    assert.deepEqual(Object.keys(params), ['url']);
+    const body = new URLSearchParams({ url: String(params.url) });
+    assert.equal(body.has('private'), false);
     assert.equal(body.get('url'), 'https://vk.me/club123?ref=kreox_456');
     return { short_url: 'https://vk.cc/abc123', key: 'abc123', url: params.url };
   });

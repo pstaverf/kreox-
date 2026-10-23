@@ -1,6 +1,12 @@
+import type { Promo, PromoActivation, PromoCreation, PromoDraft } from './promo.js';
 import type { GameInput, InventoryItem, MiningFarm, Notification, Player, Ranking, RankingMetric, PreparedReply, ProcessedMessage, Reply, Reward } from './game.js';
 
 export interface GameStore {
+  setPromoDraft(vkId: number, draft: PromoDraft | null): Promise<void>;
+  promo(name: string): Promise<Promo | null>;
+  promos(vkId: number, after: string | null): Promise<Promo[]>;
+  createPromo(player: Player, promo: Promo): Promise<PromoCreation>;
+  activatePromo(player: Player, promo: Promo): Promise<PromoActivation>;
   processed(eventId: string): Promise<ProcessedMessage | null>;
   remember(input: GameInput, reply: Reply): Promise<PreparedReply>;
   player(vkId: number): Promise<Player | null>;
