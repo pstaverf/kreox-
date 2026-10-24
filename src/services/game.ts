@@ -1,3 +1,7 @@
+import { donateConfig } from '../config/donate.js';
+import { donateAction, donateText, type DonateRandom } from './donate.js';
+import { isDonateCommand } from './donate-rules.js';
+import { donateTexts } from './donate-texts.js';
 import { randomInt } from 'node:crypto';
 import { isAdminItemCommand, isItemCommand, parsePlayerTarget } from './item-rules.js';
 import { adminItems, itemAction, itemText, itemView } from './items.js';
@@ -21,10 +25,11 @@ export class GameService {
     private readonly database: GameDatabase,
     private readonly resolveReferralUrl?: (vkId: number) => Promise<string>,
     private readonly resolveItemTarget?: (screenName: string) => Promise<number | null>,
-    private readonly caseRoll: () => number = () => randomInt(100)
+    private readonly caseRoll: () => number = () => randomInt(100),
+    private readonly donateRoll: DonateRandom = (_purpose, maximum) => randomInt(maximum)
   ) {}
 
-  async handle(input: GameInput, resolveName: () => Promise<string>): Promise<PreparedReply> {
+  async handle(input: GameInput, resolveName: () => Promise<string>, resolveChatMembers?: () => Promise<number[]>): Promise<PreparedReply> {
     if (!isPositiveId(input.vkId) || !input.eventId || input.eventId.length > 200) {
       throw new Error('Invalid event identity');
     }
@@ -37,6 +42,16 @@ export class GameService {
     if (isAdminItemCommand(input.command) && !adminIds.has(input.vkId)) {
       throw new Error('Administrator access is required');
     }
+    if (input.command.kind === 'theft' && !input.isChat) throw new Error('Theft is chat-only');
+    let members: number[] | undefined;
+    const donationRolls = new Map<string, number>();
+    const donationRandom: DonateRandom = (purpose, maximum) => {
+      const key = `${purpose}:${maximum}`;
+      const value = donationRolls.get(key) ?? this.donateRoll(purpose, maximum);
+      if (!Number.isSafeInteger(value) || value < 0 || value >= maximum) throw new Error('Invalid donate random value');
+      donationRolls.set(key, value);
+      return value;
+    };
     let resolvedTarget: number | null | undefined;
     let rolls: number[] | undefined;
     let rollIndex = 0;
@@ -59,7 +74,7 @@ export class GameService {
             return previous.reply;
           }
           rollIndex = 0;
-          const reply = await this.execute(store, input, name, referralUrl, resolvedTarget, roll);
+          const reply = await this.execute(store, input, name, referralUrl, resolvedTarget, roll, members, donationRandom);
           if (typeof reply === 'string') {
             return reply;
           }
@@ -70,6 +85,11 @@ export class GameService {
         }
         if (reply === 'name') {
           name = normalizeName(await resolveName());
+        } else if (reply === 'members') {
+          if (resolveChatMembers === undefined || !input.isChat || input.command.kind !== 'theft') throw new Error('Chat members provider is unavailable');
+          const ids = await resolveChatMembers();
+          if (ids.length > donateConfig.maxChatMembers || ids.some(id => !isPositiveId(id))) throw new Error('Invalid chat members');
+          members = [...new Set(ids)];
         } else if (reply === 'target') {
           const target = parsePlayerTarget(input.text ?? '');
           if (target?.kind !== 'screen' || this.resolveItemTarget === undefined) {
@@ -100,7 +120,7 @@ export class GameService {
     throw new Error('Transaction retry limit reached');
   }
 
-  private async execute(store: GameStore, input: GameInput, name: string | null, referralUrl: string | null, resolvedTarget: number | null | undefined, roll: () => number): Promise<Reply | 'name' | 'link' | 'target'> {
+  private async execute(store: GameStore, input: GameInput, name: string | null, referralUrl: string | null, resolvedTarget: number | null | undefined, roll: () => number, members: readonly number[] | undefined, donateRandom: DonateRandom): Promise<Reply | 'name' | 'link' | 'target' | 'members'> {
     if (input.command.kind === 'delete_keyboards') {
       return { text: texts.keyboardsDeleted, keyboard: { kind: 'none' } };
     }
@@ -125,6 +145,19 @@ export class GameService {
       return { text: registered === null ? texts.registrationLimit : texts.welcome, keyboard: { kind: 'main' } };
     }
     const command = input.command;
+    if (!input.isChat && !input.hasPayload && command.kind === 'development' && player.donateDraft !== undefined && input.text !== undefined) {
+      return donateText(store, player, player.donateDraft, input);
+    }
+    if (isDonateCommand(command)) {
+      if (input.isChat && command.kind !== 'dealer_buy' && command.kind !== 'dealer_view' && command.kind !== 'theft') return { text: donateTexts.private, keyboard: { kind: 'none' } };
+      if (!input.isChat) {
+        await store.setItemDraft(player._id, null);
+        await store.setPromoDraft(player._id, null);
+      }
+      return donateAction(store, player, command, input, members, donateRandom);
+    }
+    if (!input.isChat && player.donateDraft !== undefined) await store.setDonateDraft(player._id, null);
+
     if (!input.isChat && !input.hasPayload && player.itemDraft !== undefined && input.text !== undefined
       && command.kind !== 'menu' && command.kind !== 'inventory' && command.kind !== 'profile' && command.kind !== 'item') {
       return itemText(store, player, player.itemDraft, input, resolvedTarget);

@@ -1,9 +1,10 @@
+import type { DonateStore } from './donate.js';
 import type { ItemStore } from './items.js';
 import type { BalanceOperation } from './admin-balance.js';
 import type { Promo, PromoActivation, PromoCreation, PromoDraft } from './promo.js';
 import type { GameInput, InventoryStack, MiningFarm, Notification, Player, Ranking, RankingMetric, PreparedReply, ProcessedMessage, Reply, Reward } from './game.js';
 
-export interface GameStore extends ItemStore {
+export interface GameStore extends ItemStore, DonateStore {
   updateKC(vkId: number, operation: BalanceOperation, amount: number): Promise<boolean>;
   setPromoDraft(vkId: number, draft: PromoDraft | null): Promise<void>;
   promo(name: string): Promise<Promo | null>;

@@ -1,3 +1,4 @@
+import { donateLabels } from '../services/donate-texts.js';
 import { itemLabels } from '../services/item-texts.js';
 import { Keyboard, type KeyboardBuilder } from 'vk-io';
 import { labels } from '../services/texts.js';
@@ -10,9 +11,22 @@ export function buildKeyboard(spec: KeyboardSpec): KeyboardBuilder {
     return Keyboard.textButton({ label, payload: { command: kind, ...params } });
   };
   switch (spec.kind) {
+    case 'donate':
+      return Keyboard.keyboard([
+        [button(donateLabels.nickname, { kind: 'donate_nick' }), button(donateLabels.thief, { kind: 'donate_thief' }), button(donateLabels.dealer, { kind: 'donate_dealer' })],
+        [button(labels.back, { kind: 'menu' })]
+      ]).oneTime(false);
+    case 'donate_back': return Keyboard.keyboard([[button(labels.back, { kind: 'donate' })]]).oneTime(false);
+    case 'donate_confirmation': {
+      const keyboard = Keyboard.keyboard([[
+        Keyboard.textButton({ label: donateLabels.confirm, color: Keyboard.POSITIVE_COLOR, payload: { command: 'donate_confirm', token: spec.token } }),
+        Keyboard.textButton({ label: donateLabels.cancel, color: Keyboard.NEGATIVE_COLOR, payload: { command: 'donate_cancel', token: spec.token } })
+      ]]);
+      return spec.inline ? keyboard.inline() : keyboard.oneTime(false);
+    }
     case 'item_detail':
       return Keyboard.keyboard([
-        [Keyboard.textButton({ label: itemLabels.use, payload: { command: 'item_use', itemKind: spec.itemKind } })],
+        ...(spec.itemKind === 'croupier' ? [] : [[Keyboard.textButton({ label: itemLabels.use, payload: { command: 'item_use', itemKind: spec.itemKind } })]]),
         [Keyboard.textButton({ label: itemLabels.sell, payload: { command: 'item_sell', itemKind: spec.itemKind } }),
           Keyboard.textButton({ label: itemLabels.gift, payload: { command: 'item_gift', itemKind: spec.itemKind } })],
         [Keyboard.textButton({ label: labels.back, payload: { command: 'inventory', page: 0 } })]
@@ -70,7 +84,7 @@ export function buildKeyboard(spec: KeyboardSpec): KeyboardBuilder {
         [button(labels.battlePass, { kind: 'development' })],
         [button(labels.profile, { kind: 'profile' }), button(labels.bonus, { kind: 'bonus' }), button(labels.rating, { kind: 'ranking', metric: 'kc' })],
         [button(labels.promo, { kind: 'promo' }), Keyboard.textButton({ label: labels.city, color: Keyboard.PRIMARY_COLOR, payload: { command: 'city' } }), button(labels.mining, { kind: 'mining' })],
-        [Keyboard.textButton({ label: labels.donate, color: Keyboard.POSITIVE_COLOR, payload: { command: 'development' } }), button(labels.boss, { kind: 'development' }), button(labels.tasks, { kind: 'development' })],
+        [Keyboard.textButton({ label: labels.donate, color: Keyboard.POSITIVE_COLOR, payload: { command: 'donate' } }), button(labels.boss, { kind: 'development' }), button(labels.tasks, { kind: 'development' })],
         [button(labels.help, { kind: 'development' })]
       ]).oneTime(false);
     case 'profile':

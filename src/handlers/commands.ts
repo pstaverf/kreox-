@@ -18,6 +18,10 @@ export function parseCommand(text: string | undefined, payload: unknown, isChat 
   if (adminBalance !== null) {
     return adminBalance;
   }
+  const normalizedText = text?.trim().toLowerCase();
+  if (normalizedText === 'купитькрупье' || normalizedText === 'купить крупье') return { kind: 'dealer_buy' };
+  if (isChat && normalizedText === 'вор') return { kind: 'theft' };
+  if (isChat && normalizedText === 'крупье') return { kind: 'dealer_view' };
   let value: unknown = payload;
   if (typeof payload === 'string') {
     if (Buffer.byteLength(payload, 'utf8') > 255) {
@@ -34,6 +38,8 @@ export function parseCommand(text: string | undefined, payload: unknown, isChat 
     return itemCommand;
   }
   if (isRecord(value)) {
+    if ((value.command === 'donate_confirm' || value.command === 'donate_cancel') && typeof value.token === 'string' && value.token.length > 0 && value.token.length <= 200) return { kind: value.command, token: value.token };
+    if (value.command === 'donate' || value.command === 'donate_nick' || value.command === 'donate_thief' || value.command === 'donate_dealer') return { kind: value.command };
     if (value.command === 'item' && typeof value.itemId === 'number' && Number.isSafeInteger(value.itemId) && value.itemId > 0) {
       return { kind: 'item', itemId: value.itemId };
     }

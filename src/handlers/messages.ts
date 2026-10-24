@@ -1,3 +1,4 @@
+import { loadChatMembers } from './chat-members.js';
 import { isAdminItemCommand } from '../services/item-rules.js';
 import { randomInt } from 'node:crypto';
 import { setTimeout } from 'node:timers/promises';
@@ -50,6 +51,7 @@ export function createMessageHandler(vk: VK, game: GameService, groupId: number)
     const eventId = `${groupId}:${context.peerId}:${messageId}`;
     let reply: PreparedReply;
     try {
+      if (!context.isChat && context.text?.trim().toLowerCase() === 'вор') return;
       const payload: unknown = context.messagePayload;
       const command = parseCommand(context.text, payload, context.isChat);
       if (isAdminItemCommand(command) && !adminIds.has(context.senderId)) {
@@ -82,7 +84,7 @@ export function createMessageHandler(vk: VK, game: GameService, groupId: number)
           throw new Error('VK user is unavailable');
         }
         return user.first_name;
-      });
+      }, () => loadChatMembers(vk, context.peerId, groupId));
     } catch (error: unknown) {
       logError('message_processing', error, { eventId, vkId: context.senderId });
       try {

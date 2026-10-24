@@ -45,10 +45,11 @@ export async function itemView(store: GameStore, player: Player, itemKind: ItemK
   const now = await store.now();
   const count = await store.itemCount(player._id, itemKind, now);
   return count === 0 ? { text: await unavailableText(store, player, itemKind, now), keyboard: { kind: 'profile' } } : {
-    text: itemDetails(itemKind, count, use), keyboard: { kind: use ? 'item_use' : 'item_detail', itemKind }
+    text: itemDetails(itemKind, count, use && itemKind !== 'croupier'), keyboard: { kind: use && itemKind !== 'croupier' ? 'item_use' : 'item_detail', itemKind }
   };
 }
 async function open(store: GameStore, player: Player, kind: ItemKind, quantity: number, roll: () => number): Promise<Reply> {
+  if (kind === 'croupier') return itemView(store, player, kind);
   if (!validItemQuantity(quantity)) {
     return back(itemTexts.badQuantity, kind);
   }
@@ -70,6 +71,7 @@ export async function itemAction(store: GameStore, player: Player, command: Item
       await store.setItemDraft(player._id, null);
       return itemView(store, player, command.itemKind, command.kind === 'item_use');
     case 'item_custom': case 'item_gift': case 'item_sell': {
+      if (command.kind === 'item_custom' && command.itemKind === 'croupier') return itemView(store, player, command.itemKind);
       const now = await store.now();
       const count = await store.itemCount(player._id, command.itemKind, now);
       if (count === 0) {

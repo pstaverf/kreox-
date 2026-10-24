@@ -48,6 +48,7 @@ function dropText(index: number): string {
     : `💶 ${formatAmount(drop.amount, game.euroScale)} евро`;
 }
 export function itemDetails(kind: ItemKind, count: number, use = false): string {
+  if (kind === 'croupier') return `📒 Предмет "${itemName(kind)}" (x${count}):\nСнимает КД на покупку крупье, пока находится в вашем инвентаре. Не расходуется.`;
   return (use ? `«${itemName(kind)}» (доступно: ${count} шт.):` : `📒 Предмет "${itemName(kind)}" (x${count}):`)
     + `\nМожет выпасть:\n\n${itemConfig.drops.map((_, index) => dropText(index)).join('\n')}`;
 }

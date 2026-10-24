@@ -368,3 +368,87 @@ test('typed bonus labels and unrelated payloads never claim rewards, including a
   assert.equal(database.player().kc, 750_000);
   assert.equal(sent.at(-1)?.message, '🎁 Бонус 2-го дня:\n\n💰 5.000 KC\n💠 2.5₿');
 });
+
+test('donate VK flow ignores DM theft, loads actual chat members outside transactions and rejects forged victim payloads', async context => {
+  const vk = new VK({ token: 'test-token' });
+  const database = new MemoryDatabase();
+  const service = new GameService(database, undefined, undefined, undefined, (_purpose, maximum) => maximum - 1);
+  for (const id of [1, 2, 3]) await service.handle({ eventId: `donate-register-${id}`, vkId: id, command: { kind: 'profile' } }, async () => 'Игрок');
+  const handle = createMessageHandler(vk, service, 123);
+  const sent: Record<string, unknown>[] = [];
+  let memberCalls = 0;
+  const api = mock.method(vk.api, 'callWithRequest', async (request: APIRequest) => {
+    if (request.method === 'messages.getConversationMembers') {
+      const params: unknown = request.params;
+      assert.ok(isRecord(params));
+      assert.equal(params.peer_id, 2_000_000_001);
+      await database.transaction(async () => {});
+      memberCalls += 1;
+      return { count: 3, items: [{ member_id: 1 }, { member_id: 2 }, { member_id: -123 }] };
+    }
+    assert.equal(request.method, 'messages.send');
+    const params: unknown = request.params;
+    assert.ok(isRecord(params));
+    sent.push(params);
+    return [];
+  });
+  context.after(() => api.mock.restore());
+  const before = structuredClone(database.state);
+  await handle(message(vk, { text: 'Вор' }));
+  assert.equal(sent.length, 0);
+  assert.deepEqual(database.state, before);
+  await handle(message(vk, { messageId: 2, text: '🍩 Донат', payload: '{"command":"donate"}' }));
+  assert.equal(sent.at(-1)?.message, '💶 Донат:');
+  database.player().euro = 5_000;
+  await handle(message(vk, { messageId: 3, text: '👤 Ник', payload: '{"command":"donate_nick"}' }));
+  await handle(message(vk, { messageId: 4, text: "'felix" }));
+  const draft = database.player().donateDraft;
+  assert.ok(draft?.step === 'confirm_nickname');
+  await handle(message(vk, { messageId: 5, payload: JSON.stringify({ command: 'donate_confirm', token: draft.token }) }));
+  assert.equal(sent.at(-1)?.message, "[id1|'felix], отличный ник!");
+  assert.equal(database.player().euro, 0);
+  database.player().thiefUntil = new Date(database.time.getTime() + 86_400_000);
+  database.player(2).kc = 500;
+  database.player(3).kc = 999_900;
+  const attempt = message(vk, { peerId: 2_000_000_001, messageId: 6, text: 'вор', payload: '{"victimId":3,"amount":999999999,"memberIds":[3]}' });
+  await handle(attempt);
+  assert.equal(sent.at(-1)?.message, "[id1|'felix] украл у игрока [id2|Игрок] 5 KC.");
+  assert.equal(memberCalls, 1);
+  assert.equal(database.player(3).kc, 999_900);
+  assert.equal(database.player(2).kc, 0);
+  await handle(attempt);
+  assert.equal(memberCalls, 1);
+  assert.equal(database.player().kc, 500);
+});
+
+test('theft loads all membership pages with group token parameters instead of considering only the first page', async context => {
+  const vk = new VK({ token: 'test-token' });
+  const database = new MemoryDatabase();
+  const service = new GameService(database, undefined, undefined, undefined, (_purpose, maximum) => maximum - 1);
+  for (const id of [1, 1002]) await service.handle({ eventId: `page-register-${id}`, vkId: id, command: { kind: 'profile' } }, async () => 'Игрок');
+  database.player().thiefUntil = new Date(database.time.getTime() + 86_400_000);
+  database.player(1002).kc = 700;
+  let calls = 0;
+  const sent: Record<string, unknown>[] = [];
+  const api = mock.method(vk.api, 'callWithRequest', async (request: APIRequest) => {
+    const params: unknown = request.params;
+    assert.ok(isRecord(params));
+    if (request.method === 'messages.getConversationMembers') {
+      assert.equal(params.peer_id, 2_000_000_001);
+      assert.equal(params.group_id, 123);
+      assert.equal(params.count, 1000);
+      assert.equal(params.offset, calls * 1000);
+      const offset = calls++ * 1000;
+      return { count: 1002, items: Array.from({ length: offset === 0 ? 1000 : 2 }, (_, i) => ({ member_id: offset + i + 1 })) };
+    }
+    assert.equal(request.method, 'messages.send');
+    sent.push(params);
+    return [];
+  });
+  context.after(() => api.mock.restore());
+  await createMessageHandler(vk, service, 123)(message(vk, { peerId: 2_000_000_001, text: 'вор' }));
+  assert.equal(calls, 2);
+  assert.match(String(sent.at(-1)?.message), /у игрока \[id1002\|Игрок\] 7 KC/);
+  assert.equal(database.player().kc, 700);
+  assert.equal(database.player(1002).kc, 0);
+});

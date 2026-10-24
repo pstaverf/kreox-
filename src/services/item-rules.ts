@@ -5,7 +5,7 @@ import type { AdminItemCommand, CaseRewards, ItemCommand, ItemKind, ItemOffer, P
 import { isPositiveId } from '../utils/validation.js';
 
 export function isItemKind(value: unknown): value is ItemKind {
-  return value === 'zhdun_case' || value === 'referral_case';
+  return value === 'zhdun_case' || value === 'referral_case' || value === 'croupier';
 }
 export function isAdminItemCommand(command: Command): command is AdminItemCommand {
   return command.kind === 'admin_item' || command.kind === 'admin_itemlist' || command.kind === 'admin_item_invalid';

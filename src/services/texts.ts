@@ -1,3 +1,4 @@
+import { itemConfig } from '../config/items.js';
 import { game } from '../config/game.js';
 import type { InventoryStack, MiningFarm, Player, Ranking, RankingMetric, Reward } from '../types/game.js';
 
@@ -110,7 +111,11 @@ export function cooldownText(remainingMs: number): string {
 export function inventoryText(items: readonly InventoryStack[]): string {
   return `${texts.inventoryTitle}\n\n${items.length === 0
     ? texts.emptyInventory
-    : items.map(item => `🆔 ${item.itemId} — ${item.kind === 'zhdun_case' ? texts.caseName : texts.referralCaseName} (${item.quantity} шт.)`).join('\n')}`;
+    : items.map(item => {
+      const entry = itemConfig.catalog.find(entry => entry.kind === item.kind);
+      if (entry === undefined) throw new Error('Unknown inventory kind');
+      return `🆔 ${item.itemId} — ${entry.name} (${item.quantity} шт.)`;
+    }).join('\n')}`;
 }
 
 

@@ -1,3 +1,6 @@
+import { donateConfig } from '../src/config/donate.js';
+import { validDonateMoney, validNickname } from '../src/services/donate-rules.js';
+import type { DealerPurchase, DealerState, DonateDraft, DonatePurchase } from '../src/types/donate.js';
 import type { CaseRewards, ItemDraft, ItemKind, ItemOffer, ItemResult, PurchaseResult } from '../src/types/items.js';
 import type { KeyboardSpec } from '../src/types/game.js';
 import { isItemKind, validItemQuantity, validateOffer } from '../src/services/item-rules.js';
@@ -12,6 +15,7 @@ import { rankingScore } from '../src/services/rankings.js';
 import type { GameDatabase, GameStore } from '../src/types/storage.js';
 
 interface State {
+  dealer: DealerState;
   offers: Map<string, ItemOffer>;
   promos: Map<string, Promo>;
   redemptions: Set<string>;
@@ -24,7 +28,7 @@ interface State {
 }
 
 export class MemoryDatabase implements GameDatabase {
-  state: State = { offers: new Map(), promos: new Map(), redemptions: new Set(), players: new Map(), items: [], messages: new Map(), registrations: 0, responses: 0, notifications: [] };
+  state: State = { dealer: { _id: 'casino', holderId: null, earnedKC: 0, nextChangeAt: new Date(0) }, offers: new Map(), promos: new Map(), redemptions: new Set(), players: new Map(), items: [], messages: new Map(), registrations: 0, responses: 0, notifications: [] };
   time = new Date('2026-10-23T00:00:00.000Z');
   failRemember = false;
   private queue: Promise<void> = Promise.resolve();
@@ -59,6 +63,65 @@ export class MemoryDatabase implements GameDatabase {
 
 class MemoryStore implements GameStore {
   constructor(private readonly state: State, private readonly database: MemoryDatabase) {}
+
+  async setDonateDraft(vkId: number, draft: DonateDraft | null): Promise<void> {
+    const player = this.state.players.get(vkId);
+    if (player === undefined) throw new Error('Missing donate actor');
+    if (draft === null) delete player.donateDraft;
+    else player.donateDraft = draft;
+  }
+  async changeNickname(player: Player, nickname: string): Promise<DonatePurchase> {
+    if (!validNickname(nickname)) throw new Error('Invalid nickname');
+    if (!validDonateMoney(player.euro)) return 'limit';
+    if (player.euro < donateConfig.nicknameCost) return 'funds';
+    player.euro -= donateConfig.nicknameCost;
+    player.name = nickname;
+    delete player.donateDraft;
+    return 'ok';
+  }
+  async buyThief(player: Player, now: Date): Promise<DonatePurchase | 'active'> {
+    if (player.thiefUntil !== undefined && player.thiefUntil > now) return 'active';
+    if (!validDonateMoney(player.euro)) return 'limit';
+    if (player.euro < donateConfig.subscriptionCost) return 'funds';
+    player.euro -= donateConfig.subscriptionCost;
+    player.thiefUntil = new Date(now.getTime() + donateConfig.subscriptionMs);
+    delete player.donateDraft;
+    return 'ok';
+  }
+  async theftTargetCount(actorId: number, memberIds: readonly number[]): Promise<number> {
+    return [...this.state.players.values()].filter(player => player._id !== actorId && memberIds.includes(player._id)).length;
+  }
+  async theftTarget(actorId: number, memberIds: readonly number[], offset: number): Promise<Player | null> {
+    return [...this.state.players.values()].filter(player => player._id !== actorId && memberIds.includes(player._id)).sort((a, b) => a._id - b._id)[offset] ?? null;
+  }
+  async steal(actor: Player, victim: Player, amount: number, now: Date): Promise<boolean> {
+    if (actor._id === victim._id || !Number.isSafeInteger(amount) || amount < 0 || amount % game.kcScale !== 0) throw new Error('Invalid theft');
+    if (!validDonateMoney(actor.kc) || !validDonateMoney(actor.stolenKC ?? 0) || !validDonateMoney(victim.kc)) return false;
+    if (actor.thiefUntil === undefined || actor.thiefUntil <= now || (actor.nextTheftAt !== undefined && actor.nextTheftAt > now)
+      || actor.kc > game.maxAmount - amount || (actor.stolenKC ?? 0) > game.maxAmount - amount || victim.kc < amount) return false;
+    actor.kc += amount;
+    actor.stolenKC = (actor.stolenKC ?? 0) + amount;
+    victim.kc -= amount;
+    actor.nextTheftAt = new Date(now.getTime() + donateConfig.theftCooldownMs);
+    return true;
+  }
+  async dealer(): Promise<DealerState> { return structuredClone(this.state.dealer); }
+  async hasCroupier(vkId: number): Promise<boolean> {
+    return this.state.items.some(item => item.vkId === vkId && item.kind === 'croupier');
+  }
+  async buyDealer(player: Player, previous: Player | null, state: DealerState, now: Date): Promise<DealerPurchase> {
+    if (state.holderId === player._id) return 'self';
+    if (state.holderId === null && previous !== null) return 'limit';
+    if (!validDonateMoney(player.euro) || !validDonateMoney(state.earnedKC) || (previous !== null && !validDonateMoney(previous.kc))) return 'limit';
+    if (state.nextChangeAt > now && !await this.hasCroupier(player._id)) return 'cooldown';
+    if (state.holderId !== null && (previous === null || previous._id !== state.holderId || previous.kc > game.maxAmount - state.earnedKC)) return 'limit';
+    if (player.euro < donateConfig.dealerCost) return 'funds';
+    player.euro -= donateConfig.dealerCost;
+    if (previous !== null) previous.kc += state.earnedKC;
+    this.state.dealer = { _id: 'casino', holderId: player._id, earnedKC: 0, nextChangeAt: new Date(now.getTime() + donateConfig.dealerCooldownMs) };
+    delete player.donateDraft;
+    return 'ok';
+  }
 
   async playerByAccountId(accountId: number): Promise<Player | null> {
     return [...this.state.players.values()].find(player => player.accountId === accountId) ?? null;
@@ -124,6 +187,7 @@ class MemoryStore implements GameStore {
     return true;
   }
   async openItems(player: Player, kind: ItemKind, quantity: number, rewards: CaseRewards, now: Date): Promise<ItemResult> {
+    if (kind === 'croupier') throw new Error('Not a case');
     if (!validItemQuantity(quantity)) {
       throw new Error('Invalid item quantity');
     }

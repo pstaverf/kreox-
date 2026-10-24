@@ -1,3 +1,4 @@
+import type { DonateCommand, DonateDraft } from './donate.js';
 import type { AdminItemCommand, ItemCommand, ItemDraft, ItemKeyboard, ItemKind } from './items.js';
 import type { AdminBalanceCommand } from './admin-balance.js';
 import type { PromoCommand, PromoDraft } from './promo.js';
@@ -21,6 +22,9 @@ export interface Player {
   referralUrl?: string;
   promoDraft?: PromoDraft;
   itemDraft?: ItemDraft;
+  donateDraft?: DonateDraft;
+  thiefUntil?: Date;
+  nextTheftAt?: Date;
 }
 
 export interface InventoryItem {
@@ -39,6 +43,7 @@ export interface InventoryStack {
 }
 
 export type Command =
+  | DonateCommand
   | { kind: 'delete_keyboards' }
   | AdminBalanceCommand
   | AdminItemCommand
@@ -57,6 +62,8 @@ export type Command =
 
 export type KeyboardSpec =
   | ItemKeyboard
+  | { kind: 'donate' | 'donate_back' }
+  | { kind: 'donate_confirmation'; token: string; inline: boolean }
   | { kind: 'none' }
   | { kind: 'promo' | 'promo_currency' | 'promo_back' }
   | { kind: 'promo_confirm'; token: string }

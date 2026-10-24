@@ -89,6 +89,7 @@ export class MongoItemStore extends MongoPromoStore {
     return true;
   }
   async openItems(player: Player, kind: ItemKind, quantity: number, rewards: CaseRewards, now: Date): Promise<ItemResult> {
+    if (kind === 'croupier') throw new Error('Not a case');
     if (![rewards.kc, rewards.euro].every(value => Number.isSafeInteger(value) && value >= 0 && value <= game.maxAmount)) {
       throw new Error('Invalid case rewards');
     }

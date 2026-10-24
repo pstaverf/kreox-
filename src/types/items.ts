@@ -1,6 +1,6 @@
 import type { InventoryItem, KeyboardSpec, Player } from './game.js';
 
-export type ItemKind = 'zhdun_case' | 'referral_case';
+export type ItemKind = 'zhdun_case' | 'referral_case' | 'croupier';
 export type PlayerTarget = { kind: 'number'; id: number } | { kind: 'vk'; id: number } | { kind: 'screen'; name: string };
 export type AdminItemCommand =
   | { kind: 'admin_itemlist' }

@@ -1,7 +1,8 @@
 import type { BalanceOperation } from '../types/admin-balance.js';
 import { validBalanceChange } from '../services/admin-balance.js';
 import { randomInt } from 'node:crypto';
-import { MongoItemStore } from './mongo-items.js';
+import { MongoDonateStore } from './mongo-donate.js';
+import type { DealerState } from '../types/donate.js';
 import type { ItemOffer } from '../types/items.js';
 import type { Promo, PromoRedemption } from '../types/promo.js';
 import { MongoBulkWriteError, MongoClient, MongoServerError, type ClientSession, type Db, type WriteError } from 'mongodb';
@@ -25,6 +26,8 @@ export class MongoGameDatabase implements GameDatabase {
     if (!isRecord(hello) || (typeof hello.setName !== 'string' && hello.msg !== 'isdbgrid')) {
       throw new Error('MongoDB replica set is required');
     }
+    const dealer = await this.db.collection<DealerState>('dealer').updateOne({ _id: 'casino' }, { $setOnInsert: { holderId: null, earnedKC: 0, nextChangeAt: new Date(0) } }, { upsert: true });
+    if (!dealer.acknowledged || dealer.matchedCount + dealer.upsertedCount !== 1) throw new Error('Dealer initialization failed');
     await this.db.collection<ItemOffer>('item_offers').createIndex({ buyerId: 1, state: 1, expiresAt: 1 });
     await this.db.collection<InventoryItem>('inventory').createIndex({ vkId: 1, kind: 1, reservedUntil: 1, itemId: 1 });
     await this.db.collection<InventoryItem>('inventory').createIndex({ offerId: 1, vkId: 1 });
@@ -113,7 +116,7 @@ export class MongoGameDatabase implements GameDatabase {
   }
 }
 
-class MongoGameStore extends MongoItemStore implements GameStore {
+class MongoGameStore extends MongoDonateStore implements GameStore {
   private readonly players;
   private readonly items;
   private readonly messages;
