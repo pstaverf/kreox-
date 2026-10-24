@@ -32,6 +32,12 @@ export interface InventoryItem {
   offerId?: string;
 }
 
+export interface InventoryStack {
+  itemId: number;
+  kind: ItemKind;
+  quantity: number;
+}
+
 export type Command =
   | { kind: 'delete_keyboards' }
   | AdminBalanceCommand

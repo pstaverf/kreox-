@@ -1,7 +1,7 @@
 import type { ItemStore } from './items.js';
 import type { BalanceOperation } from './admin-balance.js';
 import type { Promo, PromoActivation, PromoCreation, PromoDraft } from './promo.js';
-import type { GameInput, InventoryItem, MiningFarm, Notification, Player, Ranking, RankingMetric, PreparedReply, ProcessedMessage, Reply, Reward } from './game.js';
+import type { GameInput, InventoryStack, MiningFarm, Notification, Player, Ranking, RankingMetric, PreparedReply, ProcessedMessage, Reply, Reward } from './game.js';
 
 export interface GameStore extends ItemStore {
   updateKC(vkId: number, operation: BalanceOperation, amount: number): Promise<boolean>;
@@ -16,8 +16,8 @@ export interface GameStore extends ItemStore {
   register(vkId: number, name: string): Promise<Player | null>;
   now(): Promise<Date>;
   claim(player: Player, day: number, reward: Reward, now: Date): Promise<boolean>;
-  inventory(vkId: number, page: number): Promise<InventoryItem[]>;
-  inventoryAll(vkId: number): Promise<InventoryItem[]>;
+  inventory(vkId: number, page: number): Promise<InventoryStack[]>;
+  inventoryAll(vkId: number): Promise<InventoryStack[]>;
   saveMining(player: Player, farm: MiningFarm, bitcoinDelta: number): Promise<boolean>;
   ranking(metric: RankingMetric, player: Player): Promise<Ranking>;
   saveReferralUrl(vkId: number, url: string): Promise<void>;

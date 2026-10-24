@@ -1,5 +1,5 @@
 import { game } from '../config/game.js';
-import type { InventoryItem, MiningFarm, Player, Ranking, RankingMetric, Reward } from '../types/game.js';
+import type { InventoryStack, MiningFarm, Player, Ranking, RankingMetric, Reward } from '../types/game.js';
 
 export const labels = {
   createPromo: '📝 Создать промо',
@@ -107,10 +107,10 @@ export function cooldownText(remainingMs: number): string {
   return `⏳ Подожди ещё ${Math.floor(seconds / 3_600)} ч. ${Math.floor(seconds % 3_600 / 60)} мин. ${seconds % 60} сек.`;
 }
 
-export function inventoryText(items: readonly InventoryItem[]): string {
+export function inventoryText(items: readonly InventoryStack[]): string {
   return `${texts.inventoryTitle}\n\n${items.length === 0
     ? texts.emptyInventory
-    : items.map(item => `🆔 ${item.itemId} — ${item.kind === 'zhdun_case' ? texts.caseName : texts.referralCaseName} (1 шт.)`).join('\n')}`;
+    : items.map(item => `🆔 ${item.itemId} — ${item.kind === 'zhdun_case' ? texts.caseName : texts.referralCaseName} (${item.quantity} шт.)`).join('\n')}`;
 }
 
 

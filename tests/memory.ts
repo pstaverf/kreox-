@@ -6,7 +6,7 @@ import { validBalanceChange } from '../src/services/admin-balance.js';
 import type { Promo, PromoActivation, PromoCreation, PromoDraft } from '../src/types/promo.js';
 import { promoRedemptionId, promoTotal, validatePromo } from '../src/services/promo-rules.js';
 import { accountCapacity, game } from '../src/config/game.js';
-import type { GameInput, InventoryItem, MiningFarm, Notification, Player, PreparedReply, Ranking, RankingMetric, ProcessedMessage, Reply, Reward } from '../src/types/game.js';
+import type { GameInput, InventoryItem, InventoryStack, MiningFarm, Notification, Player, PreparedReply, Ranking, RankingMetric, ProcessedMessage, Reply, Reward } from '../src/types/game.js';
 import { initialFarm } from '../src/services/mining.js';
 import { rankingScore } from '../src/services/rankings.js';
 import type { GameDatabase, GameStore } from '../src/types/storage.js';
@@ -329,14 +329,30 @@ class MemoryStore implements GameStore {
     return true;
   }
 
-  async inventory(vkId: number, page: number): Promise<InventoryItem[]> {
-    return this.state.items.filter(item => item.vkId === vkId && item.itemId > page * game.inventoryPageSize)
-      .sort((left, right) => left.itemId - right.itemId).slice(0, game.inventoryPageSize + 1);
+  async inventory(vkId: number, page: number): Promise<InventoryStack[]> {
+    const offset = page * game.inventoryPageSize;
+    return this.inventoryStacks(vkId).slice(offset, offset + game.inventoryPageSize + 1);
   }
 
-  async inventoryAll(vkId: number): Promise<InventoryItem[]> {
-    return this.state.items.filter(item => item.vkId === vkId)
-      .sort((a, b) => a.itemId - b.itemId).slice(0, game.chatInventoryLimit + 1);
+  async inventoryAll(vkId: number): Promise<InventoryStack[]> {
+    return this.inventoryStacks(vkId).slice(0, game.chatInventoryLimit + 1);
+  }
+
+  private inventoryStacks(vkId: number): InventoryStack[] {
+    const stacks = new Map<ItemKind, InventoryStack>();
+    for (const item of this.state.items) {
+      if (item.vkId !== vkId) {
+        continue;
+      }
+      const stack = stacks.get(item.kind);
+      if (stack === undefined) {
+        stacks.set(item.kind, { itemId: item.itemId, kind: item.kind, quantity: 1 });
+      } else {
+        stack.itemId = Math.min(stack.itemId, item.itemId);
+        stack.quantity += 1;
+      }
+    }
+    return [...stacks.values()].sort((left, right) => left.itemId - right.itemId);
   }
 
   async saveMining(player: Player, farm: MiningFarm, bitcoinDelta: number): Promise<boolean> {

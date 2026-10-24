@@ -235,7 +235,7 @@ test('ranking returns 20 entries and the caller’s actual place, with determini
   assert.equal(rankingScore(database.player(), 'mining'), game.mining.initialRate);
 });
 
-test('chat aliases have no keyboard and show the entire small inventory, rather than its first page', async () => {
+test('chat aliases have no keyboard and show every inventory stack with full totals', async () => {
   const { send, database } = await fixture();
   database.state.items = Array.from({ length: 12 }, (_, index): InventoryItem => ({
     _id: `1:${index + 1}`, vkId: 1, itemId: index + 1, kind: index % 2 === 0 ? 'zhdun_case' : 'referral_case'
@@ -245,19 +245,21 @@ test('chat aliases have no keyboard and show the entire small inventory, rather 
   assert.equal(profile.text.includes('\n\n'), false);
   const inventory = await send({ kind: 'inventory', page: 0 }, 1, { isChat: true });
   assert.deepEqual(inventory.keyboard, { kind: 'none' });
-  assert.match(inventory.text, /🆔 12 — 👬 Кейс «Реферальный»/);
-  assert.equal((inventory.text.match(/🆔 /g) ?? []).length, 12);
+  assert.equal(inventory.text, '🎒 Ваш инвентарь:\n\n🆔 1 — 💼 Кейс «Ждун» (6 шт.)\n🆔 2 — 👬 Кейс «Реферальный» (6 шт.)');
   const personal = await send({ kind: 'inventory', page: 0 });
   assert.equal(personal.keyboard.kind, 'inventory');
-  assert.equal((personal.text.match(/🆔 /g) ?? []).length, 8);
+  assert.equal(personal.text, inventory.text);
+  assert.deepEqual(personal.keyboard, { kind: 'inventory', page: 0, itemIds: [1, 2], hasNext: false });
 });
 
-test('oversized chat inventory produces an explicit limit response, without losing items or silently truncating', async () => {
+test('large stacks fit in one chat message without truncation or loss of units', async () => {
   const { send, database } = await fixture();
   database.state.items = Array.from({ length: 300 }, (_, index) => ({
     _id: `1:${index + 1}`, vkId: 1, itemId: index + 1, kind: 'zhdun_case'
   }));
-  assert.equal((await send({ kind: 'inventory', page: 0 }, 1, { isChat: true })).text, texts.inventoryTooLarge);
+  const inventory = await send({ kind: 'inventory', page: 0 }, 1, { isChat: true });
+  assert.equal(inventory.text, '🎒 Ваш инвентарь:\n\n🆔 1 — 💼 Кейс «Ждун» (300 шт.)');
+  assert.deepEqual(inventory.keyboard, { kind: 'none' });
   assert.equal(database.state.items.length, 300);
 });
 

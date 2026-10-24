@@ -335,7 +335,7 @@ test('giveitem accepts an optional quantity, defaults to one, and handles mentio
   }
 });
 
-test('batch give is atomic and deduplicated, allocates consecutive IDs and preserves one-unit inventory rows', async () => {
+test('batch give is atomic and deduplicated, allocates consecutive IDs and shows one stack', async () => {
   const { text, send, db } = await fixture();
   const first = await text('!giveitem 0 1 10', 888801846, { eventId: 'batch-give' });
   assert.equal(first.text, 'Done.');
@@ -345,10 +345,11 @@ test('batch give is atomic and deduplicated, allocates consecutive IDs and prese
   assert.deepEqual(await text('!giveitem 0 1 10', 888801846, { eventId: 'batch-give' }), first);
   assert.equal(db.state.items.length, 10);
   const inventory = await send({ kind: 'inventory', page: 0 });
-  assert.ok(inventory.text.includes('🆔 1 — 💼 Кейс «Ждун» (1 шт.)'));
-  assert.equal((inventory.text.match(/\(1 шт\.\)/g) ?? []).length, 8);
+  assert.equal(inventory.text, '🎒 Ваш инвентарь:\n\n🆔 1 — 💼 Кейс «Ждун» (10 шт.)');
+  assert.deepEqual(inventory.keyboard, { kind: 'inventory', page: 0, itemIds: [1], hasNext: false });
   const chat = await send({ kind: 'inventory', page: 0 }, 1, { isChat: true });
-  assert.equal((chat.text.match(/\(1 шт\.\)/g) ?? []).length, 10);
+  assert.equal(chat.text, inventory.text);
+  assert.deepEqual(chat.keyboard, { kind: 'none' });
   const before = structuredClone(db.state);
   db.failRemember = true;
   await assert.rejects(text('!giveitem 0 1 10', 888801846));
@@ -369,4 +370,48 @@ test('a single referral case is displayed with its personal ID and explicit quan
   await grant(1);
   const inventory = await send({ kind: 'inventory', page: 0 });
   assert.equal(inventory.text, '🎒 Ваш инвентарь:\n\n🆔 1 — 💼 Кейс «Ждун» (1 шт.)\n🆔 2 — 👬 Кейс «Реферальный» (1 шт.)');
+});
+
+
+test('legacy IDs 4 to 7 form one four-unit stack with one working button and update after use', async () => {
+  const { db, send, text, grant } = await fixture();
+  db.state.items = [7, 5, 4, 6].map(itemId => ({
+    _id: `1:${itemId}`, vkId: 1, itemId, kind: 'referral_case'
+  }));
+  db.player().nextItemId = 8;
+  await grant(20, 2);
+  const before = structuredClone(db.state.items);
+  const inventory = await send({ kind: 'inventory', page: 0 });
+  assert.equal(inventory.text, '🎒 Ваш инвентарь:\n\n🆔 4 — 👬 Кейс «Реферальный» (4 шт.)');
+  assert.deepEqual(inventory.keyboard, { kind: 'inventory', page: 0, itemIds: [4], hasNext: false });
+  assert.equal((await send({ kind: 'inventory', page: 0 }, 1, { isChat: true })).text, inventory.text);
+  assert.deepEqual(db.state.items, before);
+  assert.equal((await send({ kind: 'item', itemId: 4 })).text, itemDetails('referral_case', 4));
+  await send({ kind: 'item_open', itemKind: 'referral_case', quantity: 1 });
+  assert.equal((await send({ kind: 'inventory', page: 0 })).text,
+    '🎒 Ваш инвентарь:\n\n🆔 5 — 👬 Кейс «Реферальный» (3 шт.)');
+  assert.equal((await text('!takeitem 0 2', 888801846)).text, 'Done.');
+  assert.equal((await text('!giveitem 0 2', 888801846)).text, 'Done.');
+  assert.equal((await send({ kind: 'inventory', page: 0 })).text,
+    '🎒 Ваш инвентарь:\n\n🆔 6 — 👬 Кейс «Реферальный» (3 шт.)');
+});
+
+test('gifts and purchases merge with existing stacks while reservations remain unavailable for use', async () => {
+  const { send, grant, startTransfer, offer } = await fixture();
+  await grant(4);
+  await grant(2, 2);
+  const confirmation = await startTransfer('gift', 2);
+  await send(confirmation);
+  assert.equal((await send({ kind: 'inventory', page: 0 }, 2)).text,
+    '🎒 Ваш инвентарь:\n\n🆔 1 — 👬 Кейс «Реферальный» (4 шт.)');
+  const sale = await offer(1, '0');
+  assert.equal((await send({ kind: 'inventory', page: 0 })).text,
+    '🎒 Ваш инвентарь:\n\n🆔 3 — 👬 Кейс «Реферальный» (2 шт.)');
+  assert.equal((await send({ kind: 'item', itemId: 3 })).text, itemDetails('referral_case', 1));
+  await send({ kind: 'item_buy', offerId: sale._id }, 2);
+  assert.equal((await send({ kind: 'inventory', page: 0 }, 2)).text,
+    '🎒 Ваш инвентарь:\n\n🆔 1 — 👬 Кейс «Реферальный» (5 шт.)');
+  const inventory = await send({ kind: 'inventory', page: 0 });
+  assert.equal(inventory.text, '🎒 Ваш инвентарь:\n\n🆔 4 — 👬 Кейс «Реферальный» (1 шт.)');
+  assert.deepEqual(inventory.keyboard, { kind: 'inventory', page: 0, itemIds: [4], hasNext: false });
 });

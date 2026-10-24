@@ -6,7 +6,7 @@ import type { ItemOffer } from '../types/items.js';
 import type { Promo, PromoRedemption } from '../types/promo.js';
 import { MongoBulkWriteError, MongoClient, MongoServerError, type ClientSession, type Db, type WriteError } from 'mongodb';
 import { accountCapacity, game } from '../config/game.js';
-import type { Counter, GameInput, InventoryItem, KeyboardSpec, MiningFarm, Notification, Player, PreparedReply, RankedPlayer, Ranking, RankingMetric, ProcessedMessage, Reply, Reward } from '../types/game.js';
+import type { Counter, GameInput, InventoryItem, InventoryStack, KeyboardSpec, MiningFarm, Notification, Player, PreparedReply, RankedPlayer, Ranking, RankingMetric, ProcessedMessage, Reply, Reward } from '../types/game.js';
 import { DuplicateWriteError, type GameDatabase, type GameStore } from '../types/storage.js';
 import { availableAccountIds } from '../services/rules.js';
 import { initialFarm } from '../services/mining.js';
@@ -275,16 +275,23 @@ class MongoGameStore extends MongoItemStore implements GameStore {
     return true;
   }
 
-  async inventory(vkId: number, page: number): Promise<InventoryItem[]> {
-    return this.items.find(
-      { vkId, itemId: { $gt: page * game.inventoryPageSize } },
-      { session: this.session, projection: { _id: 1, vkId: 1, itemId: 1, kind: 1 } }
-    ).sort({ itemId: 1 }).limit(game.inventoryPageSize + 1).toArray();
+  async inventory(vkId: number, page: number): Promise<InventoryStack[]> {
+    return this.inventoryStacks(vkId, page * game.inventoryPageSize, game.inventoryPageSize + 1);
   }
 
-  async inventoryAll(vkId: number): Promise<InventoryItem[]> {
-    return this.items.find({ vkId }, { session: this.session })
-      .sort({ itemId: 1 }).limit(game.chatInventoryLimit + 1).toArray();
+  async inventoryAll(vkId: number): Promise<InventoryStack[]> {
+    return this.inventoryStacks(vkId, 0, game.chatInventoryLimit + 1);
+  }
+
+  private async inventoryStacks(vkId: number, offset: number, limit: number): Promise<InventoryStack[]> {
+    return this.items.aggregate<InventoryStack>([
+      { $match: { vkId } },
+      { $group: { _id: '$kind', itemId: { $min: '$itemId' }, quantity: { $sum: 1 } } },
+      { $project: { _id: 0, kind: '$_id', itemId: 1, quantity: 1 } },
+      { $sort: { itemId: 1 } },
+      { $skip: offset },
+      { $limit: limit }
+    ], { session: this.session }).toArray();
   }
 
   async saveMining(player: Player, farm: MiningFarm, bitcoinDelta: number): Promise<boolean> {

@@ -151,16 +151,17 @@ test('overflow refuses the whole reward without advancing the cooldown', async (
   assert.equal(database.state.items.length, 0);
 });
 
-test('inventory is ordered and paginated and never includes another player’s items', async () => {
+test('inventory groups all owned units before pagination and excludes another player’s items', async () => {
   const { database, send } = await fixture();
   database.state.items = Array.from({ length: 10 }, (_, index) => ({
     _id: `1:${10 - index}`, vkId: 1, itemId: 10 - index, kind: 'zhdun_case'
   }));
   database.state.items.push({ _id: '2:1', vkId: 2, itemId: 1, kind: 'zhdun_case' });
   assert.deepEqual((await send({ kind: 'inventory', page: 0 })).keyboard,
-    { kind: 'inventory', page: 0, itemIds: [1, 2, 3, 4, 5, 6, 7, 8], hasNext: true });
+    { kind: 'inventory', page: 0, itemIds: [1], hasNext: false });
+  assert.equal((await send({ kind: 'inventory', page: 0 })).text, '🎒 Ваш инвентарь:\n\n🆔 1 — 💼 Кейс «Ждун» (10 шт.)');
   assert.deepEqual((await send({ kind: 'inventory', page: 1 })).keyboard,
-    { kind: 'inventory', page: 1, itemIds: [9, 10], hasNext: false });
+    { kind: 'inventory', page: 1, itemIds: [], hasNext: false });
 });
 
 test('invalid identity and inventory pages cause no write', async () => {

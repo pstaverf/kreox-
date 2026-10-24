@@ -40,6 +40,16 @@ test('MongoDB replica set: item opening, gifts, reserved purchases, expiration a
     assert.equal(await items.countDocuments({ vkId: 1 }), 0);
     assert.equal((await players.findOne({ _id: 1 }))?.kc, 150_000);
     assert.equal(await grant(3), true);
+    const inventory = await service.handle({
+      eventId: 'grouped-inventory', vkId: 1, command: { kind: 'inventory', page: 0 }
+    }, async () => 'Игрок');
+    assert.equal(inventory.text, '🎒 Ваш инвентарь:\n\n🆔 2 — 👬 Кейс «Реферальный» (3 шт.)');
+    assert.deepEqual(inventory.keyboard, { kind: 'inventory', page: 0, itemIds: [2], hasNext: false });
+    assert.equal((await service.handle({
+      eventId: 'grouped-chat-inventory', vkId: 1, isChat: true, command: { kind: 'inventory', page: 0 }
+    }, async () => 'Игрок')).text, inventory.text);
+    assert.deepEqual(await database.transaction(store => store.inventory(1, 1)), []);
+    assert.deepEqual(await database.transaction(store => store.inventoryAll(2)), []);
     await assert.rejects(database.transaction(async store => {
       const sender = await store.player(1);
       const receiver = await store.player(2);
