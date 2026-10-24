@@ -315,3 +315,58 @@ test('item cards and use screens have exactly one blank line, only after the dro
     assert.equal(itemDetails(entry.kind, 5, true), `«${entry.name}» (доступно: 5 шт.):\nМожет выпасть:\n\n${drops}`);
   }
 });
+
+test('giveitem accepts an optional quantity, defaults to one, and handles mentions containing spaces or numbers', () => {
+  for (const [text, quantity] of [
+    ['!giveitem 0 1 10', 10], ['!giveitem 0 1 1', 1], ['!giveitem @id1 2 1000', 1000],
+    ['!giveitem [id1|Имя 1 2] 1 10', 10], ['!giveitem 0 1', 1]
+  ] as const) {
+    const command = parseCommand(text, undefined);
+    assert.equal(command.kind, 'admin_item');
+    if (command.kind !== 'admin_item') {
+      assert.fail('Invalid give command');
+    }
+    assert.equal(command.operation, 'give');
+    assert.equal(command.quantity, quantity);
+  }
+  for (const text of ['!giveitem 0 1 0', '!giveitem 0 1 -1', '!giveitem 0 1 1.5', '!giveitem 0 1 1001',
+    '!giveitem 0 1 999999999999999999', '!giveitem 0 1 1k', '!giveitem 0 1 10 20', '!takeitem 0 1 10']) {
+    assert.deepEqual(parseCommand(text, undefined), { kind: 'admin_item_invalid' });
+  }
+});
+
+test('batch give is atomic and deduplicated, allocates consecutive IDs and preserves one-unit inventory rows', async () => {
+  const { text, send, db } = await fixture();
+  const first = await text('!giveitem 0 1 10', 888801846, { eventId: 'batch-give' });
+  assert.equal(first.text, 'Done.');
+  assert.equal(db.state.items.length, 10);
+  assert.deepEqual(db.state.items.map(item => item.itemId), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+  assert.equal(db.player().nextItemId, 11);
+  assert.deepEqual(await text('!giveitem 0 1 10', 888801846, { eventId: 'batch-give' }), first);
+  assert.equal(db.state.items.length, 10);
+  const inventory = await send({ kind: 'inventory', page: 0 });
+  assert.ok(inventory.text.includes('🆔 1 — 💼 Кейс «Ждун» (1 шт.)'));
+  assert.equal((inventory.text.match(/\(1 шт\.\)/g) ?? []).length, 8);
+  const chat = await send({ kind: 'inventory', page: 0 }, 1, { isChat: true });
+  assert.equal((chat.text.match(/\(1 шт\.\)/g) ?? []).length, 10);
+  const before = structuredClone(db.state);
+  db.failRemember = true;
+  await assert.rejects(text('!giveitem 0 1 10', 888801846));
+  assert.deepEqual(db.state, before);
+});
+
+test('batch give refuses an exhausted ID range without partial allocation', async () => {
+  const { text, db } = await fixture();
+  db.player().nextItemId = game.maxAmount - 5;
+  assert.equal((await text('!giveitem 0 1 10', 888801846)).text, itemTexts.limit);
+  assert.equal(db.state.items.length, 0);
+  assert.equal(db.player().nextItemId, game.maxAmount - 5);
+});
+
+test('a single referral case is displayed with its personal ID and explicit quantity', async () => {
+  const { grant, send } = await fixture();
+  await grant(1, 1, 'zhdun_case');
+  await grant(1);
+  const inventory = await send({ kind: 'inventory', page: 0 });
+  assert.equal(inventory.text, '🎒 Ваш инвентарь:\n\n🆔 1 — 💼 Кейс «Ждун» (1 шт.)\n🆔 2 — 👬 Кейс «Реферальный» (1 шт.)');
+});

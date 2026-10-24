@@ -110,7 +110,7 @@ export function cooldownText(remainingMs: number): string {
 export function inventoryText(items: readonly InventoryItem[]): string {
   return `${texts.inventoryTitle}\n\n${items.length === 0
     ? texts.emptyInventory
-    : items.map(item => `🆔 ${item.itemId} — ${item.kind === 'zhdun_case' ? texts.caseName : texts.referralCaseName}`).join('\n')}`;
+    : items.map(item => `🆔 ${item.itemId} — ${item.kind === 'zhdun_case' ? texts.caseName : texts.referralCaseName} (1 шт.)`).join('\n')}`;
 }
 
 

@@ -90,7 +90,7 @@ test('seven claims give exactly one case, the eighth starts a new cycle', async 
   assert.equal(database.player().bitcoin, game.rewards.reduce((sum, reward) => sum + reward.bitcoin, 0));
   assert.deepEqual(database.state.items, [{ _id: '1:1', vkId: 1, itemId: 1, kind: 'zhdun_case' }]);
   assert.equal(database.player().nextItemId, 2);
-  assert.equal((await send({ kind: 'inventory', page: 0 })).text, '🎒 Ваш инвентарь:\n\n🆔 1 — 💼 Кейс «Ждун»');
+  assert.equal((await send({ kind: 'inventory', page: 0 })).text, '🎒 Ваш инвентарь:\n\n🆔 1 — 💼 Кейс «Ждун» (1 шт.)');
   assert.match((await send({ kind: 'bonus' })).text, /Бонус 1-го дня/);
   assert.equal(database.state.items.length, 1);
 });

@@ -26,14 +26,15 @@ export async function adminItems(store: GameStore, command: AdminItemCommand): P
     return reply(itemTexts.adminUsage);
   }
   const entry = itemConfig.catalog.find(item => item.id === command.catalogId);
-  if (entry === undefined || command.target.kind === 'screen') {
+  if (entry === undefined || command.target.kind === 'screen' || !validItemQuantity(command.quantity)
+    || (command.operation === 'take' && command.quantity !== 1)) {
     return reply(itemTexts.adminUsage);
   }
   const receiver = await resolveStoredTarget(store, command.target, undefined);
   if (receiver === null || receiver === 'target') {
     return reply(itemTexts.missing);
   }
-  const success = command.operation === 'give' ? await store.grantItems(receiver._id, entry.kind, 1)
+  const success = command.operation === 'give' ? await store.grantItems(receiver._id, entry.kind, command.quantity)
     : await store.removeItems(receiver._id, entry.kind, 1, await store.now());
   return reply(success ? itemTexts.done : command.operation === 'take' ? itemTexts.none : itemTexts.limit);
 }

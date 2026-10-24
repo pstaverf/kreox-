@@ -5,7 +5,7 @@ export type PlayerTarget = { kind: 'number'; id: number } | { kind: 'vk'; id: nu
 export type AdminItemCommand =
   | { kind: 'admin_itemlist' }
   | { kind: 'admin_item_invalid' }
-  | { kind: 'admin_item'; operation: 'give' | 'take'; target: PlayerTarget; catalogId: number };
+  | { kind: 'admin_item'; operation: 'give' | 'take'; target: PlayerTarget; catalogId: number; quantity: number };
 export type ItemCommand =
   | { kind: 'item_detail' | 'item_use' | 'item_custom' | 'item_gift' | 'item_sell'; itemKind: ItemKind }
   | { kind: 'item_open'; itemKind: ItemKind; quantity: number }

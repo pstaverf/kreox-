@@ -29,7 +29,7 @@ export const itemTexts = {
   expired: '⚠️ Срок сделки истёк.',
   invalidOffer: '⚠️ Сделка недоступна или уже завершена.',
   private: '⚠️ Управляйте предметами в личных сообщениях бота.',
-  adminUsage: '⚠️ Формат: !giveitem <ID игрока> <ID предмета> или !takeitem <ID игрока> <ID предмета>. Каталог: !itemlist.'
+  adminUsage: '⚠️ Формат: !giveitem <ID игрока> <ID предмета> [количество] или !takeitem <ID игрока> <ID предмета>. Каталог: !itemlist. Количество — от 1 до 1000, по умолчанию 1.'
 } as const;
 export function itemName(kind: ItemKind): string {
   const entry = itemConfig.catalog.find(item => item.kind === kind);
