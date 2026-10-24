@@ -87,7 +87,7 @@ export function profileText(player: Player): string {
     `👤Ник: ${mention(player)}`,
     `💸 Баланс: ${formatAmount(player.kc, game.kcScale)} KC`,
     `💶 Евро: ${formatAmount(player.euro, game.euroScale)}`,
-    `💠 Биткоин: ${formatAmount(player.bitcoin, game.bitcoinScale)}₿`,
+    `💠 Биткоин: ${formatMining(player.bitcoin)}₿`,
     `👍 Репутация: ${player.reputation}`,
     `🏆 Задания: ${player.completedTasks}/${game.totalTasks} [${percentage}%]`,
     `🆔${player.accountId}`
@@ -175,7 +175,7 @@ function rankingValue(score: number, metric: RankingMetric): string {
   switch (metric) {
     case 'kc':
     case 'stolenKC': return `${formatAmount(score, game.kcScale)} KC`;
-    case 'bitcoin': return `${formatAmount(score, game.bitcoinScale)}₿`;
+    case 'bitcoin': return `${formatMining(score)}₿`;
     case 'mining': return `${formatMining(score)}₿/час`;
     case 'euro': return `${formatAmount(score, game.euroScale)} 💶`;
     case 'referrals': return `${formatAmount(score, 1)} рефералов.`;
@@ -191,5 +191,5 @@ export function rankingText(metric: RankingMetric, ranking: Ranking, player: Pla
 }
 
 export function miningWithdrawalText(amount: number): string {
-  return `✅ Вы сняли ${formatAmount(amount, game.bitcoinScale)}₿.`;
+  return `✅ Вы сняли ${formatMining(amount)}₿.`;
 }

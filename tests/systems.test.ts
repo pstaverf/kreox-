@@ -6,7 +6,7 @@ import { buildKeyboard } from '../src/handlers/keyboards.js';
 import { GameService } from '../src/services/game.js';
 import { initialFarm, nextUpgradeCost, randomMiningIncrease, settleFarm } from '../src/services/mining.js';
 import { rankingScore } from '../src/services/rankings.js';
-import { formatMining, labels, rankEmoji, texts } from '../src/services/texts.js';
+import { formatMining, labels, miningWithdrawalText, rankEmoji, texts } from '../src/services/texts.js';
 import type { Command, GameInput, InventoryItem, MiningFarm, RankingMetric } from '../src/types/game.js';
 import { MemoryDatabase } from './memory.js';
 
@@ -320,4 +320,75 @@ test('bonus and referral cases share one personal acquisition sequence', async (
   await send({ kind: 'profile' }, 2, { referrerId: 1 });
   assert.deepEqual(database.state.items.map(item => [item.itemId, item.kind]), [[1, 'zhdun_case'], [2, 'referral_case']]);
   assert.equal(database.player().nextItemId, 3);
+});
+
+
+test('BTC displays truncate to three comma decimals at boundaries without floating-point rounding', () => {
+  for (const [amount, expected] of [
+    [0, '0,000'], [1, '0,000'], [99_999, '0,000'], [100_000, '0,001'],
+    [99_999_999, '0,999'], [100_000_000, '1,000'], [111_617_014, '1,116'],
+    [123_999_999, '1,239'], [371_117_014, '3,711'], [Number.MAX_SAFE_INTEGER, '90071992,547']
+  ] as const) {
+    assert.equal(formatMining(amount), expected);
+    assert.equal(miningWithdrawalText(amount), `✅ Вы сняли ${expected}₿.`);
+  }
+  for (const amount of [-1, 0.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
+    assert.throws(() => formatMining(amount));
+    assert.throws(() => miningWithdrawalText(amount));
+  }
+});
+
+test('withdrawal, profile and both BTC ranking sections hide extra decimals without losing satoshis', async () => {
+  const { database, send, farm } = await fixture();
+  for (const id of [2, 3, 4]) {
+    await send({ kind: 'profile' }, id);
+  }
+  database.player().name = "'felix";
+  database.player().bitcoin = 259_500_000;
+  database.player().mining = { ...initialFarm(), balance: 111_617_014 };
+  database.player(2).name = 'K I R';
+  database.player(2).bitcoin = 398_500_000;
+  database.player(3).name = 'Beswes';
+  database.player(3).bitcoin = 150_000_000;
+  database.player(4).name = 'Асхаб';
+  const withdrawal = await send({ kind: 'mining_withdraw' }, 1, { eventId: 'precise-withdrawal' });
+  assert.equal(withdrawal.text, '✅ Вы сняли 1,116₿.');
+  assert.equal(database.player().bitcoin, 371_117_014);
+  assert.equal(farm().balance, 0);
+  assert.deepEqual(await send({ kind: 'mining_withdraw' }, 1, { eventId: 'precise-withdrawal' }), withdrawal);
+  assert.equal(database.player().bitcoin, 371_117_014);
+  const ranking = await send({ kind: 'ranking', metric: 'bitcoin' });
+  assert.equal(ranking.text, [
+    '💠 Топ игроков по биткоинам:', '',
+    '1️⃣ [id2|K I R] — 3,985₿',
+    "2️⃣ [id1|'felix] — 3,711₿",
+    '3️⃣ [id3|Beswes] — 1,500₿',
+    '4️⃣ [id4|Асхаб] — 0,000₿',
+    '—————————————————',
+    "➡2️⃣ [id1|'felix] — 3,711₿"
+  ].join('\n'));
+  const profile = await send({ kind: 'profile' });
+  assert.ok(profile.text.includes('💠 Биткоин: 3,711₿'));
+  assert.equal(profile.text.split('\n').length, 7);
+  assert.equal(profile.text.includes('\n\n'), false);
+  const menu = await send({ kind: 'menu' });
+  assert.ok(menu.text.endsWith(profile.text));
+  assert.equal(database.player().bitcoin, 371_117_014);
+});
+
+test('BTC ranking still compares exact satoshis when the displayed thousandths are equal', async () => {
+  const { database, send } = await fixture();
+  await send({ kind: 'profile' }, 2);
+  database.player().bitcoin = 371_117_014;
+  database.player(2).bitcoin = 371_117_015;
+  const ranking = await send({ kind: 'ranking', metric: 'bitcoin' });
+  assert.equal(ranking.text, [
+    '💠 Топ игроков по биткоинам:', '',
+    '1️⃣ [id2|Игрок 2] — 3,711₿',
+    '2️⃣ [id1|Игрок 1] — 3,711₿',
+    '—————————————————',
+    '➡2️⃣ [id1|Игрок 1] — 3,711₿'
+  ].join('\n'));
+  assert.equal(database.player().bitcoin, 371_117_014);
+  assert.equal(database.player(2).bitcoin, 371_117_015);
 });
