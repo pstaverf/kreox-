@@ -1,3 +1,6 @@
+import { bankAction, bankText } from './bank.js';
+import { bankTexts } from './bank-texts.js';
+import { isBankCommand } from './bank-rules.js';
 import { donateConfig } from '../config/donate.js';
 import { donateAction, donateText, type DonateRandom } from './donate.js';
 import { isDonateCommand } from './donate-rules.js';
@@ -26,7 +29,8 @@ export class GameService {
     private readonly resolveReferralUrl?: (vkId: number) => Promise<string>,
     private readonly resolveItemTarget?: (screenName: string) => Promise<number | null>,
     private readonly caseRoll: () => number = () => randomInt(100),
-    private readonly donateRoll: DonateRandom = (_purpose, maximum) => randomInt(maximum)
+    private readonly donateRoll: DonateRandom = (_purpose, maximum) => randomInt(maximum),
+    private readonly bankRoll: (maximum: number) => number = maximum => randomInt(maximum)
   ) {}
 
   async handle(input: GameInput, resolveName: () => Promise<string>, resolveChatMembers?: () => Promise<number[]>): Promise<PreparedReply> {
@@ -43,6 +47,13 @@ export class GameService {
       throw new Error('Administrator access is required');
     }
     if (input.command.kind === 'theft' && !input.isChat) throw new Error('Theft is chat-only');
+    const bankRolls = new Map<number, number>();
+    const bankRandom = (maximum: number): number => {
+      const value = bankRolls.get(maximum) ?? this.bankRoll(maximum);
+      if (!Number.isSafeInteger(value) || value < 0 || value >= maximum) throw new Error('Invalid bank roll');
+      bankRolls.set(maximum, value);
+      return value;
+    };
     let members: number[] | undefined;
     const donationRolls = new Map<string, number>();
     const donationRandom: DonateRandom = (purpose, maximum) => {
@@ -74,7 +85,7 @@ export class GameService {
             return previous.reply;
           }
           rollIndex = 0;
-          const reply = await this.execute(store, input, name, referralUrl, resolvedTarget, roll, members, donationRandom);
+          const reply = await this.execute(store, input, name, referralUrl, resolvedTarget, roll, members, donationRandom, bankRandom);
           if (typeof reply === 'string') {
             return reply;
           }
@@ -91,7 +102,7 @@ export class GameService {
           if (ids.length > donateConfig.maxChatMembers || ids.some(id => !isPositiveId(id))) throw new Error('Invalid chat members');
           members = [...new Set(ids)];
         } else if (reply === 'target') {
-          const target = parsePlayerTarget(input.text ?? '');
+          const target = input.command.kind === 'bank_transfer' ? input.command.target : parsePlayerTarget(input.text ?? '');
           if (target?.kind !== 'screen' || this.resolveItemTarget === undefined) {
             throw new Error('Item target provider is unavailable');
           }
@@ -120,7 +131,7 @@ export class GameService {
     throw new Error('Transaction retry limit reached');
   }
 
-  private async execute(store: GameStore, input: GameInput, name: string | null, referralUrl: string | null, resolvedTarget: number | null | undefined, roll: () => number, members: readonly number[] | undefined, donateRandom: DonateRandom): Promise<Reply | 'name' | 'link' | 'target' | 'members'> {
+  private async execute(store: GameStore, input: GameInput, name: string | null, referralUrl: string | null, resolvedTarget: number | null | undefined, roll: () => number, members: readonly number[] | undefined, donateRandom: DonateRandom, bankRandom: (maximum: number) => number): Promise<Reply | 'name' | 'link' | 'target' | 'members'> {
     if (input.command.kind === 'delete_keyboards') {
       return { text: texts.keyboardsDeleted, keyboard: { kind: 'none' } };
     }
@@ -145,6 +156,20 @@ export class GameService {
       return { text: registered === null ? texts.registrationLimit : texts.welcome, keyboard: { kind: 'main' } };
     }
     const command = input.command;
+    if (!input.isChat && !input.hasPayload && command.kind === 'development' && player.bankDraft !== undefined && input.text !== undefined) {
+      return bankText(store, player, player.bankDraft, input, resolvedTarget);
+    }
+    if (isBankCommand(command)) {
+      if (input.isChat && command.kind !== 'bank_transfer' && command.kind !== 'bank_transfer_invalid') return { text: bankTexts.private, keyboard: { kind: 'none' } };
+      if (!input.isChat) {
+        await store.setItemDraft(player._id, null);
+        await store.setPromoDraft(player._id, null);
+        await store.setDonateDraft(player._id, null);
+      }
+      return bankAction(store, player, command, input, resolvedTarget, bankRandom);
+    }
+    if (!input.isChat && player.bankDraft !== undefined) await store.setBankDraft(player._id, null);
+
     if (!input.isChat && !input.hasPayload && command.kind === 'development' && player.donateDraft !== undefined && input.text !== undefined) {
       return donateText(store, player, player.donateDraft, input);
     }
@@ -184,12 +209,10 @@ export class GameService {
       await store.setPromoDraft(player._id, null);
     }
     switch (command.kind) {
-      case 'city':
-        return { text: texts.city, keyboard: { kind: 'main' } };
       case 'profile':
-        return { text: profileText(player), keyboard: { kind: 'profile' } };
+        return { text: profileText(player, input.isChat ? undefined : await store.now()), keyboard: { kind: 'profile' } };
       case 'menu':
-        return { text: `${mention(player)}, меню:\n\n${profileText(player)}`, keyboard: { kind: 'main' } };
+        return { text: `${mention(player)}, меню:\n\n${profileText(player, input.isChat ? undefined : await store.now())}`, keyboard: { kind: 'main' } };
       case 'bonus': {
         const now = await store.now();
         const remaining = player.nextBonusAt.getTime() - now.getTime();

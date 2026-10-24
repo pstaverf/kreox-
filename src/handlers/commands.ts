@@ -1,3 +1,4 @@
+import { parseBankPayload, parseBankTransfer } from './bank.js';
 import { parseAdminItems, parseItemPayload } from './items.js';
 import { parseAdminBalance } from './admin-balance.js';
 import { isPromoCurrency, isPromoName } from '../services/promo-rules.js';
@@ -18,6 +19,8 @@ export function parseCommand(text: string | undefined, payload: unknown, isChat 
   if (adminBalance !== null) {
     return adminBalance;
   }
+  const bankTransfer = parseBankTransfer(text);
+  if (bankTransfer !== null) return bankTransfer;
   const normalizedText = text?.trim().toLowerCase();
   if (normalizedText === 'купитькрупье' || normalizedText === 'купить крупье') return { kind: 'dealer_buy' };
   if (isChat && normalizedText === 'вор') return { kind: 'theft' };
@@ -33,6 +36,8 @@ export function parseCommand(text: string | undefined, payload: unknown, isChat 
       return { kind: 'development' };
     }
   }
+  const bankCommand = parseBankPayload(value);
+  if (bankCommand !== null) return bankCommand;
   const itemCommand = parseItemPayload(value);
   if (itemCommand !== null) {
     return itemCommand;
@@ -69,7 +74,7 @@ export function parseCommand(text: string | undefined, payload: unknown, isChat 
     }
     if (value.command === 'menu' || value.command === 'mining' || value.command === 'profile'
       || value.command === 'bonus' || value.command === 'mining_start' || value.command === 'mining_withdraw'
-      || value.command === 'mining_upgrade' || value.command === 'referrals' || value.command === 'city' || value.command === 'development') {
+      || value.command === 'mining_upgrade' || value.command === 'referrals' || value.command === 'development') {
       return { kind: value.command };
     }
   }

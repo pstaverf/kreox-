@@ -1,7 +1,8 @@
 import type { BalanceCurrency, BalanceOperation } from '../types/admin-balance.js';
 import { isBalanceCurrency, validBalanceChange } from '../services/admin-balance.js';
 import { randomInt } from 'node:crypto';
-import { MongoDonateStore } from './mongo-donate.js';
+import { MongoBankStore } from './mongo-bank.js';
+import type { Deposit } from '../types/bank.js';
 import type { DealerState } from '../types/donate.js';
 import type { ItemOffer } from '../types/items.js';
 import type { Promo, PromoRedemption } from '../types/promo.js';
@@ -26,6 +27,11 @@ export class MongoGameDatabase implements GameDatabase {
     if (!isRecord(hello) || (typeof hello.setName !== 'string' && hello.msg !== 'isdbgrid')) {
       throw new Error('MongoDB replica set is required');
     }
+    await this.db.collection<Deposit>('deposits').createIndex({ vkId: 1, state: 1, depositId: 1 });
+    await this.db.collection<Deposit>('deposits').createIndex({ vkId: 1, depositId: 1 }, { unique: true });
+    await this.db.collection<Deposit>('deposits').createIndex({ state: 1, nextAttemptAt: 1, _id: 1 });
+    const registrationMigration = await this.db.collection<Player>('players').updateMany({ registeredAt: { $exists: false } }, [{ $set: { registeredAt: '$$NOW' } }]);
+    if (!registrationMigration.acknowledged || registrationMigration.modifiedCount !== registrationMigration.matchedCount) throw new Error('Registration date migration failed');
     const dealer = await this.db.collection<DealerState>('dealer').updateOne({ _id: 'casino' }, { $setOnInsert: { holderId: null, earnedKC: 0, nextChangeAt: new Date(0) } }, { upsert: true });
     if (!dealer.acknowledged || dealer.matchedCount + dealer.upsertedCount !== 1) throw new Error('Dealer initialization failed');
     await this.db.collection<ItemOffer>('item_offers').createIndex({ buyerId: 1, state: 1, expiresAt: 1 });
@@ -116,7 +122,7 @@ export class MongoGameDatabase implements GameDatabase {
   }
 }
 
-class MongoGameStore extends MongoDonateStore implements GameStore {
+class MongoGameStore extends MongoBankStore implements GameStore {
   private readonly players;
   private readonly items;
   private readonly messages;
@@ -227,7 +233,8 @@ class MongoGameStore extends MongoDonateStore implements GameStore {
       nextItemId: 1,
       mining: initialFarm(),
       referrals: 0,
-      stolenKC: 0
+      stolenKC: 0,
+      registeredAt: await this.now()
     };
     const result = await this.players.insertOne(player, { session: this.session });
     if (!result.acknowledged) {

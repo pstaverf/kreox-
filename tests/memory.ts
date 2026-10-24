@@ -1,3 +1,6 @@
+import { bankConfig } from '../src/config/bank.js';
+import { bankDays, depositValue, earlyDepositValue, isDepositDays, safeBankMoney, transferNet } from '../src/services/bank-rules.js';
+import type { BankDraft, Deposit, DepositDays } from '../src/types/bank.js';
 import { donateConfig } from '../src/config/donate.js';
 import { validDonateMoney, validNickname } from '../src/services/donate-rules.js';
 import type { DealerPurchase, DealerState, DonateDraft, DonatePurchase } from '../src/types/donate.js';
@@ -15,6 +18,7 @@ import { rankingScore } from '../src/services/rankings.js';
 import type { GameDatabase, GameStore } from '../src/types/storage.js';
 
 interface State {
+  deposits: Map<string, Deposit>;
   dealer: DealerState;
   offers: Map<string, ItemOffer>;
   promos: Map<string, Promo>;
@@ -28,7 +32,7 @@ interface State {
 }
 
 export class MemoryDatabase implements GameDatabase {
-  state: State = { dealer: { _id: 'casino', holderId: null, earnedKC: 0, nextChangeAt: new Date(0) }, offers: new Map(), promos: new Map(), redemptions: new Set(), players: new Map(), items: [], messages: new Map(), registrations: 0, responses: 0, notifications: [] };
+  state: State = { deposits: new Map(), dealer: { _id: 'casino', holderId: null, earnedKC: 0, nextChangeAt: new Date(0) }, offers: new Map(), promos: new Map(), redemptions: new Set(), players: new Map(), items: [], messages: new Map(), registrations: 0, responses: 0, notifications: [] };
   time = new Date('2026-10-23T00:00:00.000Z');
   failRemember = false;
   private queue: Promise<void> = Promise.resolve();
@@ -63,6 +67,71 @@ export class MemoryDatabase implements GameDatabase {
 
 class MemoryStore implements GameStore {
   constructor(private readonly state: State, private readonly database: MemoryDatabase) {}
+
+  async setBankDraft(vkId: number, draft: BankDraft | null): Promise<void> {
+    const player = this.state.players.get(vkId);
+    if (player === undefined) throw new Error('Missing bank actor');
+    if (draft === null) delete player.bankDraft;
+    else player.bankDraft = draft;
+  }
+  async saveSavings(player: Player, balance: number, since: Date, walletDelta: number): Promise<boolean> {
+    if (!safeBankMoney(balance) || !Number.isSafeInteger(walletDelta) || !Number.isFinite(since.getTime())) throw new Error('Invalid savings change');
+    const wallet = player.kc + walletDelta;
+    if (!safeBankMoney(wallet)) return false;
+    player.kc = wallet;
+    player.savingsBalance = balance;
+    player.savingsSince = since;
+    return true;
+  }
+  async transferMoney(sender: Player, receiver: Player, currency: BalanceCurrency, gross: number, net: number): Promise<boolean> {
+    if (!isBalanceCurrency(currency) || sender._id === receiver._id || net !== transferNet(gross)) throw new Error('Invalid transfer');
+    if (!safeBankMoney(sender[currency]) || !safeBankMoney(receiver[currency]) || sender[currency] < gross || receiver[currency] > game.maxAmount - net) return false;
+    sender[currency] -= gross;
+    receiver[currency] += net;
+    return true;
+  }
+  async claimPension(player: Player, amount: number, now: Date): Promise<boolean> {
+    const age = player.registeredAt === undefined ? 0 : bankDays(player.registeredAt, now);
+    const rewards: readonly number[] = age > bankConfig.pensionHighDays ? bankConfig.pensionHigh : bankConfig.pensionBasic;
+    if (age < bankConfig.pensionMinDays || !rewards.some(value => value * game.kcScale === amount)) throw new Error('Invalid pension');
+    if (!safeBankMoney(player.kc) || player.kc > game.maxAmount - amount || (player.nextPensionAt !== undefined && player.nextPensionAt > now)) return false;
+    player.kc += amount;
+    player.nextPensionAt = new Date(now.getTime() + bankConfig.dayMs);
+    return true;
+  }
+  async deposits(vkId: number): Promise<Deposit[]> {
+    return [...this.state.deposits.values()].filter(deposit => deposit.vkId === vkId && deposit.state === 'active').sort((a, b) => a.depositId - b.depositId).slice(0, bankConfig.maxDeposits + 1);
+  }
+  async deposit(vkId: number, depositId: number): Promise<Deposit | null> {
+    return [...this.state.deposits.values()].find(deposit => deposit.vkId === vkId && deposit.depositId === depositId && deposit.state === 'active') ?? null;
+  }
+  async nextDueDeposit(now: Date): Promise<Deposit | null> {
+    return [...this.state.deposits.values()].filter(deposit => deposit.state === 'active' && deposit.nextAttemptAt <= now && deposit.expiresAt <= now).sort((a, b) => a.nextAttemptAt.getTime() - b.nextAttemptAt.getTime() || a._id.localeCompare(b._id))[0] ?? null;
+  }
+  async createDeposit(player: Player, amount: number, days: DepositDays, now: Date): Promise<Deposit | 'funds' | 'limit'> {
+    if (!safeBankMoney(amount) || amount <= 0 || amount > bankConfig.maxDeposit || !isDepositDays(days)) throw new Error('Invalid deposit creation');
+    if ((await this.deposits(player._id)).length >= bankConfig.maxDeposits) return 'limit';
+    const id = player.nextDepositId ?? 1;
+    if (!Number.isSafeInteger(id) || id < 1 || id >= game.maxAmount) return 'limit';
+    if (!safeBankMoney(player.kc) || player.kc < amount) return 'funds';
+    player.kc -= amount;
+    player.nextDepositId = id + 1;
+    delete player.bankDraft;
+    const expiresAt = new Date(now.getTime() + days * bankConfig.dayMs);
+    const deposit: Deposit = { _id: `${player._id}:${id}`, vkId: player._id, depositId: id, amount, days, createdAt: now, expiresAt, nextAttemptAt: expiresAt, state: 'active' };
+    this.state.deposits.set(deposit._id, deposit);
+    return deposit;
+  }
+  async closeDeposit(player: Player, deposit: Deposit, payout: number, now: Date, early: boolean): Promise<boolean> {
+    if (deposit.vkId !== player._id || payout !== (early ? earlyDepositValue(deposit, now) : depositValue(deposit, deposit.expiresAt))) throw new Error('Invalid deposit payout');
+    if (deposit.state !== 'active' || !safeBankMoney(player.kc) || player.kc > game.maxAmount - payout || (early ? deposit.expiresAt <= now : deposit.expiresAt > now)) return false;
+    player.kc += payout;
+    deposit.state = early ? 'early' : 'completed';
+    return true;
+  }
+  async deferDeposit(deposit: Deposit, now: Date): Promise<void> {
+    if (deposit.state === 'active') deposit.nextAttemptAt = new Date(now.getTime() + bankConfig.retryMs);
+  }
 
   async setDonateDraft(vkId: number, draft: DonateDraft | null): Promise<void> {
     const player = this.state.players.get(vkId);
@@ -373,7 +442,7 @@ class MemoryStore implements GameStore {
       _id: vkId, name, accountId: index < 50 ? index : index + 1,
       kc: 0, euro: 0, bitcoin: 0, reputation: 0, completedTasks: 0,
       bonusDay: 0, lastBonusAt: null, nextBonusAt: new Date(0), nextItemId: 1,
-      mining: initialFarm(), referrals: 0, stolenKC: 0
+      mining: initialFarm(), referrals: 0, stolenKC: 0, registeredAt: new Date(this.database.time)
     };
     this.state.players.set(vkId, player);
     return player;

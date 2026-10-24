@@ -1,3 +1,4 @@
+import { startBankWorker } from './handlers/bank-worker.js';
 import { createItemTargetResolver } from './handlers/item-targets.js';
 import { MongoClient } from 'mongodb';
 import { VK } from 'vk-io';
@@ -25,11 +26,13 @@ async function main(): Promise<void> {
   });
   const pending = new Set<Promise<void>>();
   let stopping: Promise<void> | undefined;
+  let stopBank: (() => Promise<void>) | undefined;
   let stopNotifications: (() => Promise<void>) | undefined;
   const stop = (): Promise<void> => {
     stopping ??= (async () => {
       try {
         await vk.updates.stop();
+        await stopBank?.();
         await stopNotifications?.();
         await Promise.allSettled([...pending]);
       } finally {
@@ -51,6 +54,7 @@ async function main(): Promise<void> {
     const service = new GameService(database, createReferralLinkResolver(vk, env.vkGroupId), createItemTargetResolver(vk));
     const handle = createMessageHandler(vk, service, env.vkGroupId);
     stopNotifications = startNotifications(database, vk);
+    stopBank = startBankWorker(database);
     vk.updates.on('message_new', async context => {
       if (stopping !== undefined) {
         return;

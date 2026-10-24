@@ -1,3 +1,6 @@
+import { bankLabels } from '../services/bank-texts.js';
+import { game } from '../config/game.js';
+import { formatAmount } from '../services/texts.js';
 import { donateLabels } from '../services/donate-texts.js';
 import { itemLabels } from '../services/item-texts.js';
 import { Keyboard, type KeyboardBuilder } from 'vk-io';
@@ -11,6 +14,47 @@ export function buildKeyboard(spec: KeyboardSpec): KeyboardBuilder {
     return Keyboard.textButton({ label, payload: { command: kind, ...params } });
   };
   switch (spec.kind) {
+    case 'city':
+      return Keyboard.keyboard([
+        [button(bankLabels.director, { kind: 'city_director' }), button(bankLabels.bank, { kind: 'bank' }), button(bankLabels.casino, { kind: 'casino' })],
+        [button(labels.menu, { kind: 'menu' })]
+      ]).oneTime(false);
+    case 'bank':
+      return Keyboard.keyboard([
+        [button(bankLabels.savings, { kind: 'bank_savings' })],
+        [button(bankLabels.pension, { kind: 'bank_pension' }), button(bankLabels.transfer, { kind: 'bank_transfer_menu' })],
+        [button(bankLabels.deposits, { kind: 'bank_deposits' })],
+        [button(labels.back, { kind: 'city' })]
+      ]).oneTime(false);
+    case 'bank_savings':
+      return Keyboard.keyboard([
+        [button(bankLabels.add, { kind: 'bank_deposit_money' })], [button(bankLabels.withdraw, { kind: 'bank_withdraw_money' })],
+        [button(labels.back, { kind: 'bank' }), button(labels.menu, { kind: 'menu' })]
+      ]).oneTime(false);
+    case 'bank_transfer_menu':
+      return Keyboard.keyboard([[
+        button('KC', { kind: 'bank_currency', currency: 'kc' }), button('💶', { kind: 'bank_currency', currency: 'euro' }), button('💠', { kind: 'bank_currency', currency: 'bitcoin' })
+      ]]).oneTime(false);
+    case 'bank_back': return Keyboard.keyboard([[button(bankLabels.back, { kind: spec.destination })]]).oneTime(false);
+    case 'bank_deposits':
+      return Keyboard.keyboard([
+        [button(bankLabels.create, { kind: 'bank_deposit_create' })],
+        ...spec.depositIds.map(depositId => [button(`🆔 ${depositId}`, { kind: 'bank_deposit', depositId })]),
+        [button(labels.menu, { kind: 'menu' })]
+      ]).oneTime(false);
+    case 'bank_deposit_amount':
+      return Keyboard.keyboard([
+        spec.amounts.slice(0, 3).map(amount => button(formatAmount(amount, game.kcScale), { kind: 'bank_deposit_amount', amount })),
+        spec.amounts.slice(3, 5).map(amount => button(formatAmount(amount, game.kcScale), { kind: 'bank_deposit_amount', amount })),
+        [button(bankLabels.back, { kind: 'bank_deposits' })]
+      ]).oneTime(false);
+    case 'bank_deposit_term':
+      return Keyboard.keyboard([
+        [button('3 дня', { kind: 'bank_deposit_term', days: 3, token: spec.token }), button('10 дней', { kind: 'bank_deposit_term', days: 10, token: spec.token })],
+        [button(bankLabels.back, { kind: 'bank_deposit_create' })]
+      ]).oneTime(false);
+    case 'bank_deposit_early': return Keyboard.keyboard([[button(bankLabels.early, { kind: 'bank_deposit_early', depositId: spec.depositId })]]).inline();
+    case 'bank_deposit_confirm': return Keyboard.keyboard([[Keyboard.textButton({ label: bankLabels.confirm, color: Keyboard.POSITIVE_COLOR, payload: { command: 'bank_deposit_confirm', token: spec.token } })]]).inline();
     case 'donate':
       return Keyboard.keyboard([
         [button(donateLabels.nickname, { kind: 'donate_nick' }), button(donateLabels.thief, { kind: 'donate_thief' }), button(donateLabels.dealer, { kind: 'donate_dealer' })],

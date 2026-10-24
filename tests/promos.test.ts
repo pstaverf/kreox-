@@ -49,7 +49,7 @@ async function fixture() {
 test('promo menu and city use the requested texts, and Back cancels the durable wizard', async () => {
   const { send, database, text } = await fixture();
   assert.equal((await send({ kind: 'promo' })).text, '🎁 Меню промокодов:');
-  assert.equal((await send({ kind: 'city' })).text, '🏙️ Стройка уже идёт!\n\n💫 Скоро город будет сиять раньше остальных…');
+  assert.equal((await send({ kind: 'city' })).text, '🏙️ Город:');
   await send({ kind: 'promo_create' });
   await send({ kind: 'promo_currency', currency: 'kc' });
   assert.equal((await send({ kind: 'promo_back' })).text, promoTexts.menu);

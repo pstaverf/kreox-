@@ -1,3 +1,4 @@
+import type { BankCommand, BankDraft, BankKeyboard } from './bank.js';
 import type { DonateCommand, DonateDraft } from './donate.js';
 import type { AdminItemCommand, ItemCommand, ItemDraft, ItemKeyboard, ItemKind } from './items.js';
 import type { AdminBalanceCommand } from './admin-balance.js';
@@ -25,6 +26,12 @@ export interface Player {
   donateDraft?: DonateDraft;
   thiefUntil?: Date;
   nextTheftAt?: Date;
+  registeredAt?: Date;
+  savingsBalance?: number;
+  savingsSince?: Date;
+  nextPensionAt?: Date;
+  nextDepositId?: number;
+  bankDraft?: BankDraft;
 }
 
 export interface InventoryItem {
@@ -44,6 +51,7 @@ export interface InventoryStack {
 
 export type Command =
   | DonateCommand
+  | BankCommand
   | { kind: 'delete_keyboards' }
   | AdminBalanceCommand
   | AdminItemCommand
@@ -54,7 +62,6 @@ export type Command =
   | { kind: 'inventory'; page: number }
   | { kind: 'item'; itemId: number }
   | { kind: 'development' }
-  | { kind: 'city' }
   | PromoCommand
   | MiningCommand
   | { kind: 'referrals' }
@@ -62,6 +69,7 @@ export type Command =
 
 export type KeyboardSpec =
   | ItemKeyboard
+  | BankKeyboard
   | { kind: 'donate' | 'donate_back' }
   | { kind: 'donate_confirmation'; token: string; inline: boolean }
   | { kind: 'none' }

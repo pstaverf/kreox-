@@ -369,7 +369,7 @@ test('withdrawal, profile and both BTC ranking sections hide extra decimals with
   ].join('\n'));
   const profile = await send({ kind: 'profile' });
   assert.ok(profile.text.includes('💠 Биткоин: 3,711₿'));
-  assert.equal(profile.text.split('\n').length, 7);
+  assert.equal(profile.text.split('\n').length, 8);
   assert.equal(profile.text.includes('\n\n'), false);
   const menu = await send({ kind: 'menu' });
   assert.ok(menu.text.endsWith(profile.text));

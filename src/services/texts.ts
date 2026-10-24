@@ -1,3 +1,4 @@
+import { bankConfig } from '../config/bank.js';
 import { itemConfig } from '../config/items.js';
 import { game } from '../config/game.js';
 import type { InventoryStack, MiningFarm, Player, Ranking, RankingMetric, Reward } from '../types/game.js';
@@ -45,7 +46,6 @@ export const texts = {
   adminBalanceTarget: '⚠️ Укажите игрока: ответом на его сообщение или через @id123.',
   adminBalanceMissing: '⚠️ Игрок ещё не зарегистрирован в боте.',
   adminBalanceLimit: '⚠️ Достигнут предел баланса. Баланс не изменён.',
-  city: '🏙️ Стройка уже идёт!\n\n💫 Скоро город будет сиять раньше остальных…',
   keyboardsDeleted: 'Done.',
   welcome: '👋🏻 Добро пожаловать в Kreox Bot!\n\nТут ты сможешь развиваться и влетать в топы по всему боту.\n\nТебя ждет интересный и увлекательный функционал.\n\nУдачи.',
   development: '⚙️ В разработке…',
@@ -84,7 +84,7 @@ export function mention(player: Pick<Player, '_id' | 'name'>): string {
   return `[id${player._id}|${player.name}]`;
 }
 
-export function profileText(player: Player): string {
+export function profileText(player: Player, now?: Date): string {
   const percentage = game.totalTasks > 0 ? (player.completedTasks * 100 / game.totalTasks).toFixed(2) : '0.00';
   return [
     `👤Ник: ${mention(player)}`,
@@ -93,6 +93,7 @@ export function profileText(player: Player): string {
     `💠 Биткоин: ${formatMining(player.bitcoin)}₿`,
     `👍 Репутация: ${player.reputation}`,
     `🏆 Задания: ${player.completedTasks}/${game.totalTasks} [${percentage}%]`,
+    ...(now === undefined || player.registeredAt === undefined ? [] : [`🤖 В боте ${Math.max(0, Math.floor((now.getTime() - player.registeredAt.getTime()) / bankConfig.dayMs))} дней. | ${new Intl.DateTimeFormat('ru-RU', { timeZone: bankConfig.timeZone, day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(player.registeredAt).replace(', ', ' ')}`]),
     `🆔${player.accountId}`
   ].join('\n');
 }

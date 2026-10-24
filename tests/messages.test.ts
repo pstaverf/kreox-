@@ -481,3 +481,36 @@ test('wallet admin commands use VK reply sender and explicit numeric IDs, while 
   assert.equal(database.player().bitcoin, 0);
   assert.equal(database.state.players.has(888801846), false);
 });
+
+test('city and savings DM wizard use real VK payloads while chat transfers use the real reply sender', async context => {
+  const vk = new VK({ token: 'test-token' });
+  const database = new MemoryDatabase();
+  const service = new GameService(database);
+  for (const id of [1, 2]) await service.handle({ eventId: `bank-register-${id}`, vkId: id, command: { kind: 'profile' } }, async () => 'Игрок');
+  database.player().kc = 20_000;
+  const sent: Record<string, unknown>[] = [];
+  const api = mock.method(vk.api, 'callWithRequest', async (request: APIRequest) => {
+    assert.equal(request.method, 'messages.send');
+    const params: unknown = request.params;
+    assert.ok(isRecord(params));
+    sent.push(params);
+    return [];
+  });
+  context.after(() => api.mock.restore());
+  const handle = createMessageHandler(vk, service, 123);
+  await handle(message(vk, { messageId: 1, text: '🏙️ Город', payload: '{"command":"city"}' }));
+  assert.equal(sent.at(-1)?.message, '🏙️ Город:');
+  await handle(message(vk, { messageId: 2, payload: '{"command":"bank"}' }));
+  assert.equal(sent.at(-1)?.message, '🏛️ Банк:');
+  await handle(message(vk, { messageId: 3, payload: '{"command":"bank_deposit_money"}' }));
+  await handle(message(vk, { messageId: 4, text: '100' }));
+  assert.equal(database.player().savingsBalance, 10_000);
+  const transfer = message(vk, { peerId: 2_000_000_001, messageId: 5, text: 'монеты 100', replySenderId: 2, payload: '{"targetId":999,"amount":999999}' });
+  await handle(transfer);
+  assert.equal(sent.at(-1)?.message, 'Вы успешно передали 95 KC игроку [id2|Игрок].');
+  assert.equal(database.player().kc, 0);
+  assert.equal(database.player(2).kc, 9500);
+  await handle(transfer);
+  assert.equal(database.player(2).kc, 9500);
+  assert.equal(database.state.notifications.length, 1);
+});
