@@ -5,6 +5,7 @@ import { MongoClient } from 'mongodb';
 import { game } from '../../src/config/game.js';
 import { MongoGameDatabase } from '../../src/repositories/mongo.js';
 import { GameService } from '../../src/services/game.js';
+import { itemDetails, itemTexts } from '../../src/services/item-texts.js';
 import type { InventoryItem, Notification, Player } from '../../src/types/game.js';
 import type { ItemOffer } from '../../src/types/items.js';
 
@@ -40,6 +41,7 @@ test('MongoDB replica set: item opening, gifts, reserved purchases, expiration a
     assert.equal(await items.countDocuments({ vkId: 1 }), 0);
     assert.equal((await players.findOne({ _id: 1 }))?.kc, 150_000);
     assert.equal(await grant(3), true);
+    assert.equal(await database.transaction(async store => store.hasReservedItems(1, 'referral_case', await store.now())), false);
     const inventory = await service.handle({
       eventId: 'grouped-inventory', vkId: 1, command: { kind: 'inventory', page: 0 }
     }, async () => 'Игрок');
@@ -74,6 +76,10 @@ test('MongoDB replica set: item opening, gifts, reserved purchases, expiration a
     const offer = await offers.findOne({ state: 'pending' });
     assert.ok(offer);
     assert.equal(await database.transaction(store => store.itemCount(1, 'referral_case', new Date())), 1);
+    assert.equal(await database.transaction(async store => store.hasReservedItems(1, 'referral_case', await store.now())), true);
+    assert.equal((await service.handle({
+      eventId: 'partially-reserved-item', vkId: 1, command: { kind: 'item', itemId: 2 }
+    }, async () => 'Игрок')).text, itemDetails('referral_case', 1));
     assert.equal(await database.transaction(store => store.removeItems(1, 'referral_case', 2, new Date())), false);
     await players.updateOne({ _id: 2 }, { $set: { kc: 1_000_000 } });
     const buy = () => database.transaction(async store => {
@@ -92,11 +98,16 @@ test('MongoDB replica set: item opening, gifts, reserved purchases, expiration a
     assert.equal((await players.findOne({ _id: 1 }))?.kc, 160_000);
     assert.equal(await items.countDocuments({ vkId: 2 }), 2);
     assert.equal(await items.countDocuments({ vkId: 1 }), 1);
+    assert.equal(await database.transaction(async store => store.hasReservedItems(1, 'referral_case', await store.now())), false);
     assert.equal(await createOffer('expires', 1), true);
+    assert.equal((await service.handle({
+      eventId: 'fully-reserved-item', vkId: 1, command: { kind: 'item_detail', itemKind: 'referral_case' }
+    }, async () => 'Игрок')).text, itemTexts.reserved);
     const past = new Date(0);
     await offers.updateOne({ _id: 'expires' }, { $set: { expiresAt: past } });
     await items.updateMany({ offerId: 'expires' }, { $set: { reservedUntil: past } });
     assert.equal(await database.transaction(async store => store.itemCount(1, 'referral_case', await store.now())), 1);
+    assert.equal(await database.transaction(async store => store.hasReservedItems(1, 'referral_case', await store.now())), false);
     await assert.rejects(database.transaction(async store => {
       const player = await store.player(1);
       assert.ok(player);

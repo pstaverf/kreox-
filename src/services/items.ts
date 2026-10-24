@@ -38,9 +38,13 @@ export async function adminItems(store: GameStore, command: AdminItemCommand): P
     : await store.removeItems(receiver._id, entry.kind, 1, await store.now());
   return reply(success ? itemTexts.done : command.operation === 'take' ? itemTexts.none : itemTexts.limit);
 }
+async function unavailableText(store: GameStore, player: Player, kind: ItemKind, now: Date): Promise<string> {
+  return await store.hasReservedItems(player._id, kind, now) ? itemTexts.reserved : itemTexts.none;
+}
 export async function itemView(store: GameStore, player: Player, itemKind: ItemKind, use = false): Promise<Reply> {
-  const count = await store.itemCount(player._id, itemKind, await store.now());
-  return count === 0 ? { text: itemTexts.none, keyboard: { kind: 'profile' } } : {
+  const now = await store.now();
+  const count = await store.itemCount(player._id, itemKind, now);
+  return count === 0 ? { text: await unavailableText(store, player, itemKind, now), keyboard: { kind: 'profile' } } : {
     text: itemDetails(itemKind, count, use), keyboard: { kind: use ? 'item_use' : 'item_detail', itemKind }
   };
 }
@@ -50,12 +54,12 @@ async function open(store: GameStore, player: Player, kind: ItemKind, quantity: 
   }
   const now = await store.now();
   if (await store.itemCount(player._id, kind, now) < quantity) {
-    return back(itemTexts.none, kind);
+    return back(await unavailableText(store, player, kind, now), kind);
   }
   const rewards = caseRewards(quantity, roll);
   const result = await store.openItems(player, kind, quantity, rewards, now);
   if (result !== 'ok') {
-    return back(result === 'items' ? itemTexts.none : itemTexts.limit, kind);
+    return back(result === 'items' ? await unavailableText(store, player, kind, now) : itemTexts.limit, kind);
   }
   await store.setItemDraft(player._id, null);
   return { text: caseResultText(player, rewards), keyboard: { kind: 'item_use', itemKind: kind } };
@@ -66,9 +70,10 @@ export async function itemAction(store: GameStore, player: Player, command: Item
       await store.setItemDraft(player._id, null);
       return itemView(store, player, command.itemKind, command.kind === 'item_use');
     case 'item_custom': case 'item_gift': case 'item_sell': {
-      const count = await store.itemCount(player._id, command.itemKind, await store.now());
+      const now = await store.now();
+      const count = await store.itemCount(player._id, command.itemKind, now);
       if (count === 0) {
-        return back(itemTexts.none, command.itemKind);
+        return back(await unavailableText(store, player, command.itemKind, now), command.itemKind);
       }
       const draft: ItemDraft = command.kind === 'item_custom' ? { step: 'custom', itemKind: command.itemKind }
         : { step: 'target', itemKind: command.itemKind, mode: command.kind === 'item_gift' ? 'gift' : 'sale' };
@@ -101,7 +106,7 @@ export async function itemAction(store: GameStore, player: Player, command: Item
       if (draft.step === 'gift_confirm') {
         const result = await store.giftItems(player, target, draft.itemKind, draft.quantity, now);
         if (result !== 'ok') {
-          return back(result === 'items' ? itemTexts.none : itemTexts.limit, draft.itemKind);
+          return back(result === 'items' ? await unavailableText(store, player, draft.itemKind, now) : itemTexts.limit, draft.itemKind);
         }
         await store.enqueueItemNotification(`gift:${input.eventId}`, target._id,
           giftReceivedText(player, draft.itemKind, draft.quantity), { kind: 'none' });
@@ -113,7 +118,7 @@ export async function itemAction(store: GameStore, player: Player, command: Item
         price: draft.price, expiresAt: new Date(now.getTime() + itemConfig.offerDurationMs), state: 'pending' as const
       };
       if (!await store.reserveOffer(offer, now)) {
-        return back(itemTexts.none, draft.itemKind);
+        return back(await unavailableText(store, player, draft.itemKind, now), draft.itemKind);
       }
       await store.enqueueItemNotification(`offer:${offer._id}`, target._id, offerText(player, offer), { kind: 'item_offer', offerId: offer._id });
       await store.setItemDraft(player._id, null);
@@ -152,8 +157,9 @@ export async function itemText(store: GameStore, player: Player, draft: ItemDraf
       if (quantity === null || !validItemQuantity(quantity)) {
         return back(itemTexts.badQuantity, draft.itemKind);
       }
-      if (await store.itemCount(player._id, draft.itemKind, await store.now()) < quantity) {
-        return back(itemTexts.none, draft.itemKind);
+      const now = await store.now();
+      if (await store.itemCount(player._id, draft.itemKind, now) < quantity) {
+        return back(await unavailableText(store, player, draft.itemKind, now), draft.itemKind);
       }
       await store.setItemDraft(player._id, { step: 'open_confirm', itemKind: draft.itemKind, quantity, token: input.eventId });
       return { text: itemTexts.ready, keyboard: { kind: 'item_confirmation', mode: 'open', token: input.eventId } };
@@ -178,8 +184,9 @@ export async function itemText(store: GameStore, player: Player, draft: ItemDraf
       if (quantity === null || !validItemQuantity(quantity)) {
         return back(itemTexts.badQuantity, draft.itemKind);
       }
-      if (await store.itemCount(player._id, draft.itemKind, await store.now()) < quantity) {
-        return back(itemTexts.none, draft.itemKind);
+      const now = await store.now();
+      if (await store.itemCount(player._id, draft.itemKind, now) < quantity) {
+        return back(await unavailableText(store, player, draft.itemKind, now), draft.itemKind);
       }
       if (draft.mode === 'sale') {
         await store.setItemDraft(player._id, { step: 'price', itemKind: draft.itemKind, quantity, targetId: draft.targetId });

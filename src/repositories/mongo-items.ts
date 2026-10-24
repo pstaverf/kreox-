@@ -30,6 +30,14 @@ export class MongoItemStore extends MongoPromoStore {
   async itemCount(vkId: number, kind: ItemKind, now: Date): Promise<number> {
     return this.itemUnits.countDocuments(this.available(vkId, kind, now), { session: this.itemSession });
   }
+  async hasReservedItems(vkId: number, kind: ItemKind, now: Date): Promise<boolean> {
+    if (!isItemKind(kind)) {
+      throw new Error('Invalid item kind');
+    }
+    return await this.itemUnits.findOne({ vkId, kind, reservedUntil: { $gt: now } }, {
+      session: this.itemSession, projection: { _id: 1 }
+    }) !== null;
+  }
   async setItemDraft(vkId: number, draft: ItemDraft | null): Promise<void> {
     const result = await this.itemPlayers.updateOne({ _id: vkId }, draft === null
       ? { $unset: { itemDraft: '' } } : { $set: { itemDraft: draft } }, { session: this.itemSession });

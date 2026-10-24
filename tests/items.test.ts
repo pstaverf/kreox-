@@ -6,7 +6,7 @@ import { parseCommand } from '../src/handlers/commands.js';
 import { buildKeyboard } from '../src/handlers/keyboards.js';
 import { GameService } from '../src/services/game.js';
 import { caseRewards, parseItemPrice, parsePlayerTarget } from '../src/services/item-rules.js';
-import { itemDetails, itemTexts } from '../src/services/item-texts.js';
+import { caseResultText, itemDetails, itemTexts } from '../src/services/item-texts.js';
 import type { Command, GameInput, KeyboardSpec } from '../src/types/game.js';
 import { isRecord } from '../src/utils/validation.js';
 import { MemoryDatabase } from './memory.js';
@@ -212,7 +212,7 @@ test('sale reserves items, exchanges exact KC and ownership once, and sends the 
   await grant(5);
   db.player(2).kc = 2_000_000_000;
   const record = await offer(5);
-  assert.equal((await send({ kind: 'item_open', itemKind: 'referral_case', quantity: 1 })).text, itemTexts.none);
+  assert.equal((await send({ kind: 'item_open', itemKind: 'referral_case', quantity: 1 })).text, itemTexts.reserved);
   assert.equal((await send({ kind: 'item_buy', offerId: record._id }, 3)).text, itemTexts.invalidOffer);
   const replies = await Promise.all(Array.from({ length: 8 }, () => send({ kind: 'item_buy', offerId: record._id }, 2)));
   assert.equal(replies.filter(reply => reply.text.includes('сделка прошла успешно')).length, 1);
@@ -263,7 +263,7 @@ test('reserved cases cannot be taken, gifted or double-reserved and release with
   const record = await offer(2);
   assert.equal((await send(gift)).text, itemTexts.stale);
   assert.equal((await text('!takeitem @id1 2', 888801846)).text, itemTexts.none);
-  assert.equal((await send({ kind: 'item_sell', itemKind: 'referral_case' })).text, itemTexts.none);
+  assert.equal((await send({ kind: 'item_sell', itemKind: 'referral_case' })).text, itemTexts.reserved);
   db.time = new Date(record.expiresAt.getTime());
   assert.equal((await text('!takeitem @id1 2', 888801846)).text, 'Done.');
 });
@@ -414,4 +414,73 @@ test('gifts and purchases merge with existing stacks while reservations remain u
   const inventory = await send({ kind: 'inventory', page: 0 });
   assert.equal(inventory.text, '🎒 Ваш инвентарь:\n\n🆔 4 — 👬 Кейс «Реферальный» (1 шт.)');
   assert.deepEqual(inventory.keyboard, { kind: 'inventory', page: 0, itemIds: [4], hasNext: false });
+});
+
+test('case results have only one blank line after the heading and consecutive reward rows', async () => {
+  const { db } = await fixture();
+  assert.equal(caseResultText(db.player(), { kc: 1_750_000, euro: 0, counts: [0, 1, 1, 0, 0, 0] }),
+    '[id1|Игрок], 🎁 Вот что выпало:\n\n💰 2.500 KC\n💰 15.000 KC');
+  const rolls = [30, 60, 30, 60, 90];
+  let index = 0;
+  const { grant, send } = await fixture(() => {
+    const value = rolls[index++];
+    assert.ok(value !== undefined);
+    return value;
+  });
+  await grant(5);
+  assert.equal((await send({ kind: 'item_open', itemKind: 'referral_case', quantity: 5 })).text,
+    '[id1|Игрок], 🎁 Вот что выпало:\n\n💰 2.500 KC x2\n💰 15.000 KC x2\n💶 1 евро');
+});
+
+test('gift and sale target prompts use consecutive lines and the explicit VK mention', async () => {
+  const { grant, send, text } = await fixture();
+  await grant();
+  for (const kind of ['item_gift', 'item_sell'] as const) {
+    assert.equal((await send({ kind, itemKind: 'referral_case' })).text,
+      '👤 Введите ссылку на игрока.\n💡 Например [id888801846|@kreox_owner]');
+    await text('отмена');
+  }
+});
+
+test('fully reserved stacks show the exact warning on all item entry points until the expiry boundary', async () => {
+  const { grant, offer, send, db, restart } = await fixture();
+  await grant();
+  const sale = await offer(1, '0');
+  const warning = '⚠️ У вас есть активная сделка на данный предмет!\n\n⏳ Подождите принятия сделки или аннулирование сделки.';
+  const before = structuredClone(db.state.items);
+  assert.equal((await send({ kind: 'item', itemId: 1 })).text, warning);
+  for (const kind of ['item_detail', 'item_use', 'item_custom', 'item_gift', 'item_sell'] as const) {
+    assert.equal((await send({ kind, itemKind: 'referral_case' })).text, warning);
+  }
+  assert.equal((await send({ kind: 'item_open', itemKind: 'referral_case', quantity: 1 })).text, warning);
+  assert.equal(db.player().kc, 0);
+  assert.deepEqual(db.state.items, before);
+  assert.equal((await send({ kind: 'item_detail', itemKind: 'zhdun_case' })).text, itemTexts.none);
+  assert.equal((await send({ kind: 'item_detail', itemKind: 'referral_case' }, 3)).text, itemTexts.none);
+  db.time = new Date(sale.expiresAt.getTime() - 1);
+  restart();
+  assert.equal((await send({ kind: 'item', itemId: 1 })).text, warning);
+  db.time = new Date(sale.expiresAt.getTime());
+  assert.equal((await send({ kind: 'item', itemId: 1 })).text, itemDetails('referral_case', 1));
+  assert.match((await send({ kind: 'item_open', itemKind: 'referral_case', quantity: 1 })).text, /Вот что выпало/);
+  assert.equal((await send({ kind: 'item_detail', itemKind: 'referral_case' })).text, itemTexts.none);
+});
+
+test('one of two cases can be opened while the other stays reserved and can still be purchased', async () => {
+  const { grant, offer, send, db } = await fixture();
+  await grant(2);
+  const sale = await offer(1, '0');
+  const reserved = structuredClone(db.state.items.find(item => item.offerId === sale._id));
+  assert.ok(reserved);
+  assert.equal((await send({ kind: 'item', itemId: reserved.itemId })).text, itemDetails('referral_case', 1));
+  assert.equal((await send({ kind: 'item_use', itemKind: 'referral_case' })).text, itemDetails('referral_case', 1, true));
+  assert.match((await send({ kind: 'item_open', itemKind: 'referral_case', quantity: 1 })).text, /Вот что выпало/);
+  assert.equal(db.player().kc, 150_000);
+  assert.deepEqual(db.state.items, [reserved]);
+  assert.equal((await send({ kind: 'item', itemId: reserved.itemId })).text, itemTexts.reserved);
+  assert.equal((await send({ kind: 'item_open', itemKind: 'referral_case', quantity: 1 })).text, itemTexts.reserved);
+  await send({ kind: 'item_buy', offerId: sale._id }, 2);
+  assert.equal(db.state.items.filter(item => item.vkId === 1).length, 0);
+  assert.equal(db.state.items.filter(item => item.vkId === 2).length, 1);
+  assert.equal((await send({ kind: 'item_detail', itemKind: 'referral_case' })).text, itemTexts.none);
 });

@@ -40,6 +40,7 @@ export interface ItemStore {
   playerByAccountId(accountId: number): Promise<Player | null>;
   ownedItem(vkId: number, itemId: number): Promise<InventoryItem | null>;
   itemCount(vkId: number, kind: ItemKind, now: Date): Promise<number>;
+  hasReservedItems(vkId: number, kind: ItemKind, now: Date): Promise<boolean>;
   setItemDraft(vkId: number, draft: ItemDraft | null): Promise<void>;
   grantItems(vkId: number, kind: ItemKind, quantity: number): Promise<boolean>;
   removeItems(vkId: number, kind: ItemKind, quantity: number, now: Date): Promise<boolean>;

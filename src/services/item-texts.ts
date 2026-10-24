@@ -11,7 +11,8 @@ export const itemLabels = {
 export const itemTexts = {
   done: 'Done.',
   none: '⚠️ У вас нет данного предмета!',
-  target: '👤 Введите ссылку на игрока.\n\n💡 Например @kreox_owner',
+  target: '👤 Введите ссылку на игрока.\n💡 Например [id888801846|@kreox_owner]',
+  reserved: '⚠️ У вас есть активная сделка на данный предмет!\n\n⏳ Подождите принятия сделки или аннулирование сделки.',
   missing: '⚠️ Игрок не найден или ещё не зарегистрирован в боте.',
   self: '⚠️ Нельзя передать или продать предметы самому себе.',
   custom: '📦 Введите кол-во кейсов, которое хотите открыть.',
@@ -55,7 +56,7 @@ export function itemQuantityText(count: number): string {
 }
 export function caseResultText(player: Player, rewards: CaseRewards): string {
   return `${mention(player)}, 🎁 Вот что выпало:\n\n` + rewards.counts.flatMap((count, index) =>
-    count === 0 ? [] : [`${dropText(index)}${count > 1 ? ` x${count}` : ''}`]).join('\n\n');
+    count === 0 ? [] : [`${dropText(index)}${count > 1 ? ` x${count}` : ''}`]).join('\n');
 }
 export function giftSentText(receiver: Player, kind: ItemKind, quantity: number): string {
   return `✅ Вы успешно передали игроку ${mention(receiver)} ${itemName(kind)} x${quantity}`;

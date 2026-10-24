@@ -76,6 +76,13 @@ class MemoryStore implements GameStore {
   async itemCount(vkId: number, kind: ItemKind, now: Date): Promise<number> {
     return this.available(vkId, kind, now).length;
   }
+  async hasReservedItems(vkId: number, kind: ItemKind, now: Date): Promise<boolean> {
+    if (!isItemKind(kind)) {
+      throw new Error('Invalid item kind');
+    }
+    return this.state.items.some(item => item.vkId === vkId && item.kind === kind
+      && item.reservedUntil !== undefined && item.reservedUntil > now);
+  }
   async setItemDraft(vkId: number, draft: ItemDraft | null): Promise<void> {
     const player = this.state.players.get(vkId);
     if (player === undefined) {
