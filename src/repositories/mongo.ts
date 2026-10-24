@@ -1,11 +1,12 @@
 import type { BalanceOperation } from '../types/admin-balance.js';
 import { validBalanceChange } from '../services/admin-balance.js';
 import { randomInt } from 'node:crypto';
-import { MongoPromoStore } from './mongo-promos.js';
+import { MongoItemStore } from './mongo-items.js';
+import type { ItemOffer } from '../types/items.js';
 import type { Promo, PromoRedemption } from '../types/promo.js';
 import { MongoBulkWriteError, MongoClient, MongoServerError, type ClientSession, type Db, type WriteError } from 'mongodb';
 import { accountCapacity, game } from '../config/game.js';
-import type { Counter, GameInput, InventoryItem, MiningFarm, Notification, Player, PreparedReply, RankedPlayer, Ranking, RankingMetric, ProcessedMessage, Reply, Reward } from '../types/game.js';
+import type { Counter, GameInput, InventoryItem, KeyboardSpec, MiningFarm, Notification, Player, PreparedReply, RankedPlayer, Ranking, RankingMetric, ProcessedMessage, Reply, Reward } from '../types/game.js';
 import { DuplicateWriteError, type GameDatabase, type GameStore } from '../types/storage.js';
 import { availableAccountIds } from '../services/rules.js';
 import { initialFarm } from '../services/mining.js';
@@ -24,6 +25,9 @@ export class MongoGameDatabase implements GameDatabase {
     if (!isRecord(hello) || (typeof hello.setName !== 'string' && hello.msg !== 'isdbgrid')) {
       throw new Error('MongoDB replica set is required');
     }
+    await this.db.collection<ItemOffer>('item_offers').createIndex({ buyerId: 1, state: 1, expiresAt: 1 });
+    await this.db.collection<InventoryItem>('inventory').createIndex({ vkId: 1, kind: 1, reservedUntil: 1, itemId: 1 });
+    await this.db.collection<InventoryItem>('inventory').createIndex({ offerId: 1, vkId: 1 });
     await this.db.collection<Promo>('promos').createIndex({ ownerId: 1, _id: 1 }, { collation: { locale: 'simple' } });
     await this.db.collection<PromoRedemption>('promo_redemptions').createIndex({ promoName: 1, vkId: 1 }, { unique: true, collation: { locale: 'simple' } });
     await this.db.collection<Player>('players').createIndex({ accountId: 1 }, { unique: true });
@@ -109,7 +113,7 @@ export class MongoGameDatabase implements GameDatabase {
   }
 }
 
-class MongoGameStore extends MongoPromoStore implements GameStore {
+class MongoGameStore extends MongoItemStore implements GameStore {
   private readonly players;
   private readonly items;
   private readonly messages;
@@ -137,6 +141,15 @@ class MongoGameStore extends MongoPromoStore implements GameStore {
     const update = operation === 'set' ? { $set: { kc: amount } } : { $inc: { kc: amount } };
     const result = await this.players.updateOne(filter, update, { session: this.session });
     return result.matchedCount === 1;
+  }
+
+  async enqueueItemNotification(id: string, peerId: number, text: string, keyboard: KeyboardSpec): Promise<void> {
+    const result = await this.notifications.insertOne({
+      _id: id, peerId, text, keyboard, randomId: await this.nextRandomId(), state: 'pending', nextAttemptAt: new Date(0), attempts: 0
+    }, { session: this.session });
+    if (!result.acknowledged) {
+      throw new Error('Item notification insert failed');
+    }
   }
 
   async processed(eventId: string): Promise<ProcessedMessage | null> {

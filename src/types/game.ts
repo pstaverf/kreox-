@@ -1,3 +1,4 @@
+import type { AdminItemCommand, ItemCommand, ItemDraft, ItemKeyboard, ItemKind } from './items.js';
 import type { AdminBalanceCommand } from './admin-balance.js';
 import type { PromoCommand, PromoDraft } from './promo.js';
 
@@ -19,18 +20,23 @@ export interface Player {
   stolenKC?: number;
   referralUrl?: string;
   promoDraft?: PromoDraft;
+  itemDraft?: ItemDraft;
 }
 
 export interface InventoryItem {
   _id: string;
   vkId: number;
   itemId: number;
-  kind: 'zhdun_case' | 'referral_case';
+  kind: ItemKind;
+  reservedUntil?: Date;
+  offerId?: string;
 }
 
 export type Command =
   | { kind: 'delete_keyboards' }
   | AdminBalanceCommand
+  | AdminItemCommand
+  | ItemCommand
   | { kind: 'profile' }
   | { kind: 'menu' }
   | { kind: 'bonus' }
@@ -44,6 +50,7 @@ export type Command =
   | { kind: 'ranking'; metric: RankingMetric };
 
 export type KeyboardSpec =
+  | ItemKeyboard
   | { kind: 'none' }
   | { kind: 'promo' | 'promo_currency' | 'promo_back' }
   | { kind: 'promo_confirm'; token: string }
@@ -126,6 +133,7 @@ export interface Notification {
   state: 'pending' | 'sent' | 'failed';
   nextAttemptAt: Date;
   attempts: number;
+  keyboard?: KeyboardSpec;
   leaseId?: string;
 }
 

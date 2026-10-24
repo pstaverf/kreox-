@@ -1,3 +1,6 @@
+import type { CaseRewards, ItemDraft, ItemKind, ItemOffer, ItemResult, PurchaseResult } from '../src/types/items.js';
+import type { KeyboardSpec } from '../src/types/game.js';
+import { isItemKind, validItemQuantity, validateOffer } from '../src/services/item-rules.js';
 import type { BalanceOperation } from '../src/types/admin-balance.js';
 import { validBalanceChange } from '../src/services/admin-balance.js';
 import type { Promo, PromoActivation, PromoCreation, PromoDraft } from '../src/types/promo.js';
@@ -9,6 +12,7 @@ import { rankingScore } from '../src/services/rankings.js';
 import type { GameDatabase, GameStore } from '../src/types/storage.js';
 
 interface State {
+  offers: Map<string, ItemOffer>;
   promos: Map<string, Promo>;
   redemptions: Set<string>;
   players: Map<number, Player>;
@@ -20,7 +24,7 @@ interface State {
 }
 
 export class MemoryDatabase implements GameDatabase {
-  state: State = { promos: new Map(), redemptions: new Set(), players: new Map(), items: [], messages: new Map(), registrations: 0, responses: 0, notifications: [] };
+  state: State = { offers: new Map(), promos: new Map(), redemptions: new Set(), players: new Map(), items: [], messages: new Map(), registrations: 0, responses: 0, notifications: [] };
   time = new Date('2026-10-23T00:00:00.000Z');
   failRemember = false;
   private queue: Promise<void> = Promise.resolve();
@@ -55,6 +59,144 @@ export class MemoryDatabase implements GameDatabase {
 
 class MemoryStore implements GameStore {
   constructor(private readonly state: State, private readonly database: MemoryDatabase) {}
+
+  async playerByAccountId(accountId: number): Promise<Player | null> {
+    return [...this.state.players.values()].find(player => player.accountId === accountId) ?? null;
+  }
+  async ownedItem(vkId: number, itemId: number): Promise<InventoryItem | null> {
+    return this.state.items.find(item => item.vkId === vkId && item.itemId === itemId) ?? null;
+  }
+  private available(vkId: number, kind: ItemKind, now: Date): InventoryItem[] {
+    if (!isItemKind(kind)) {
+      throw new Error('Invalid item kind');
+    }
+    return this.state.items.filter(item => item.vkId === vkId && item.kind === kind
+      && (item.reservedUntil === undefined || item.reservedUntil <= now)).sort((a, b) => a.itemId - b.itemId);
+  }
+  async itemCount(vkId: number, kind: ItemKind, now: Date): Promise<number> {
+    return this.available(vkId, kind, now).length;
+  }
+  async setItemDraft(vkId: number, draft: ItemDraft | null): Promise<void> {
+    const player = this.state.players.get(vkId);
+    if (player === undefined) {
+      throw new Error('Missing item actor');
+    }
+    if (draft === null) {
+      delete player.itemDraft;
+    } else {
+      player.itemDraft = draft;
+    }
+  }
+  async grantItems(vkId: number, kind: ItemKind, quantity: number): Promise<boolean> {
+    if (!isItemKind(kind) || !validItemQuantity(quantity)) {
+      throw new Error('Invalid item grant');
+    }
+    const player = this.state.players.get(vkId);
+    if (player === undefined || !Number.isSafeInteger(player.nextItemId) || player.nextItemId < 1 || player.nextItemId > game.maxAmount - quantity) {
+      return false;
+    }
+    for (let index = 0; index < quantity; index += 1) {
+      const itemId = player.nextItemId++;
+      this.state.items.push({ _id: `${vkId}:${itemId}`, vkId, kind, itemId });
+    }
+    return true;
+  }
+  private deleteUnits(units: InventoryItem[]): void {
+    const ids = new Set(units.map(item => item._id));
+    this.state.items = this.state.items.filter(item => !ids.has(item._id));
+  }
+  async removeItems(vkId: number, kind: ItemKind, quantity: number, now: Date): Promise<boolean> {
+    if (!validItemQuantity(quantity)) {
+      throw new Error('Invalid item quantity');
+    }
+    const units = this.available(vkId, kind, now).slice(0, quantity);
+    if (units.length !== quantity) {
+      return false;
+    }
+    this.deleteUnits(units);
+    return true;
+  }
+  async openItems(player: Player, kind: ItemKind, quantity: number, rewards: CaseRewards, now: Date): Promise<ItemResult> {
+    if (!validItemQuantity(quantity)) {
+      throw new Error('Invalid item quantity');
+    }
+    if (this.available(player._id, kind, now).length < quantity) {
+      return 'items';
+    }
+    if (player.kc < 0 || player.euro < 0 || player.kc > game.maxAmount - rewards.kc || player.euro > game.maxAmount - rewards.euro) {
+      return 'limit';
+    }
+    await this.removeItems(player._id, kind, quantity, now);
+    player.kc += rewards.kc;
+    player.euro += rewards.euro;
+    return 'ok';
+  }
+  async giftItems(sender: Player, receiver: Player, kind: ItemKind, quantity: number, now: Date): Promise<ItemResult> {
+    if (sender._id === receiver._id || !validItemQuantity(quantity)) {
+      throw new Error('Invalid gift');
+    }
+    const units = this.available(sender._id, kind, now).slice(0, quantity);
+    if (units.length !== quantity) {
+      return 'items';
+    }
+    if (!await this.grantItems(receiver._id, kind, quantity)) {
+      return 'limit';
+    }
+    this.deleteUnits(units);
+    return 'ok';
+  }
+  async reserveOffer(offer: ItemOffer, now: Date): Promise<boolean> {
+    validateOffer(offer);
+    const units = this.available(offer.sellerId, offer.itemKind, now).slice(0, offer.quantity);
+    if (units.length !== offer.quantity) {
+      return false;
+    }
+    for (const unit of units) {
+      unit.offerId = offer._id;
+      unit.reservedUntil = offer.expiresAt;
+    }
+    this.state.offers.set(offer._id, offer);
+    return true;
+  }
+  async itemOffer(id: string): Promise<ItemOffer | null> {
+    return this.state.offers.get(id) ?? null;
+  }
+  async purchaseOffer(offer: ItemOffer, buyer: Player, seller: Player, now: Date): Promise<PurchaseResult> {
+    validateOffer(offer);
+    if (offer.buyerId !== buyer._id || offer.sellerId !== seller._id || offer.state !== 'pending') {
+      return 'invalid';
+    }
+    if (offer.expiresAt <= now) {
+      offer.state = 'expired';
+      return 'expired';
+    }
+    const units = this.state.items.filter(item => item.vkId === seller._id && item.kind === offer.itemKind
+      && item.offerId === offer._id && item.reservedUntil !== undefined && item.reservedUntil > now).slice(0, offer.quantity);
+    if (units.length !== offer.quantity) {
+      return 'items';
+    }
+    if (seller.kc < 0 || seller.kc > game.maxAmount - offer.price || buyer.nextItemId > game.maxAmount - offer.quantity) {
+      return 'limit';
+    }
+    if (buyer.kc < offer.price) {
+      return 'funds';
+    }
+    if (!await this.grantItems(buyer._id, offer.itemKind, offer.quantity)) {
+      return 'limit';
+    }
+    buyer.kc -= offer.price;
+    seller.kc += offer.price;
+    offer.state = 'completed';
+    this.deleteUnits(units);
+    return 'ok';
+  }
+  async enqueueItemNotification(id: string, peerId: number, text: string, keyboard: KeyboardSpec): Promise<void> {
+    if (this.state.notifications.some(value => value._id === id)) {
+      throw new Error('Duplicate notification');
+    }
+    this.state.notifications.push({ _id: id, peerId, text, keyboard, randomId: ++this.state.responses,
+      state: 'pending', nextAttemptAt: new Date(0), attempts: 0 });
+  }
 
   async setPromoDraft(vkId: number, draft: PromoDraft | null): Promise<void> {
     const player = this.state.players.get(vkId);

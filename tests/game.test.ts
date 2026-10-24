@@ -42,7 +42,7 @@ test('profile, menu, empty inventory and navigation have requested text and keyb
   assert.equal(inventory.text, '🎒 Ваш инвентарь:\n\nВаш инвентарь пуст.');
   assert.deepEqual(inventory.keyboard, { kind: 'inventory', page: 0, itemIds: [], hasNext: false });
   assert.equal((await send({ kind: 'development' })).text, texts.development);
-  assert.equal((await send({ kind: 'item', itemId: 1 })).text, texts.development);
+  assert.equal((await send({ kind: 'item', itemId: 1 })).text, '⚠️ У вас нет данного предмета!');
 });
 
 test('bonus is immediate, blocked until exactly four hours, then advances', async () => {

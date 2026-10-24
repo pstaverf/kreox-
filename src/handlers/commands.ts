@@ -1,3 +1,4 @@
+import { parseAdminItems, parseItemPayload } from './items.js';
 import { parseAdminBalance } from './admin-balance.js';
 import { isPromoCurrency, isPromoName } from '../services/promo-rules.js';
 import { game } from '../config/game.js';
@@ -9,6 +10,10 @@ import { isRecord } from '../utils/validation.js';
 export function parseCommand(text: string | undefined, payload: unknown, isChat = false): Command {
   if (text?.trim() === '/dk') {
     return { kind: 'delete_keyboards' };
+  }
+  const adminItem = parseAdminItems(text);
+  if (adminItem !== null) {
+    return adminItem;
   }
   const adminBalance = parseAdminBalance(text);
   if (adminBalance !== null) {
@@ -25,7 +30,14 @@ export function parseCommand(text: string | undefined, payload: unknown, isChat 
       return { kind: 'development' };
     }
   }
+  const itemCommand = parseItemPayload(value);
+  if (itemCommand !== null) {
+    return itemCommand;
+  }
   if (isRecord(value)) {
+    if (value.command === 'item' && typeof value.itemId === 'number' && Number.isSafeInteger(value.itemId) && value.itemId > 0) {
+      return { kind: 'item', itemId: value.itemId };
+    }
     if (value.command === 'promo_currency' && isPromoCurrency(value.currency)) {
       return { kind: 'promo_currency', currency: value.currency };
     }

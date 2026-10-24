@@ -292,3 +292,38 @@ test('admin balance commands use the real VK reply author or mention, ignore spo
   assert.equal(sent.length, count);
   assert.deepEqual(database.state, before);
 });
+
+test('item admin commands are silent for non-admins and the real DM button flow opens a granted case', async context => {
+  const vk = new VK({ token: 'test-token' });
+  const database = new MemoryDatabase();
+  const service = new GameService(database, undefined, undefined, () => 0);
+  await service.handle({ eventId: 'item-register', vkId: 1, command: { kind: 'profile' } }, async () => 'Игрок');
+  const sent: Record<string, unknown>[] = [];
+  const api = mock.method(vk.api, 'callWithRequest', async (request: APIRequest) => {
+    assert.equal(request.method, 'messages.send');
+    const params: unknown = request.params;
+    assert.ok(isRecord(params));
+    sent.push(params);
+    return [];
+  });
+  context.after(() => api.mock.restore());
+  const handle = createMessageHandler(vk, service, 123);
+  const before = structuredClone(database.state);
+  for (const text of ['!giveitem 0 2', '!takeitem 0 2', '!itemlist']) {
+    await handle(message(vk, { text, messageId: sent.length + 1, senderId: 2, peerId: 2_000_000_001 }));
+  }
+  assert.equal(sent.length, 0);
+  assert.deepEqual(database.state, before);
+  await handle(message(vk, { text: '!giveitem @id1 2', messageId: 1, senderId: 888801846, peerId: 888801846 }));
+  assert.equal(sent.at(-1)?.message, 'Done.');
+  await handle(message(vk, { text: '🆔 1', messageId: 2, payload: '{"command":"item","itemId":1}' }));
+  assert.match(String(sent.at(-1)?.message), /Предмет .*Реферальный.*x1/);
+  await handle(message(vk, { text: '✅ Использовать', messageId: 3, payload: '{"command":"item_use","itemKind":"referral_case"}' }));
+  const openMessage = message(vk, { text: 'x1', messageId: 4, payload: '{"command":"item_open","itemKind":"referral_case","quantity":1,"kc":999999}' });
+  await handle(openMessage);
+  assert.match(String(sent.at(-1)?.message), /\[id1\|Игрок\], 🎁 Вот что выпало:\n\n💰 1.500 KC/);
+  assert.equal(database.player().kc, 150_000);
+  await handle(openMessage);
+  assert.equal(database.player().kc, 150_000);
+  assert.equal(database.state.items.length, 0);
+});

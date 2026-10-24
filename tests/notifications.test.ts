@@ -139,3 +139,39 @@ test('shortener error diagnostics expose only a parameter hint, not the token or
   assert.equal(details.code, 100);
   assert.equal(details.parameterHint, 'private');
 });
+
+test('item offer notifications preserve the inline purchase keyboard and durable random ID', async context => {
+  const vk = new VK({ token: 'test-token' });
+  const finished = Promise.withResolvers<void>();
+  let leased = false;
+  const queue: NotificationQueue = {
+    async leaseNotification() {
+      if (leased) {
+        return null;
+      }
+      leased = true;
+      return { _id: 'offer:test', peerId: 2, text: 'Предложение', randomId: 999, state: 'pending',
+        nextAttemptAt: new Date(0), attempts: 1, keyboard: { kind: 'item_offer', offerId: 'test' } };
+    },
+    async finishNotification(_id, _leaseId, state) { assert.equal(state, 'sent'); finished.resolve(); }
+  };
+  const api = mock.method(vk.api, 'callWithRequest', async (request: APIRequest) => {
+    assert.equal(request.method, 'messages.send');
+    const params: unknown = request.params;
+    assert.ok(isRecord(params));
+    assert.equal(params.random_id, 999);
+    assert.equal(params.peer_id, 2);
+    assert.equal(typeof params.keyboard, 'string');
+    if (typeof params.keyboard !== 'string') {
+      assert.fail('Missing offer keyboard');
+    }
+    const keyboard: unknown = JSON.parse(params.keyboard);
+    assert.ok(isRecord(keyboard));
+    assert.equal(keyboard.inline, true);
+    return [];
+  });
+  context.after(() => api.mock.restore());
+  const stop = startNotifications(queue, vk);
+  await finished.promise;
+  await stop();
+});

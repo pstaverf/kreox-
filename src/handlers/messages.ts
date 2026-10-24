@@ -1,3 +1,4 @@
+import { isAdminItemCommand } from '../services/item-rules.js';
 import { randomInt } from 'node:crypto';
 import { setTimeout } from 'node:timers/promises';
 import { ExecuteError, type MessageContext, type VK } from 'vk-io';
@@ -51,6 +52,9 @@ export function createMessageHandler(vk: VK, game: GameService, groupId: number)
     try {
       const payload: unknown = context.messagePayload;
       const command = parseCommand(context.text, payload, context.isChat);
+      if (isAdminItemCommand(command) && !adminIds.has(context.senderId)) {
+        return;
+      }
       if ((command.kind === 'admin_balance' || command.kind === 'admin_balance_invalid') && !adminIds.has(context.senderId)) {
         return;
       }

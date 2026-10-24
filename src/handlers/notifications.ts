@@ -20,10 +20,10 @@ export function startNotifications(queue: NotificationQueue, vk: VK): () => Prom
         let delay = 0;
         try {
           await sendReply(vk, notification.peerId, notification.randomId, {
-            text: notification.text, keyboard: { kind: 'none' }
+            text: notification.text, keyboard: notification.keyboard ?? { kind: 'none' }
           });
         } catch (error: unknown) {
-          logError('referral_notification', error, { notificationId: notification._id });
+          logError('notification_delivery', error, { notificationId: notification._id });
           const permanent = error instanceof APIError && typeof error.code === 'number' && [7, 15, 100, 900, 901, 902, 917, 945, 946].includes(error.code);
           state = permanent ? 'failed' : 'pending';
           delay = Math.min(game.notificationMaxRetryMs,

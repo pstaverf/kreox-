@@ -1,3 +1,4 @@
+import { createItemTargetResolver } from './handlers/item-targets.js';
 import { MongoClient } from 'mongodb';
 import { VK } from 'vk-io';
 import { readEnvironment } from './config/env.js';
@@ -47,7 +48,7 @@ async function main(): Promise<void> {
     await client.connect();
     const database = new MongoGameDatabase(client, env.mongoDb);
     await database.initialize();
-    const service = new GameService(database, createReferralLinkResolver(vk, env.vkGroupId));
+    const service = new GameService(database, createReferralLinkResolver(vk, env.vkGroupId), createItemTargetResolver(vk));
     const handle = createMessageHandler(vk, service, env.vkGroupId);
     stopNotifications = startNotifications(database, vk);
     vk.updates.on('message_new', async context => {

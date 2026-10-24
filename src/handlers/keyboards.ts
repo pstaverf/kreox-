@@ -1,3 +1,4 @@
+import { itemLabels } from '../services/item-texts.js';
 import { Keyboard, type KeyboardBuilder } from 'vk-io';
 import { labels } from '../services/texts.js';
 import type { KeyboardSpec } from '../types/game.js';
@@ -6,6 +7,33 @@ import { assertNever } from '../utils/validation.js';
 export function buildKeyboard(spec: KeyboardSpec): KeyboardBuilder {
   const button = (label: string) => Keyboard.textButton({ label });
   switch (spec.kind) {
+    case 'item_detail':
+      return Keyboard.keyboard([
+        [Keyboard.textButton({ label: itemLabels.use, payload: { command: 'item_use', itemKind: spec.itemKind } })],
+        [Keyboard.textButton({ label: itemLabels.sell, payload: { command: 'item_sell', itemKind: spec.itemKind } }),
+          Keyboard.textButton({ label: itemLabels.gift, payload: { command: 'item_gift', itemKind: spec.itemKind } })],
+        [Keyboard.textButton({ label: labels.back, payload: { command: 'inventory', page: 0 } })]
+      ]).oneTime(false);
+    case 'item_use':
+      return Keyboard.keyboard([
+        [1, 5, 10].map(quantity => Keyboard.textButton({ label: `x${quantity}`, payload: { command: 'item_open', itemKind: spec.itemKind, quantity } })),
+        [Keyboard.textButton({ label: itemLabels.custom, payload: { command: 'item_custom', itemKind: spec.itemKind } })],
+        [Keyboard.textButton({ label: labels.back, payload: { command: 'item_detail', itemKind: spec.itemKind } })]
+      ]).oneTime(false);
+    case 'item_back':
+      return Keyboard.keyboard([[Keyboard.textButton({ label: labels.back, payload: { command: 'item_detail', itemKind: spec.itemKind } })]]).oneTime(false);
+    case 'item_confirmation':
+      if (spec.mode === 'open') {
+        return Keyboard.keyboard([
+          [Keyboard.textButton({ label: itemLabels.open, payload: { command: 'item_open_confirm', token: spec.token } })],
+          [Keyboard.textButton({ label: labels.back, payload: { command: 'inventory', page: 0 } })]
+        ]).oneTime(false);
+      }
+      return Keyboard.keyboard([[Keyboard.textButton({ label: spec.mode === 'gift' ? itemLabels.giftConfirm : itemLabels.confirm,
+        payload: { command: 'item_confirm', token: spec.token } })]]).inline();
+    case 'item_offer':
+      return Keyboard.keyboard([[Keyboard.textButton({ label: itemLabels.confirm,
+        payload: { command: 'item_buy', offerId: spec.offerId } })]]).inline();
     case 'none':
       return Keyboard.keyboard([]);
     case 'promo':
@@ -64,7 +92,7 @@ export function buildKeyboard(spec: KeyboardSpec): KeyboardBuilder {
     case 'referrals':
       return Keyboard.keyboard([[Keyboard.textButton({ label: labels.back, payload: { command: 'profile' } })]]).oneTime(false);
     case 'inventory': {
-      const rows = spec.itemIds.map(id => [button(`🆔 ${id}`)]);
+      const rows = spec.itemIds.map(id => [Keyboard.textButton({ label: `🆔 ${id}`, payload: { command: 'item', itemId: id } })]);
       const navigation = [];
       if (spec.page > 0) {
         navigation.push(Keyboard.textButton({ label: labels.previous, payload: { command: 'inventory', page: spec.page - 1 } }));
