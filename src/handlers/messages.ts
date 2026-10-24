@@ -4,7 +4,7 @@ import { setTimeout } from 'node:timers/promises';
 import { ExecuteError, type MessageContext, type VK } from 'vk-io';
 import { adminIds } from '../config/admin.js';
 import type { GameService } from '../services/game.js';
-import { labels, texts } from '../services/texts.js';
+import { texts } from '../services/texts.js';
 import { logError } from '../utils/log.js';
 import { isPositiveId } from '../utils/validation.js';
 import { game as limits } from '../config/game.js';
@@ -61,7 +61,7 @@ export function createMessageHandler(vk: VK, game: GameService, groupId: number)
       if (command.kind === 'delete_keyboards' && (!context.isChat || !adminIds.has(context.senderId))) {
         return;
       }
-      if (context.isChat && command.kind === 'development' && !Object.values(labels).some(label => label === context.text?.trim())) {
+      if (context.isChat && command.kind === 'development') {
         return;
       }
       const replySenderId = context.replyMessage?.senderId;

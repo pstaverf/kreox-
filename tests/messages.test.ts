@@ -60,7 +60,7 @@ test('VK handler uses real context types for DMs and chats and sends safe, deter
   await handle(message(vk));
   assert.equal(sent.at(-1)?.message, texts.welcome);
   assert.equal(userLookups, 1);
-  await handle(message(vk, { peerId: 2_000_000_001, messageId: 1, text: labels.bonus, payload: '{"vkId":999,"amount":-1}' }));
+  await handle(message(vk, { peerId: 2_000_000_001, messageId: 1, text: labels.bonus, payload: '{"command":"bonus","vkId":999,"amount":-1}' }));
   assert.equal(sent.at(-1)?.peer_id, 2_000_000_001);
   assert.equal(sent.at(-1)?.random_id, 2);
   assert.equal(sent.at(-1)?.disable_mentions, true);
@@ -68,7 +68,7 @@ test('VK handler uses real context types for DMs and chats and sends safe, deter
   assert.equal(database.player(1).kc, 250_000);
   assert.equal(database.state.players.has(999), false);
   assert.equal(userLookups, 1);
-  await handle(message(vk, { peerId: 2_000_000_001, messageId: 1, text: labels.bonus }));
+  await handle(message(vk, { peerId: 2_000_000_001, messageId: 1, text: labels.bonus, payload: '{"command":"bonus"}' }));
   assert.equal(sent.at(-1)?.random_id, 2);
   assert.equal(database.player(1).kc, 250_000);
   const before = sent.length;
@@ -89,7 +89,7 @@ test('closed messages do not roll back a committed bonus or leak VK tokens to lo
   const logger = mock.method(console, 'error', (value: unknown) => { logs.push(String(value)); });
   context.after(() => { api.mock.restore(); logger.mock.restore(); });
   const handle = createMessageHandler(vk, service, 123);
-  await handle(message(vk, { text: labels.bonus }));
+  await handle(message(vk, { text: labels.bonus, payload: '{"command":"bonus"}' }));
   assert.equal(database.player().kc, 250_000);
   assert.equal(logs.length, 1);
   assert.ok(logs.every(line => !line.includes('test-secret')));
@@ -220,8 +220,11 @@ test('DM promo wizard forwards free text, sends inline confirmation and replays 
   context.after(() => api.mock.restore());
   const handle = createMessageHandler(vk, service, 123);
   let id = 1;
-  for (const text of [labels.promo, labels.createPromo, 'KC', 'Подарок', '10.000', '5']) {
-    await handle(message(vk, { messageId: id++, text }));
+  for (const [text, action] of [
+    [labels.promo, { command: 'promo' }], [labels.createPromo, { command: 'promo_create' }],
+    ['KC', { command: 'promo_currency', currency: 'kc' }], ['Подарок', null], ['10.000', null], ['5', null]
+  ] as const) {
+    await handle(message(vk, { messageId: id++, text, ...(action === null ? {} : { payload: JSON.stringify(action) }) }));
   }
   const confirmation = sent.at(-1);
   assert.ok(confirmation);
@@ -326,4 +329,42 @@ test('item admin commands are silent for non-admins and the real DM button flow 
   await handle(openMessage);
   assert.equal(database.player().kc, 150_000);
   assert.equal(database.state.items.length, 0);
+});
+
+test('typed bonus labels and unrelated payloads never claim rewards, including after cooldown expires', async context => {
+  const vk = new VK({ token: 'test-token' });
+  const database = new MemoryDatabase();
+  const service = new GameService(database);
+  await service.handle({ eventId: 'payload-register', vkId: 1, command: { kind: 'profile' } }, async () => 'Игрок');
+  const sent: Record<string, unknown>[] = [];
+  const api = mock.method(vk.api, 'callWithRequest', async (request: APIRequest) => {
+    assert.equal(request.method, 'messages.send');
+    const params: unknown = request.params;
+    assert.ok(isRecord(params));
+    sent.push(params);
+    return [];
+  });
+  context.after(() => api.mock.restore());
+  const handle = createMessageHandler(vk, service, 123);
+  let id = 1;
+  for (const payload of [undefined, '{}', '[]', '{"vkId":1,"amount":999999}', '{"command":"unknown"}']) {
+    await handle(message(vk, { messageId: id++, text: labels.bonus, ...(payload === undefined ? {} : { payload }) }));
+    assert.equal(database.player().kc, 0);
+    assert.equal(database.player().bitcoin, 0);
+    assert.equal(database.player().bonusDay, 0);
+  }
+  const beforeChat = sent.length;
+  await handle(message(vk, { peerId: 2_000_000_001, messageId: id++, text: labels.bonus }));
+  assert.equal(sent.length, beforeChat);
+  await handle(message(vk, { messageId: id++, text: 'подпись не используется', payload: '{"command":"bonus","vkId":999,"amount":999999}' }));
+  assert.equal(database.player().kc, 250_000);
+  assert.equal(database.player().bonusDay, 1);
+  assert.equal(database.state.players.has(999), false);
+  database.time = new Date(database.player().nextBonusAt);
+  await handle(message(vk, { messageId: id++, text: labels.bonus }));
+  assert.equal(database.player().kc, 250_000);
+  assert.equal(database.player().bonusDay, 1);
+  await handle(message(vk, { messageId: id++, text: labels.bonus, payload: '{"command":"bonus"}' }));
+  assert.equal(database.player().kc, 750_000);
+  assert.equal(sent.at(-1)?.message, '🎁 Бонус 2-го дня:\n\n💰 5.000 KC\n💠 2.5₿');
 });

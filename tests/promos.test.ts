@@ -324,7 +324,8 @@ test('names that look like navigation commands are still accepted as draft input
   await send(await prepare(name));
   assert.match((await activate(name)).text, /успешна/);
   await send({ kind: 'promo_create' });
-  assert.equal((await text(labels.back)).text, promoTexts.menu);
+  assert.equal((await text(labels.back)).text, promoTexts.currency);
+  assert.equal((await send({ kind: 'promo_back' })).text, promoTexts.menu);
 });
 
 test('malformed promo payloads never supply a reward, quantity or owner', () => {

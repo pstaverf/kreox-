@@ -73,7 +73,7 @@ test('rate-limited send in execute retries with the same random ID without award
       client_info: { button_actions: ['text'], keyboard: true, inline_keyboard: false, carousel: false, lang_id: 0 },
       message: {
         id: 0, conversation_message_id: 2, out: 0, peer_id: 1, from_id: 1,
-        text: labels.bonus, date: 1_792_713_600, random_id: 0, attachments: [], important: false
+        text: labels.bonus, payload: '{"command":"bonus"}', date: 1_792_713_600, random_id: 0, attachments: [], important: false
       }
     }
   });

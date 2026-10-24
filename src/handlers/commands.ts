@@ -4,7 +4,6 @@ import { isPromoCurrency, isPromoName } from '../services/promo-rules.js';
 import { game } from '../config/game.js';
 import type { Command } from '../types/game.js';
 import { isRankingMetric } from '../services/rankings.js';
-import { labels } from '../services/texts.js';
 import { isRecord } from '../utils/validation.js';
 
 export function parseCommand(text: string | undefined, payload: unknown, isChat = false): Command {
@@ -62,7 +61,9 @@ export function parseCommand(text: string | undefined, payload: unknown, isChat 
       && Number.isSafeInteger(value.level) && value.level >= 0 && value.level < game.maxAmount) {
       return { kind: 'mining_confirm', level: value.level };
     }
-    if (value.command === 'menu' || value.command === 'mining' || value.command === 'profile') {
+    if (value.command === 'menu' || value.command === 'mining' || value.command === 'profile'
+      || value.command === 'bonus' || value.command === 'mining_start' || value.command === 'mining_withdraw'
+      || value.command === 'mining_upgrade' || value.command === 'referrals' || value.command === 'city' || value.command === 'development') {
       return { kind: value.command };
     }
   }
@@ -75,37 +76,7 @@ export function parseCommand(text: string | undefined, payload: unknown, isChat 
       case 'инвентарь': return { kind: 'inventory', page: 0 };
     }
   }
-  switch (normalized) {
-    case labels.promo: return { kind: 'promo' };
-    case labels.city: return { kind: 'city' };
-    case labels.createPromo: return { kind: 'promo_create' };
-    case labels.activatePromo: return { kind: 'promo_activate' };
-    case labels.myPromos: return { kind: 'promo_list', after: null };
-    case 'KC': return { kind: 'promo_currency', currency: 'kc' };
-    case '💶': return { kind: 'promo_currency', currency: 'euro' };
-    case '💠': return { kind: 'promo_currency', currency: 'bitcoin' };
-    case labels.profile:
-    case labels.back: return { kind: 'profile' };
-    case labels.menu: return { kind: 'menu' };
-    case labels.bonus: return { kind: 'bonus' };
-    case labels.inventory: return { kind: 'inventory', page: 0 };
-    case labels.mining:
-    case labels.upgradeBack: return { kind: 'mining' };
-    case labels.startMining: return { kind: 'mining_start' };
-    case labels.withdrawMining: return { kind: 'mining_withdraw' };
-    case labels.upgradeMining: return { kind: 'mining_upgrade' };
-    case labels.referral: return { kind: 'referrals' };
-    case labels.rating:
-    case labels.kc: return { kind: 'ranking', metric: 'kc' };
-    case labels.bitcoin: return { kind: 'ranking', metric: 'bitcoin' };
-    case labels.euro: return { kind: 'ranking', metric: 'euro' };
-    case labels.referrals: return { kind: 'ranking', metric: 'referrals' };
-    case labels.reputation: return { kind: 'ranking', metric: 'reputation' };
-    case labels.thieves: return { kind: 'ranking', metric: 'stolenKC' };
-  }
-  const match = /^🆔 ([1-9]\d{0,15})$/.exec(normalized ?? '');
-  const itemId = Number(match?.[1]);
-  return Number.isSafeInteger(itemId) && itemId > 0 ? { kind: 'item', itemId } : { kind: 'development' };
+  return { kind: 'development' };
 }
 
 export function parseReferrer(value: unknown, senderId: number): number | undefined {

@@ -14,7 +14,7 @@ import { promoAction, promoText } from './promos.js';
 import { promoTexts } from './promo-texts.js';
 import { miningAction } from './mining-actions.js';
 import { rankingScore } from './rankings.js';
-import { bonusText, cooldownText, inventoryText, labels, mention, profileText, rankingText, referralRewardText, referralText, texts } from './texts.js';
+import { bonusText, cooldownText, inventoryText, mention, profileText, rankingText, referralRewardText, referralText, texts } from './texts.js';
 
 export class GameService {
   constructor(
@@ -142,12 +142,7 @@ export class GameService {
       await store.setItemDraft(player._id, null);
     }
     if (!input.isChat && !input.hasPayload && player.promoDraft !== undefined && input.text !== undefined) {
-      if (input.text.trim() === labels.back) {
-        return promoAction(store, player, { kind: 'promo_back' });
-      }
-      if (command.kind !== 'menu' && !(player.promoDraft.step === 'currency' && command.kind === 'promo_currency')) {
-        return promoText(store, player, player.promoDraft, input);
-      }
+      return promoText(store, player, player.promoDraft, input);
     }
     if (isPromoCommand(command)) {
       return input.isChat ? { text: promoTexts.private, keyboard: { kind: 'none' } } : promoAction(store, player, command);

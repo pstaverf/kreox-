@@ -95,12 +95,11 @@ export function profileText(player: Player): string {
 }
 
 export function bonusText(day: number, reward: Reward): string {
-  return [
-    `🎁 Бонус ${day}-го дня:`,
+  return `🎁 Бонус ${day}-го дня:\n\n` + [
     `💰 ${formatAmount(reward.kc, game.kcScale)} KC`,
     `💠 ${formatAmount(reward.bitcoin, game.bitcoinScale, 1)}₿`,
     ...(reward.case ? [texts.caseName] : [])
-  ].join('\n\n');
+  ].join('\n');
 }
 
 export function cooldownText(remainingMs: number): string {
@@ -133,6 +132,7 @@ export function miningText(farm: MiningFarm, now: Date): string {
   return [
     '📼 Ваша майнинг-ферма:',
     `💡 Статус: ${remaining > 0 ? 'Включена' : 'Выключена'}`,
+    '',
     `⛏️ Добыча: ${formatMining(farm.rate)}₿/час`,
     `💠 Баланс: ${formatMining(farm.balance)}₿`,
     ...(remaining > 0 ? [`⏳ Осталось ${durationText(remaining)}`] : [])

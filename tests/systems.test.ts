@@ -33,13 +33,13 @@ async function fixture() {
 test('farm starts disabled with exact initial rate and a six-hour session', async () => {
   const { send, farm, database } = await fixture();
   assert.equal((await send({ kind: 'mining' })).text,
-    '📼 Ваша майнинг-ферма:\n💡 Статус: Выключена\n⛏️ Добыча: 0,100₿/час\n💠 Баланс: 0,000₿');
+    '📼 Ваша майнинг-ферма:\n💡 Статус: Выключена\n\n⛏️ Добыча: 0,100₿/час\n💠 Баланс: 0,000₿');
   assert.equal((await send({ kind: 'mining_start' })).text, texts.miningStarted);
   const started = farm().activeUntil.getTime();
   assert.equal(started - database.time.getTime(), game.mining.durationMs);
   assert.equal((await send({ kind: 'mining_start' })).text, texts.miningAlreadyStarted);
   assert.equal(farm().activeUntil.getTime(), started);
-  assert.match((await send({ kind: 'mining' })).text, /Включена\n.*\n.*\n⏳ Осталось 6 ч. 0 мин. 0 сек\./);
+  assert.match((await send({ kind: 'mining' })).text, /Включена\n\n.*\n.*\n⏳ Осталось 6 ч. 0 мин. 0 сек\./);
 });
 
 test('mining accrual stops exactly at six hours and is unaffected by restart or views', async () => {
@@ -262,7 +262,7 @@ test('oversized chat inventory produces an explicit limit response, without losi
 });
 
 test('navigation and payload validation distinguish mining from mining rankings and block text-only confirmation', () => {
-  assert.deepEqual(parseCommand(labels.mining, undefined), { kind: 'mining' });
+  assert.deepEqual(parseCommand(labels.mining, undefined), { kind: 'development' });
   assert.deepEqual(parseCommand(labels.mining, { command: 'ranking', metric: 'mining' }), { kind: 'ranking', metric: 'mining' });
   assert.deepEqual(parseCommand(labels.back, { command: 'menu' }), { kind: 'menu' });
   assert.deepEqual(parseCommand(labels.upgradeBack, { command: 'mining' }), { kind: 'mining' });

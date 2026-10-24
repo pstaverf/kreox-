@@ -1,11 +1,14 @@
 import { itemLabels } from '../services/item-texts.js';
 import { Keyboard, type KeyboardBuilder } from 'vk-io';
 import { labels } from '../services/texts.js';
-import type { KeyboardSpec } from '../types/game.js';
+import type { Command, KeyboardSpec } from '../types/game.js';
 import { assertNever } from '../utils/validation.js';
 
 export function buildKeyboard(spec: KeyboardSpec): KeyboardBuilder {
-  const button = (label: string) => Keyboard.textButton({ label });
+  const button = (label: string, action: Command) => {
+    const { kind, ...params } = action;
+    return Keyboard.textButton({ label, payload: { command: kind, ...params } });
+  };
   switch (spec.kind) {
     case 'item_detail':
       return Keyboard.keyboard([
@@ -64,18 +67,18 @@ export function buildKeyboard(spec: KeyboardSpec): KeyboardBuilder {
       ]).oneTime(false);
     case 'main':
       return Keyboard.keyboard([
-        [button(labels.battlePass)],
-        [button(labels.profile), button(labels.bonus), button(labels.rating)],
-        [button(labels.promo), Keyboard.textButton({ label: labels.city, color: Keyboard.PRIMARY_COLOR }), button(labels.mining)],
-        [Keyboard.textButton({ label: labels.donate, color: Keyboard.POSITIVE_COLOR }), button(labels.boss), button(labels.tasks)],
-        [button(labels.help)]
+        [button(labels.battlePass, { kind: 'development' })],
+        [button(labels.profile, { kind: 'profile' }), button(labels.bonus, { kind: 'bonus' }), button(labels.rating, { kind: 'ranking', metric: 'kc' })],
+        [button(labels.promo, { kind: 'promo' }), Keyboard.textButton({ label: labels.city, color: Keyboard.PRIMARY_COLOR, payload: { command: 'city' } }), button(labels.mining, { kind: 'mining' })],
+        [Keyboard.textButton({ label: labels.donate, color: Keyboard.POSITIVE_COLOR, payload: { command: 'development' } }), button(labels.boss, { kind: 'development' }), button(labels.tasks, { kind: 'development' })],
+        [button(labels.help, { kind: 'development' })]
       ]).oneTime(false);
     case 'profile':
-      return Keyboard.keyboard([[button(labels.referral), button(labels.inventory)], [button(labels.menu)]]).oneTime(false);
+      return Keyboard.keyboard([[button(labels.referral, { kind: 'referrals' }), button(labels.inventory, { kind: 'inventory', page: 0 })], [button(labels.menu, { kind: 'menu' })]]).oneTime(false);
     case 'mining':
       return Keyboard.keyboard([
-        [button(labels.startMining), button(labels.withdrawMining)],
-        [button(labels.upgradeMining), Keyboard.textButton({ label: labels.back, payload: { command: 'menu' } })]
+        [button(labels.startMining, { kind: 'mining_start' }), button(labels.withdrawMining, { kind: 'mining_withdraw' })],
+        [button(labels.upgradeMining, { kind: 'mining_upgrade' }), Keyboard.textButton({ label: labels.back, payload: { command: 'menu' } })]
       ]).oneTime(false);
     case 'mining_upgrade':
       return Keyboard.keyboard([
@@ -84,9 +87,9 @@ export function buildKeyboard(spec: KeyboardSpec): KeyboardBuilder {
       ]).oneTime(false);
     case 'ranking':
       return Keyboard.keyboard([
-        [button(labels.kc), button(labels.bitcoin), Keyboard.textButton({ label: labels.mining, payload: { command: 'ranking', metric: 'mining' } })],
-        [button(labels.euro), button(labels.referrals), button(labels.reputation)],
-        [button(labels.thieves)],
+        [button(labels.kc, { kind: 'ranking', metric: 'kc' }), button(labels.bitcoin, { kind: 'ranking', metric: 'bitcoin' }), Keyboard.textButton({ label: labels.mining, payload: { command: 'ranking', metric: 'mining' } })],
+        [button(labels.euro, { kind: 'ranking', metric: 'euro' }), button(labels.referrals, { kind: 'ranking', metric: 'referrals' }), button(labels.reputation, { kind: 'ranking', metric: 'reputation' })],
+        [button(labels.thieves, { kind: 'ranking', metric: 'stolenKC' })],
         [Keyboard.textButton({ label: labels.back, payload: { command: 'menu' } })]
       ]).oneTime(false);
     case 'referrals':
@@ -103,7 +106,7 @@ export function buildKeyboard(spec: KeyboardSpec): KeyboardBuilder {
       if (navigation.length > 0) {
         rows.push(navigation);
       }
-      rows.push([button(labels.back)]);
+      rows.push([button(labels.back, { kind: 'profile' })]);
       return Keyboard.keyboard(rows).oneTime(false);
     }
     default:
