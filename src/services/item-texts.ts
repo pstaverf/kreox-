@@ -48,7 +48,7 @@ function dropText(index: number): string {
 }
 export function itemDetails(kind: ItemKind, count: number, use = false): string {
   return (use ? `«${itemName(kind)}» (доступно: ${count} шт.):` : `📒 Предмет "${itemName(kind)}" (x${count}):`)
-    + `\n\nМожет выпасть:\n\n${itemConfig.drops.map((_, index) => dropText(index)).join('\n\n')}`;
+    + `\nМожет выпасть:\n\n${itemConfig.drops.map((_, index) => dropText(index)).join('\n')}`;
 }
 export function itemQuantityText(count: number): string {
   return `🎒 Введите число предметов (у вас: ${count}).`;

@@ -6,7 +6,7 @@ import { parseCommand } from '../src/handlers/commands.js';
 import { buildKeyboard } from '../src/handlers/keyboards.js';
 import { GameService } from '../src/services/game.js';
 import { caseRewards, parseItemPrice, parsePlayerTarget } from '../src/services/item-rules.js';
-import { itemTexts } from '../src/services/item-texts.js';
+import { itemDetails, itemTexts } from '../src/services/item-texts.js';
 import type { Command, GameInput, KeyboardSpec } from '../src/types/game.js';
 import { isRecord } from '../src/utils/validation.js';
 import { MemoryDatabase } from './memory.js';
@@ -304,5 +304,14 @@ test('all new keyboards fit VK limits, use text buttons and keep payloads below 
         }
       }
     }
+  }
+});
+
+
+test('item cards and use screens have exactly one blank line, only after the drop heading', () => {
+  const drops = '💰 1.500 KC\n💰 2.500 KC\n💰 15.000 KC\n💶 1 евро\n💶 2 евро\n💶 5 евро';
+  for (const entry of itemConfig.catalog) {
+    assert.equal(itemDetails(entry.kind, 1), `📒 Предмет "${entry.name}" (x1):\nМожет выпасть:\n\n${drops}`);
+    assert.equal(itemDetails(entry.kind, 5, true), `«${entry.name}» (доступно: 5 шт.):\nМожет выпасть:\n\n${drops}`);
   }
 });
