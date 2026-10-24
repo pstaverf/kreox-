@@ -153,3 +153,97 @@ test('authorization is checked before cached events, and direct invalid commands
   assert.equal(database.player(1).kc, 10_000_000);
   assert.equal(first.text, 'Done.');
 });
+
+test('wallet admin parser accepts all six commands, bare VK IDs, mentions and reply amounts with exact scaling', () => {
+  for (const [suffix, currency, scale] of [['donut', 'euro', game.euroScale], ['bit', 'bitcoin', game.bitcoinScale]] as const) {
+    for (const operation of ['set', 'add', 'take'] as const) {
+      assert.deepEqual(parseAdminBalance(`!${operation}${suffix} 123 10`), { kind: 'admin_balance', operation, currency, targetId: 123, amount: 10 * scale });
+      assert.deepEqual(parseAdminBalance(`!${operation}${suffix} @id123 10k`), { kind: 'admin_balance', operation, currency, targetId: 123, amount: 10_000 * scale });
+      assert.deepEqual(parseAdminBalance(`!${operation}${suffix} [id123|Имя 123] 0`), { kind: 'admin_balance', operation, currency, targetId: 123, amount: 0 });
+      assert.deepEqual(parseAdminBalance(`!${operation}${suffix} 1`), { kind: 'admin_balance', operation, currency, targetId: null, amount: scale });
+    }
+  }
+  assert.deepEqual(parseAdminBalance('!SETDONUT id2 50,25'), { kind: 'admin_balance', operation: 'set', currency: 'euro', targetId: 2, amount: 5025 });
+  assert.deepEqual(parseAdminBalance('!addbit 2 1.116'), { kind: 'admin_balance', operation: 'add', currency: 'bitcoin', targetId: 2, amount: 111_600_000 });
+  for (const text of ['!setdonut 1 1.001', '!addbit 1 0.0001', '!takebit -1', '!takedonut 1 -10', '!setbit 1 NaN', '!setbit 1 1e4', '!adddonut 1 1 extra', '!takebit @id0 1', '!setbit 1 90071993', '!setdonut 1 90071992547409.92']) {
+    const command = parseAdminBalance(text);
+    assert.equal(command?.kind, 'admin_balance_invalid', text);
+  }
+  assert.equal(parseAdminBalance('!setbitcoin 1 100'), null);
+});
+
+test('wallet set/add/take alter only the selected currency and reply author is overridden by explicit VK ID', async () => {
+  const { send, database } = await fixture();
+  for (const [suffix, currency, scale] of [['donut', 'euro', game.euroScale], ['bit', 'bitcoin', game.bitcoinScale]] as const) {
+    const before = structuredClone(database.player(1));
+    assert.equal((await send(`!set${suffix} 1 10`, { replySenderId: 2, isChat: true })).text, 'Done.');
+    assert.equal((await send(`!add${suffix} 1 2`)).text, 'Done.');
+    assert.equal((await send(`!take${suffix} 1 3`)).text, 'Done.');
+    assert.deepEqual(database.player(1), { ...before, [currency]: 9 * scale });
+    assert.equal((await send(`!set${suffix} 5`, { replySenderId: 2 })).text, 'Done.');
+    assert.equal(database.player(2)[currency], 5 * scale);
+    assert.equal((await send(`!take${suffix} 1 9`)).text, 'Done.');
+    assert.equal(database.player(1)[currency], 0);
+    assert.deepEqual((await send(`!set${suffix} 1 0`)).keyboard, { kind: 'none' });
+  }
+});
+
+test('wallet take refuses underflow, add refuses overflow and exact decimal boundaries remain safe integers', async () => {
+  const { send, database } = await fixture();
+  for (const [suffix, currency, scale] of [['donut', 'euro', game.euroScale], ['bit', 'bitcoin', game.bitcoinScale]] as const) {
+    database.player(1)[currency] = scale - 1;
+    assert.equal((await send(`!take${suffix} 1 1`)).text, texts.adminWalletLimit);
+    assert.equal(database.player(1)[currency], scale - 1);
+    database.player(1)[currency] = game.maxAmount;
+    assert.equal((await send(`!add${suffix} 1 1`)).text, texts.adminWalletLimit);
+    assert.equal(database.player(1)[currency], game.maxAmount);
+    assert.equal((await send(`!take${suffix} 1 0`)).text, 'Done.');
+  }
+  assert.equal((await send('!setdonut 1 90071992547409.91')).text, 'Done.');
+  assert.equal(database.player(1).euro, game.maxAmount);
+  assert.equal((await send('!setbit 1 90071992.547')).text, 'Done.');
+  assert.equal(database.player(1).bitcoin, 9_007_199_254_700_000);
+  assert.equal((await send('!takebit 1 0,001')).text, 'Done.');
+  assert.equal(database.player(1).bitcoin, 9_007_199_254_600_000);
+});
+
+test('wallet admin authorization, unknown targets and payload forgery fail without changing balances', async () => {
+  const { send, database } = await fixture();
+  const before = structuredClone(database.state);
+  await assert.rejects(send('!adddonut 1 50', { vkId: 1 }));
+  await assert.rejects(send('!takebit', { vkId: 1 }));
+  assert.deepEqual(database.state, before);
+  assert.equal((await send('!setdonut 999 50')).text, texts.adminBalanceMissing);
+  assert.equal(database.state.players.has(999), false);
+  assert.deepEqual(parseCommand(undefined, { command: 'admin_balance', currency: 'euro', operation: 'add', targetId: 1, amount: 5000 }), { kind: 'development' });
+  assert.equal((await send('!takebit 1 -1')).text, texts.adminWalletUsage);
+  database.state.players.delete(adminId);
+  assert.equal((await send('!adddonut 1 50')).text, 'Done.');
+  assert.equal(database.state.players.has(adminId), false);
+});
+
+test('wallet admin events are deduplicated after restart and concurrent takes cannot make balances negative', async () => {
+  const { send, database } = await fixture();
+  const first = await send('!adddonut 1 50', { eventId: 'once-donut' });
+  const restart = new GameService(database);
+  assert.deepEqual(await restart.handle({ eventId: 'once-donut', vkId: adminId, command: parseCommand('!adddonut 1 50', undefined) }, async () => 'Игрок'), first);
+  assert.equal(database.player(1).euro, 5000);
+  const takes = await Promise.all(Array.from({ length: 8 }, () => send('!takedonut 1 50')));
+  assert.equal(takes.filter(reply => reply.text === 'Done.').length, 1);
+  assert.equal(database.player(1).euro, 0);
+  await send('!setbit 1 1.5');
+  const repeated = await Promise.all(Array.from({ length: 8 }, () => send('!takebit 1 0.5', { eventId: 'once-takebit' })));
+  assert.ok(repeated.every(reply => reply.randomId === repeated[0]?.randomId));
+  assert.equal(database.player(1).bitcoin, game.bitcoinScale);
+});
+
+test('wallet balance writes roll back with a failed event and leave ongoing donate wizard intact', async () => {
+  const { send, database } = await fixture();
+  database.player(adminId).donateDraft = { step: 'nickname' };
+  await send('!setdonut 1 100');
+  assert.deepEqual(database.player(adminId).donateDraft, { step: 'nickname' });
+  const before = structuredClone(database.state);
+  database.failRemember = true;
+  await assert.rejects(send('!takedonut 1 50'));
+  assert.deepEqual(database.state, before);
+});

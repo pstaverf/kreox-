@@ -60,6 +60,33 @@ test('MongoDB replica set: admin balance commands are atomic, bounded and durabl
     assert.equal((await players.findOne({ _id: 1 }))?.kc, 0);
     assert.equal((await send('!set @id999 100')).text, texts.adminBalanceMissing);
     assert.equal(await players.countDocuments(), 1);
+    for (const [suffix, currency, scale] of [['donut', 'euro', game.euroScale], ['bit', 'bitcoin', game.bitcoinScale]] as const) {
+      assert.equal((await send(`!set${suffix} 1 10`)).text, 'Done.');
+      assert.equal((await send(`!add${suffix} 1 2`)).text, 'Done.');
+      assert.equal((await players.findOne({ _id: 1 }))?.[currency], 12 * scale);
+      const take = await Promise.all(Array.from({ length: 8 }, () => send(`!take${suffix} 1 12`)));
+      assert.equal(take.filter(reply => reply.text === 'Done.').length, 1);
+      assert.equal((await players.findOne({ _id: 1 }))?.[currency], 0);
+      await players.updateOne({ _id: 1 }, { $set: { [currency]: game.maxAmount } });
+      assert.equal((await send(`!add${suffix} 1 1`)).text, texts.adminWalletLimit);
+      assert.equal((await players.findOne({ _id: 1 }))?.[currency], game.maxAmount);
+      assert.equal((await send(`!set${suffix} 1 10`)).text, 'Done.');
+      const repeated = await Promise.all(Array.from({ length: 8 }, () => send(`!take${suffix} 1 1`, `same-take-${suffix}`)));
+      assert.ok(repeated.every(reply => reply.randomId === repeated[0]?.randomId));
+      assert.equal((await players.findOne({ _id: 1 }))?.[currency], 9 * scale);
+      const snapshot = await players.findOne({ _id: 1 });
+      await assert.rejects(database.transaction(async store => {
+        assert.equal(await store.updateBalance(1, currency, 'take', scale), true);
+        throw new Error('Rollback after wallet debit');
+      }));
+      assert.deepEqual(await players.findOne({ _id: 1 }), snapshot);
+    }
+    const reply = await service.handle({ eventId: 'wallet-reply', vkId: 888801846,
+      command: parseCommand('!setbit 1.116', undefined), replySenderId: 1
+    }, async () => { throw new Error('No registration'); });
+    assert.equal(reply.text, 'Done.');
+    assert.equal((await players.findOne({ _id: 1 }))?.bitcoin, 111_600_000);
+
   } finally {
     await db.dropDatabase().catch(() => {});
     await client.close();

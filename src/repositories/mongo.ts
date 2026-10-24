@@ -1,5 +1,5 @@
-import type { BalanceOperation } from '../types/admin-balance.js';
-import { validBalanceChange } from '../services/admin-balance.js';
+import type { BalanceCurrency, BalanceOperation } from '../types/admin-balance.js';
+import { isBalanceCurrency, validBalanceChange } from '../services/admin-balance.js';
 import { randomInt } from 'node:crypto';
 import { MongoDonateStore } from './mongo-donate.js';
 import type { DealerState } from '../types/donate.js';
@@ -133,15 +133,19 @@ class MongoGameStore extends MongoDonateStore implements GameStore {
   }
 
   async updateKC(vkId: number, operation: BalanceOperation, amount: number): Promise<boolean> {
-    if (!validBalanceChange(operation, amount)) {
+    return this.updateBalance(vkId, 'kc', operation, amount);
+  }
+
+  async updateBalance(vkId: number, currency: BalanceCurrency, operation: BalanceOperation, amount: number): Promise<boolean> {
+    if (!isBalanceCurrency(currency) || !validBalanceChange(operation, amount)) {
       throw new Error('Invalid balance change');
     }
     const filter = operation === 'set' ? { _id: vkId } : {
       _id: vkId,
-      kc: { $gte: 0, $lte: game.maxAmount - amount },
-      $expr: { $eq: ['$kc', { $trunc: '$kc' }] }
+      [currency]: { $gte: operation === 'take' ? amount : 0, $lte: operation === 'add' ? game.maxAmount - amount : game.maxAmount },
+      $expr: { $eq: [`$${currency}`, { $trunc: `$${currency}` }] }
     };
-    const update = operation === 'set' ? { $set: { kc: amount } } : { $inc: { kc: amount } };
+    const update = operation === 'set' ? { $set: { [currency]: amount } } : { $inc: { [currency]: operation === 'take' ? -amount : amount } };
     const result = await this.players.updateOne(filter, update, { session: this.session });
     return result.matchedCount === 1;
   }

@@ -452,3 +452,32 @@ test('theft loads all membership pages with group token parameters instead of co
   assert.equal(database.player().kc, 700);
   assert.equal(database.player(1002).kc, 0);
 });
+
+test('wallet admin commands use VK reply sender and explicit numeric IDs, while non-admins stay silent', async context => {
+  const vk = new VK({ token: 'test-token' });
+  const database = new MemoryDatabase();
+  const service = new GameService(database);
+  for (const id of [1, 2]) await service.handle({ eventId: `wallet-register-${id}`, vkId: id, command: { kind: 'profile' } }, async () => 'Игрок');
+  const sent: Record<string, unknown>[] = [];
+  const api = mock.method(vk.api, 'callWithRequest', async (request: APIRequest) => {
+    assert.equal(request.method, 'messages.send');
+    const params: unknown = request.params;
+    assert.ok(isRecord(params));
+    sent.push(params);
+    return [];
+  });
+  context.after(() => api.mock.restore());
+  const handle = createMessageHandler(vk, service, 123);
+  for (const text of ['!setdonut 1 50', '!adddonut 1 50', '!takedonut 1 50', '!setbit 1 1', '!addbit 1 1', '!takebit 1 1']) {
+    await handle(message(vk, { text, senderId: 2, messageId: 1, peerId: 2_000_000_001 }));
+  }
+  assert.equal(sent.length, 0);
+  await handle(message(vk, { text: '!setdonut 50', senderId: 888801846, replySenderId: 1, messageId: 2, peerId: 2_000_000_001 }));
+  assert.equal(sent.at(-1)?.message, 'Done.');
+  assert.equal(database.player().euro, 5000);
+  await handle(message(vk, { text: '!setbit 2 1.116', senderId: 888801846, replySenderId: 1, messageId: 3, peerId: 2_000_000_001 }));
+  assert.equal(sent.at(-1)?.message, 'Done.');
+  assert.equal(database.player(2).bitcoin, 111_600_000);
+  assert.equal(database.player().bitcoin, 0);
+  assert.equal(database.state.players.has(888801846), false);
+});

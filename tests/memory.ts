@@ -4,8 +4,8 @@ import type { DealerPurchase, DealerState, DonateDraft, DonatePurchase } from '.
 import type { CaseRewards, ItemDraft, ItemKind, ItemOffer, ItemResult, PurchaseResult } from '../src/types/items.js';
 import type { KeyboardSpec } from '../src/types/game.js';
 import { isItemKind, validItemQuantity, validateOffer } from '../src/services/item-rules.js';
-import type { BalanceOperation } from '../src/types/admin-balance.js';
-import { validBalanceChange } from '../src/services/admin-balance.js';
+import type { BalanceCurrency, BalanceOperation } from '../src/types/admin-balance.js';
+import { isBalanceCurrency, validBalanceChange } from '../src/services/admin-balance.js';
 import type { Promo, PromoActivation, PromoCreation, PromoDraft } from '../src/types/promo.js';
 import { promoRedemptionId, promoTotal, validatePromo } from '../src/services/promo-rules.js';
 import { accountCapacity, game } from '../src/config/game.js';
@@ -333,15 +333,17 @@ class MemoryStore implements GameStore {
   }
 
   async updateKC(vkId: number, operation: BalanceOperation, amount: number): Promise<boolean> {
-    if (!validBalanceChange(operation, amount)) {
-      throw new Error('Invalid balance change');
-    }
+    return this.updateBalance(vkId, 'kc', operation, amount);
+  }
+
+  async updateBalance(vkId: number, currency: BalanceCurrency, operation: BalanceOperation, amount: number): Promise<boolean> {
+    if (!isBalanceCurrency(currency) || !validBalanceChange(operation, amount)) throw new Error('Invalid balance change');
     const player = this.state.players.get(vkId);
-    if (player === undefined || (operation === 'add' && (!Number.isSafeInteger(player.kc)
-      || player.kc < 0 || player.kc > game.maxAmount - amount))) {
-      return false;
-    }
-    player.kc = operation === 'set' ? amount : player.kc + amount;
+    if (player === undefined) return false;
+    const balance = player[currency];
+    if (operation !== 'set' && (!Number.isSafeInteger(balance) || balance < 0 || balance > game.maxAmount
+      || (operation === 'add' && balance > game.maxAmount - amount) || (operation === 'take' && balance < amount))) return false;
+    player[currency] = operation === 'set' ? amount : balance + (operation === 'take' ? -amount : amount);
     return true;
   }
 
