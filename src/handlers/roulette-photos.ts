@@ -35,7 +35,8 @@ export async function downloadRoulettePhoto(url: string, fetcher: typeof fetch =
 }
 export function createRoulettePhotoResolver(vk: VK, cache: MessagePhotoCache, groupId: number, download: (url: string) => Promise<Buffer> = downloadRoulettePhoto): RoulettePhotoResolver {
   if (!isPositiveId(groupId)) throw new Error('Invalid photo community');
-  return async (peerId, result) => {
+  const pending = new Map<string, Promise<string | null>>();
+  const resolve: RoulettePhotoResolver = async (peerId, result) => {
     if (!isPositiveId(peerId) || !validRouletteNumber(result)) throw new Error('Invalid roulette photo identity');
     const url = roulettePhotos[result];
     if (url === undefined) throw new Error('Missing roulette photo URL');
@@ -59,5 +60,13 @@ export function createRoulettePhotoResolver(vk: VK, cache: MessagePhotoCache, gr
       logError('roulette_photo_upload', error, { number: result, stage, elapsedMs: Math.max(0, Date.now() - startedAt), timeoutMs: rouletteConfig.photoTimeoutMs });
       return null;
     }
+  };
+  return async (peerId, result) => {
+    const key = `${peerId}:${result}`;
+    const existing = pending.get(key);
+    if (existing !== undefined) return existing;
+    const task = resolve(peerId, result).finally(() => { pending.delete(key); });
+    pending.set(key, task);
+    return task;
   };
 }

@@ -251,3 +251,27 @@ test('download timeout remains active while reading the body, not just waiting f
   }), { name: 'AbortError' });
   assert.equal(deadline.mock.callCount(), 1);
 });
+
+test('result delivery reuses a still-running prefetch rather than uploading the same photo twice', async context => {
+  const vk = new VK({ token: 'test-token' });
+  const started = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<Buffer>();
+  let downloads = 0;
+  const upload = mock.method(vk.upload, 'messagePhoto', async () => new PhotoAttachment({ api: vk.api, payload: { id: 9, owner_id: -123 } }));
+  context.after(() => upload.mock.restore());
+  const stored = cache();
+  const resolve = createRoulettePhotoResolver(vk, stored, 123, async () => {
+    downloads += 1;
+    started.resolve();
+    return release.promise;
+  });
+  const prefetch = resolve(2_000_000_001, 25);
+  await started.promise;
+  const result = resolve(2_000_000_001, 25);
+  assert.equal(downloads, 1);
+  release.resolve(jpeg);
+  assert.deepEqual(await Promise.all([prefetch, result]), ['photo-123_9', 'photo-123_9']);
+  assert.equal(upload.mock.callCount(), 1);
+  assert.equal(await resolve(2_000_000_001, 25), 'photo-123_9');
+  assert.equal(downloads, 1);
+});

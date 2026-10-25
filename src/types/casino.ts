@@ -43,6 +43,7 @@ export interface CasinoPage extends RecordBase { kind: 'page'; roundId: string; 
 export interface CasinoDelivery extends RecordBase { kind: 'delivery'; peerId: number; texts: string[]; index: number; stage: 'pending' | 'finished'; dueAt: Date }
 export type CasinoRecord = CasinoDelivery | CasinoRound | CasinoBet | DirectorState | DirectorBid | DirectorElection | CasinoCredit | CasinoChat | CasinoPage;
 export type CasinoQuery =
+  | { kind: 'roulette_photo'; after: string }
   | { kind: 'round' | 'election' | 'credit' | 'delivery'; dueAt: Date }
   | { kind: 'bet'; roundId: string; vkId?: number; settled?: boolean }
   | { kind: 'bid'; electionId: string; settled?: boolean }

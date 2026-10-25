@@ -83,6 +83,7 @@ class MemoryStore implements GameStore {
   async casinoList(query: CasinoQuery, limit: number): Promise<CasinoRecord[]> {
     return structuredClone([...this.state.casino.values()].filter(record => {
       switch (query.kind) {
+        case 'roulette_photo': return record.kind === 'round' && record.mode === 'roulette' && record.stage !== 'finished' && record._id > query.after;
         case 'round': return record.kind === 'round' && record.stage !== 'finished' && record.dueAt <= query.dueAt;
         case 'credit': return record.kind === 'credit' && record.stage === 'pending' && record.dueAt <= query.dueAt;
         case 'delivery': return record.kind === 'delivery' && record.stage === 'pending' && record.dueAt <= query.dueAt;
@@ -92,7 +93,7 @@ class MemoryStore implements GameStore {
         case 'chat': return record.kind === 'chat' && record.active && record._id > query.after;
       }
     }).sort((a, b) => {
-      if ('dueAt' in a && 'dueAt' in b && a.dueAt.getTime() !== b.dueAt.getTime()) return a.dueAt.getTime() - b.dueAt.getTime();
+      if (query.kind !== 'roulette_photo' && 'dueAt' in a && 'dueAt' in b && a.dueAt.getTime() !== b.dueAt.getTime()) return a.dueAt.getTime() - b.dueAt.getTime();
       return a._id.localeCompare(b._id);
     }).slice(0, limit));
   }

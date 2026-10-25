@@ -35,7 +35,8 @@ export class MongoGameDatabase implements GameDatabase {
       { key: { kind: 1, roundId: 1, settled: 1, _id: 1 } },
       { key: { kind: 1, roundId: 1, vkId: 1, _id: 1 } },
       { key: { kind: 1, electionId: 1, settled: 1, _id: 1 } },
-      { key: { kind: 1, active: 1, _id: 1 } }
+      { key: { kind: 1, active: 1, _id: 1 } },
+      { key: { kind: 1, mode: 1, stage: 1, _id: 1 } }
     ]);
     await this.db.collection<Deposit>('deposits').createIndex({ vkId: 1, state: 1, depositId: 1 });
     await this.db.collection<Deposit>('deposits').createIndex({ vkId: 1, depositId: 1 }, { unique: true });

@@ -29,6 +29,7 @@ export class MongoCasinoStore extends MongoBankStore {
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > accountCapacity) throw new Error('Invalid casino query bound');
     let filter: Filter<CasinoRecord>;
     switch (query.kind) {
+      case 'roulette_photo': filter = { kind: 'round', mode: 'roulette', stage: { $in: ['open', 'closed', 'waiting', 'settling', 'announcing'] }, _id: { $gt: query.after } }; break;
       case 'round': filter = { kind: 'round', stage: { $in: ['open', 'closed', 'waiting', 'settling', 'announcing'] }, dueAt: { $lte: query.dueAt } }; break;
       case 'election': filter = { kind: 'election', stage: { $in: ['refunds', 'broadcast'] }, dueAt: { $lte: query.dueAt } }; break;
       case 'credit': filter = { kind: 'credit', stage: 'pending', dueAt: { $lte: query.dueAt } }; break;
@@ -37,7 +38,7 @@ export class MongoCasinoStore extends MongoBankStore {
       case 'bid': filter = { kind: 'bid', electionId: query.electionId, ...(query.settled === undefined ? {} : { settled: query.settled }) }; break;
       case 'chat': filter = { kind: 'chat', active: true, _id: { $gt: query.after } }; break;
     }
-    return this.records.find(filter, { session: this.casinoSession }).sort(query.kind === 'bet' || query.kind === 'bid' || query.kind === 'chat' ? { _id: 1 } : { dueAt: 1, _id: 1 }).limit(limit).toArray();
+    return this.records.find(filter, { session: this.casinoSession }).sort(query.kind === 'bet' || query.kind === 'bid' || query.kind === 'chat' || query.kind === 'roulette_photo' ? { _id: 1 } : { dueAt: 1, _id: 1 }).limit(limit).toArray();
   }
   async casinoInsert(record: CasinoRecord): Promise<void> {
     if (record.version !== 0) throw new Error('Invalid initial casino version');

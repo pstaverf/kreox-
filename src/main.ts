@@ -1,3 +1,4 @@
+import { startRoulettePhotoWorker } from './handlers/roulette-photo-worker.js';
 import { MongoMessagePhotos } from './repositories/mongo-message-photos.js';
 import { createRoulettePhotoResolver } from './handlers/roulette-photos.js';
 import { startCasinoWorker } from './handlers/casino-worker.js';
@@ -30,6 +31,7 @@ async function main(): Promise<void> {
   });
   const pending = new Set<Promise<void>>();
   let stopping: Promise<void> | undefined;
+  let stopPhotos: (() => Promise<void>) | undefined;
   let stopCasino: (() => Promise<void>) | undefined;
   let stopChats: (() => Promise<void>) | undefined;
   let stopBank: (() => Promise<void>) | undefined;
@@ -41,6 +43,7 @@ async function main(): Promise<void> {
         await stopChats?.();
         await stopCasino?.();
         await stopBank?.();
+        await stopPhotos?.();
         await stopNotifications?.();
         await Promise.allSettled([...pending]);
       } finally {
@@ -62,7 +65,9 @@ async function main(): Promise<void> {
     await syncChatRegistry(vk, database, env.vkGroupId).catch((error: unknown) => { logError('chat_registry', error); });
     const service = new GameService(database, createReferralLinkResolver(vk, env.vkGroupId), createItemTargetResolver(vk));
     const handle = createMessageHandler(vk, service, env.vkGroupId);
-    const notifications = startNotifications(database, vk, createRoulettePhotoResolver(vk, new MongoMessagePhotos(client.db(env.mongoDb)), env.vkGroupId));
+    const resolvePhoto = createRoulettePhotoResolver(vk, new MongoMessagePhotos(client.db(env.mongoDb)), env.vkGroupId);
+    const notifications = startNotifications(database, vk, resolvePhoto);
+    stopPhotos = startRoulettePhotoWorker(database, resolvePhoto);
     stopNotifications = notifications;
     stopBank = startBankWorker(database);
     stopCasino = startCasinoWorker(database, notifications.wake);

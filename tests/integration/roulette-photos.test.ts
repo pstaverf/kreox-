@@ -4,7 +4,11 @@ import { test } from 'node:test';
 import { MongoClient } from 'mongodb';
 import { MongoMessagePhotos } from '../../src/repositories/mongo-message-photos.js';
 import { MongoGameDatabase } from '../../src/repositories/mongo.js';
-import type { Notification } from '../../src/types/game.js';
+import { parseCommand } from '../../src/handlers/commands.js';
+import { GameService } from '../../src/services/game.js';
+import { roundKey } from '../../src/services/casino-rules.js';
+import type { CasinoRecord } from '../../src/types/casino.js';
+import type { Notification, Player } from '../../src/types/game.js';
 
 const uri = process.env.MONGODB_TEST_URI;
 
@@ -25,6 +29,22 @@ test('MongoDB: photo cache survives repository restart and zero metadata commits
     assert.equal(await db.collection('message_photos').countDocuments({}), 1);
     const database = new MongoGameDatabase(client, name);
     await database.initialize();
+    await database.initialize();
+    const service = new GameService(database, undefined, undefined, undefined, undefined, undefined, () => 0);
+    await service.handle({ eventId: 'register', vkId: 1, command: { kind: 'profile' } }, async () => 'Игрок');
+    await db.collection<Player>('players').updateOne({ _id: 1 }, { $set: { kc: 1_000_000 } });
+    for (let index = 1; index <= 3; index += 1) {
+      await service.handle({ eventId: `bet:${index}`, vkId: 1, peerId: 2_000_000_000 + index, isChat: true,
+        command: parseCommand('0 1000', undefined, true) }, async () => 'Игрок');
+    }
+    await db.collection<CasinoRecord>('casino_records').updateOne({ _id: roundKey(2_000_000_003, 'roulette') }, { $set: { stage: 'finished' } });
+    const first = await database.transaction(store => store.casinoList({ kind: 'roulette_photo', after: '' }, 1));
+    assert.equal(first.length, 1);
+    assert.equal(first[0]?._id, roundKey(2_000_000_001, 'roulette'));
+    const rest = await database.transaction(store => store.casinoList({ kind: 'roulette_photo', after: first[0]?._id ?? '' }, 2));
+    assert.equal(rest.length, 1);
+    assert.equal(rest[0]?._id, roundKey(2_000_000_002, 'roulette'));
+    assert.equal((await db.collection<Player>('players').findOne({ _id: 1 }))?.kc, 700_000);
     await database.transaction(store => store.enqueueItemNotification('roulette-zero', 2_000_000_001, 'Итоги', { kind: 'none' }, 0));
     const notification = await db.collection<Notification>('notifications').findOne({ _id: 'roulette-zero' });
     assert.equal(notification?.roulettePhoto, 0);
