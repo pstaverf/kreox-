@@ -38,7 +38,7 @@ export function betLimit(mode: CasinoMode): string { return `💰 Не боле�
 export function betAccepted(player: Player, mode: CasinoMode, amount: number, target: number): string {
   return `✅ ${mention(player)} — ${kc(amount)} на ${mode === 'crash' ? `x${coefficient(target)}` : `сектор ${target}`}`;
 }
-export function roundClosed(mode: CasinoMode): string { return `🎰 Приём ставок для игры "${modeName(mode)}" закрыт.\n\n🕒 Итоги раунда через 5 секунд${mode === 'crash' ? '...' : '…'}`; }
+export function roundClosed(mode: CasinoMode): string { return `🎰 Приём ставок для игры "${modeName(mode)}" закрыт.\n🕒 Итоги раунда через 5 секунд…`; }
 export function outcome(round: Pick<CasinoRound, 'mode' | 'result' | 'bonus'>): string {
   return round.mode === 'crash' ? `x${coefficient(round.result)}` : `${round.bonus === 1 ? '' : `множитель х${round.bonus} - `}сектор №${round.result} - [x${(round.result + 1) * round.bonus}]`;
 }
@@ -47,7 +47,7 @@ export function roundHeading(round: CasinoRound): string {
     : `🎡 Итоги игры "Дрим":\n\n🎡 Выпал сектор #${round.result}${round.bonus === 1 ? '' : ` - множитель ${round.bonus}`} - [x${(round.result + 1) * round.bonus}]`;
 }
 export function winningBet(bet: CasinoBet, mode: CasinoMode, payout: number): string {
-  return `✅ [id${bet.vkId}|${bet.name}] — ${kc(bet.amount)} на ${mode === 'crash' ? coefficient(bet.target) : bet.target}\n\n— Приз: ${kc(payout)}`;
+  return `✅ [id${bet.vkId}|${bet.name}] — ${kc(bet.amount)} на ${mode === 'crash' ? coefficient(bet.target) : bet.target}\n— Приз: ${kc(payout)}`;
 }
 export function roundFooter(round: CasinoRound): string {
   return `${round.winners === 0 ? '\n\n❌ Все ставки проиграли!' : ''}${round.losses > 0 ? `\n\n💰 Проиграно: ${kc(round.losses)}` : ''}`;

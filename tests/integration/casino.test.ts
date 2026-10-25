@@ -108,6 +108,15 @@ test('MongoDB replica set: casino races, durable payouts, result delivery, elect
     assert.equal(await notifications.countDocuments({ text: /Всего ставок было/ }), 2);
     assert.equal(await notifications.countDocuments({ text: /Поздравляем с победой/ }), 1);
     assert.equal(await notifications.countDocuments({ text: /вы проиграли/ }), 1);
+    await players.updateOne({ _id: 1 }, { $set: { kc: 600_001 } });
+    const relative = await service.handle({ eventId: 'relative-mixed', vkId: 1, isChat: true, peerId: 2_000_000_009,
+      command: parseCommand('краш 1.7 пол\nдрим 20 пол\nкраш 1.7 всё\nдрим 1 вб', undefined, true)
+    }, async () => 'Игрок');
+    assert.equal((await players.findOne({ _id: 1 }))?.kc, 0);
+    assert.equal(relative.text.split('\n').filter(line => line.startsWith('✅')).length, 3);
+    const relativeBets = await records.find({ kind: 'bet', _id: /^bet:relative-mixed:/ }).sort({ _id: 1 }).limit(4).toArray();
+    assert.deepEqual(relativeBets.map(bet => bet.kind === 'bet' ? bet.amount : null), [300_000, 150_000, 150_001]);
+
   } finally {
     await db.dropDatabase().catch(() => {});
     await client.close();

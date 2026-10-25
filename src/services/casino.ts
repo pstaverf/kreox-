@@ -4,8 +4,8 @@ import type { CasinoCommand, CasinoLine, CasinoRandom, CasinoRound } from '../ty
 import type { GameInput, Player, Reply } from '../types/game.js';
 import type { GameStore } from '../types/storage.js';
 import { safeBankMoney } from './bank-rules.js';
-import { betAccepted, betLimit, casinoTexts, historyText } from './casino-texts.js';
-import { betPayout, casinoPercent, roundKey, selectOutcome } from './casino-rules.js';
+import { betAccepted, betLimit, betMinimum, casinoTexts, historyText } from './casino-texts.js';
+import { betPayout, casinoPercent, resolveCasinoStake, roundKey, selectOutcome } from './casino-rules.js';
 import { directorAction, directorState } from './director.js';
 
 export function messageParts(text: string): string[] {
@@ -24,8 +24,12 @@ async function acceptBet(store: GameStore, player: Player, line: CasinoLine, inp
   if ('error' in line) return line.error;
   const peerId = input.peerId;
   if (peerId === undefined || !Number.isSafeInteger(peerId) || peerId <= 2_000_000_000) throw new Error('Missing casino chat');
-  if (!safeBankMoney(line.amount) || line.amount < casinoConfig.minimum || !Number.isSafeInteger(line.target)
+  const current = typeof line.amount === 'number' ? player : await store.player(player._id);
+  if (current === null) throw new Error('Missing casino actor');
+  const amount = resolveCasinoStake(line.amount, current.kc);
+  if (!safeBankMoney(amount) || !Number.isSafeInteger(line.target)
     || (line.mode === 'crash' ? line.target <= 100 || line.target > casinoConfig.maxCrash : !casinoConfig.sectors.some(sector => sector === line.target))) throw new Error('Invalid typed casino bet');
+  if (amount < casinoConfig.minimum) return betMinimum(line.mode);
   const now = await store.now();
   const director = await directorState(store, now);
   if (director.dueAt <= now) return casinoTexts.electionPending;
@@ -35,23 +39,23 @@ async function acceptBet(store: GameStore, player: Player, line: CasinoLine, inp
   const active = existing !== null && existing.stage !== 'finished';
   const roundId = active ? existing.roundId : `game:${input.eventId}:${index}`;
   if ((await store.casinoList({ kind: 'bet', roundId, vkId: player._id }, casinoConfig.maxBets)).length >= casinoConfig.maxBets) return betLimit(line.mode);
-  const liability = betPayout(line.mode, line.amount, line.target, line.mode === 'dream' ? 7 : 1);
+  const liability = betPayout(line.mode, amount, line.target, line.mode === 'dream' ? 7 : 1);
   if (liability === null) return casinoTexts.limit;
-  const fee = casinoPercent(line.amount, casinoConfig.directorPercent);
+  const fee = casinoPercent(amount, casinoConfig.directorPercent);
   if (director.holderId !== null && director.earnedKC > game.maxAmount - fee) return casinoTexts.limit;
-  if (active && (existing.total > game.maxAmount - line.amount || existing.liability > game.maxAmount - liability)) return casinoTexts.limit;
-  if (!await store.updateBalance(player._id, 'kc', 'take', line.amount)) return casinoTexts.funds;
+  if (active && (existing.total > game.maxAmount - amount || existing.liability > game.maxAmount - liability)) return casinoTexts.limit;
+  if (!await store.updateBalance(player._id, 'kc', 'take', amount)) return casinoTexts.funds;
   if (director.holderId !== null) director.earnedKC += fee;
   await store.casinoSave(director, director.dueAt);
   const selected = active ? { result: existing.result, bonus: existing.bonus } : selectOutcome(line.mode, random, roundId);
   const closesAt = active ? new Date(existing.closesAt.getTime() + casinoConfig.extensionMs) : new Date(now.getTime() + casinoConfig.acceptanceMs);
-  const round: CasinoRound = active ? { ...existing, closesAt, dueAt: closesAt, total: existing.total + line.amount, liability: existing.liability + liability }
+  const round: CasinoRound = active ? { ...existing, closesAt, dueAt: closesAt, total: existing.total + amount, liability: existing.liability + liability }
     : { _id: roundKey(peerId, line.mode), kind: 'round', version: existing?.version ?? 0, peerId, mode: line.mode, roundId, stage: 'open', dueAt: closesAt, closesAt,
-      ...selected, total: line.amount, liability, losses: 0, winners: 0, buffer: '', pages: 0, nextPage: 0, dealerId: null, history: existing?.history ?? [] };
+      ...selected, total: amount, liability, losses: 0, winners: 0, buffer: '', pages: 0, nextPage: 0, dealerId: null, history: existing?.history ?? [] };
   if (existing === null) await store.casinoInsert(round);
   else await store.casinoSave(round, active ? existing.closesAt : undefined);
-  await store.casinoInsert({ _id: `bet:${input.eventId}:${index}`, kind: 'bet', version: 0, roundId, vkId: player._id, name: player.name, amount: line.amount, target: line.target, settled: false });
-  return betAccepted(player, line.mode, line.amount, line.target);
+  await store.casinoInsert({ _id: `bet:${input.eventId}:${index}`, kind: 'bet', version: 0, roundId, vkId: player._id, name: player.name, amount, target: line.target, settled: false });
+  return betAccepted(player, line.mode, amount, line.target);
 }
 export async function casinoAction(store: GameStore, player: Player, command: CasinoCommand, input: GameInput, random: CasinoRandom): Promise<Reply> {
   if (command.kind === 'city_director') return directorAction(store, player, { kind: 'director_view' }, input);

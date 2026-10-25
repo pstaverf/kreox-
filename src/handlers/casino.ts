@@ -1,7 +1,7 @@
 import { game } from '../config/game.js';
 import type { CasinoCommand, CasinoLine, CasinoMode } from '../types/casino.js';
 import { casinoConfig } from '../config/casino.js';
-import { parseBankMoney } from '../services/bank-rules.js';
+import { parseCasinoStake } from '../services/casino-rules.js';
 import { betMinimum, casinoTexts } from '../services/casino-texts.js';
 import { isRecord } from '../utils/validation.js';
 
@@ -9,19 +9,19 @@ function parseLine(text: string): CasinoLine {
   const parts = /^(краш|дрим)\s+(\S+)\s+(\S+)$/iu.exec(text.trim());
   const mode: CasinoMode = /^краш(?=\s|$)/iu.test(text.trim()) ? 'crash' : 'dream';
   if (parts?.[2] === undefined || parts[3] === undefined) return { error: mode === 'crash' ? casinoTexts.crashUsage : casinoTexts.dreamUsage };
-  const amount = parseBankMoney(parts[3], 'kc');
+  const amount = parseCasinoStake(parts[3]);
   if (mode === 'crash') {
     if (!/^\d{1,4}(?:[.,]\d{1,2})?$/.test(parts[2])) return { error: casinoTexts.crashRange };
     const [whole = '', fraction = ''] = parts[2].replace(',', '.').split('.');
     const target = Number(whole) * 100 + Number(fraction.padEnd(2, '0'));
     if (target <= 100 || target > casinoConfig.maxCrash) return { error: casinoTexts.crashRange };
     if (amount === null) return { error: casinoTexts.crashUsage };
-    if (amount < casinoConfig.minimum) return { error: betMinimum(mode) };
+    if (typeof amount === 'number' && amount < casinoConfig.minimum) return { error: betMinimum(mode) };
     return { mode, amount, target };
   }
   const target = Number(parts[2]);
   if (!/^\d+$/.test(parts[2]) || !casinoConfig.sectors.some(sector => sector === target) || amount === null) return { error: casinoTexts.dreamUsage };
-  return amount < casinoConfig.minimum ? { error: betMinimum(mode) } : { mode, amount, target };
+  return typeof amount === 'number' && amount < casinoConfig.minimum ? { error: betMinimum(mode) } : { mode, amount, target };
 }
 export function parseCasinoText(text: string | undefined, isChat: boolean): CasinoCommand | null {
   if (!isChat || text === undefined) return null;

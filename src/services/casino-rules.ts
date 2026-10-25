@@ -1,7 +1,9 @@
+import { parseBankMoney, safeBankMoney } from './bank-rules.js';
+import { assertNever } from '../utils/validation.js';
 import { randomBytes } from 'node:crypto';
 import { casinoConfig } from '../config/casino.js';
 import { game } from '../config/game.js';
-import type { CasinoMode, CasinoRandom, CasinoRound } from '../types/casino.js';
+import type { CasinoMode, CasinoRandom, CasinoRound, CasinoStake } from '../types/casino.js';
 
 export function nextElection(now: Date): Date {
   return new Date((Math.floor((now.getTime() + casinoConfig.moscowOffsetMs) / casinoConfig.dayMs) + 1) * casinoConfig.dayMs - casinoConfig.moscowOffsetMs);
@@ -57,4 +59,24 @@ export function closeKey(round: CasinoRound): string { return `${round.roundId}:
 export function casinoPercent(amount: number, percent: number): number {
   if (!Number.isSafeInteger(amount) || amount < 0 || amount > game.maxAmount || !Number.isSafeInteger(percent) || percent < 0 || percent > 100) throw new Error('Invalid casino percentage');
   return Number(BigInt(amount) * BigInt(percent) / 100n);
+}
+
+export function parseCasinoStake(text: string): CasinoStake | null {
+  switch (text.trim().toLowerCase()) {
+    case 'пол': return 'half';
+    case 'все': case 'всё': case 'вб': return 'all';
+    default: return parseBankMoney(text, 'kc');
+  }
+}
+export function resolveCasinoStake(stake: CasinoStake, wallet: number): number {
+  if (!safeBankMoney(wallet)) throw new Error('Invalid casino wallet');
+  if (typeof stake === 'number') {
+    if (!safeBankMoney(stake)) throw new Error('Invalid casino stake');
+    return stake;
+  }
+  switch (stake) {
+    case 'half': return Number(BigInt(wallet) / 2n);
+    case 'all': return wallet;
+    default: return assertNever(stake);
+  }
 }

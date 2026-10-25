@@ -4,8 +4,8 @@ import { casinoConfig } from '../src/config/casino.js';
 import { game } from '../src/config/game.js';
 import { parseCommand } from '../src/handlers/commands.js';
 import { buildKeyboard } from '../src/handlers/keyboards.js';
-import { betPayout, cachedCasinoRandom, casinoRandom, nextElection, roundKey, selectOutcome } from '../src/services/casino-rules.js';
-import { casinoTexts, coefficient, historyText } from '../src/services/casino-texts.js';
+import { betPayout, cachedCasinoRandom, casinoRandom, nextElection, roundKey, selectOutcome, parseCasinoStake, resolveCasinoStake } from '../src/services/casino-rules.js';
+import { casinoTexts, coefficient, historyText, roundClosed, winningBet } from '../src/services/casino-texts.js';
 import { addCasinoCredit, payCasinoCredit } from '../src/services/casino-credits.js';
 import { settleCasino } from '../src/services/casino-worker.js';
 import { GameService } from '../src/services/game.js';
@@ -415,4 +415,89 @@ test('completed rounds evict the oldest history entry and retain the new result 
   const log = await f.chat('лог краш');
   assert.equal(log.text.split('\n')[2], 'x1.01');
   assert.ok(log.text.endsWith('x2'));
+});
+
+
+test('casino close notices and winning lines have exactly the requested compact spacing', () => {
+  assert.equal(roundClosed('crash'), '🎰 Приём ставок для игры "Краш" закрыт.\n🕒 Итоги раунда через 5 секунд…');
+  assert.equal(roundClosed('dream'), '🎰 Приём ставок для игры "Дрим" закрыт.\n🕒 Итоги раунда через 5 секунд…');
+  const bet = { _id: 'bet:spacing', kind: 'bet', version: 0, roundId: 'spacing', vkId: 1, name: 'Игрок', amount: 100_000, target: 103, settled: true } as const;
+  assert.equal(winningBet(bet, 'crash', 103_000), '✅ [id1|Игрок] — 1.000 KC на 1.03\n— Приз: 1.030 KC');
+  assert.equal(winningBet({ ...bet, target: 2 }, 'dream', 300_000), '✅ [id1|Игрок] — 1.000 KC на 2\n— Приз: 3.000 KC');
+});
+
+test('relative casino stakes parse case-insensitively and half rounds down to the smallest KC unit', () => {
+  for (const alias of ['пол', 'ПОЛ']) {
+    assert.equal(parseCasinoStake(alias), 'half');
+    for (const command of ['краш 1.7', 'дрим 20']) {
+      const parsed = parseCommand(`${command} ${alias}`, undefined, true);
+      assert.ok(parsed.kind === 'casino_bets');
+      assert.equal(parsed.lines.length, 1);
+      assert.ok(parsed.lines[0] !== undefined && !('error' in parsed.lines[0]));
+      assert.equal(parsed.lines[0].amount, 'half');
+    }
+  }
+  for (const alias of ['все', 'всё', 'вб', 'ВСЕ', 'ВСЁ', 'ВБ']) {
+    assert.equal(parseCasinoStake(alias), 'all');
+    const parsed = parseCommand(`краш 1.7 ${alias}\nдрим 20 ${alias}`, undefined, true);
+    assert.ok(parsed.kind === 'casino_bets');
+    assert.deepEqual(parsed.lines, [{ mode: 'crash', target: 170, amount: 'all' }, { mode: 'dream', target: 20, amount: 'all' }]);
+  }
+  assert.equal(resolveCasinoStake('half', 600_001), 300_000);
+  assert.equal(resolveCasinoStake('all', 600_001), 600_001);
+  assert.equal(resolveCasinoStake('half', game.maxAmount), 4_503_599_627_370_495);
+  assert.equal(resolveCasinoStake('all', 0), 0);
+  assert.equal(parseCasinoStake('половина'), null);
+  assert.throws(() => resolveCasinoStake('half', -1));
+});
+
+test('mixed relative bets read each remaining wallet inside the transaction even with detached Mongo-style player reads', async () => {
+  const f = await fixture();
+  f.db.player().kc = 600_001;
+  const service = new GameService({
+    hasPlayer: id => f.db.hasPlayer(id),
+    transaction: action => f.db.transaction(async store => {
+      const originalPlayer = store.player.bind(store);
+      store.player = async id => structuredClone(await originalPlayer(id));
+      return action(store);
+    })
+  });
+  const input = { eventId: 'relative-wallet', vkId: 1, isChat: true, peerId: 2_000_000_001, command: parseCommand('краш 1.7 пол\nдрим 20 пол\nкраш 1.7 всё\nдрим 1 вб', undefined, true) };
+  const reply = await service.handle(input, async () => 'Игрок');
+  assert.equal(f.db.player().kc, 0);
+  const bets = [...f.db.state.casino.values()].filter(record => record.kind === 'bet');
+  assert.deepEqual(bets.map(bet => bet.amount), [300_000, 150_000, 150_001]);
+  assert.equal(reply.text.split('\n').filter(line => line.startsWith('✅')).length, 3);
+  assert.match(reply.text, /1\.500\.01 KC/);
+  assert.match(reply.text.split('\n').at(-1) ?? '', /Минимальная ставка/);
+  const repeated = await service.handle(input, async () => 'Игрок');
+  assert.equal(repeated.randomId, reply.randomId);
+  assert.equal(f.db.player().kc, 0);
+});
+
+test('relative amounts retain minimum and overflow checks without spending funds on rejected lines', async () => {
+  const f = await fixture();
+  f.db.player().kc = 199_999;
+  assert.match((await f.chat('краш 1.7 пол')).text, /Минимальная ставка/);
+  assert.equal(f.db.player().kc, 199_999);
+  assert.match((await f.chat('дрим 20 все')).text, /1\.999\.99 KC/);
+  assert.equal(f.db.player().kc, 0);
+  assert.match((await f.chat('краш 1.7 вб')).text, /Минимальная ставка/);
+  f.db.player(2).kc = game.maxAmount;
+  assert.equal((await f.chat('краш 5000 все', 2)).text, casinoTexts.limit);
+  assert.equal(f.db.player(2).kc, game.maxAmount);
+});
+
+test('concurrent whole-wallet bets cannot spend the same balance twice and failed events roll back resolution', async () => {
+  const f = await fixture();
+  f.db.player().kc = 600_000;
+  const before = structuredClone(f.db.state);
+  f.db.failRemember = true;
+  await assert.rejects(f.chat('краш 1.7 пол\nдрим 1 все'));
+  assert.deepEqual(f.db.state, before);
+  f.db.failRemember = false;
+  const replies = await Promise.all(Array.from({ length: 8 }, () => f.chat('краш 1.7 все')));
+  assert.equal(replies.filter(reply => reply.text.startsWith('✅')).length, 1);
+  assert.equal(f.db.player().kc, 0);
+  assert.equal([...f.db.state.casino.values()].filter(record => record.kind === 'bet').length, 1);
 });
