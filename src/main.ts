@@ -1,3 +1,4 @@
+import { startMailingWorker } from './handlers/mailing-worker.js';
 import { startRoulettePhotoWorker } from './handlers/roulette-photo-worker.js';
 import { MongoMessagePhotos } from './repositories/mongo-message-photos.js';
 import { createRoulettePhotoResolver } from './handlers/roulette-photos.js';
@@ -31,6 +32,7 @@ async function main(): Promise<void> {
   });
   const pending = new Set<Promise<void>>();
   let stopping: Promise<void> | undefined;
+  let stopMailing: (() => Promise<void>) | undefined;
   let stopPhotos: (() => Promise<void>) | undefined;
   let stopCasino: (() => Promise<void>) | undefined;
   let stopChats: (() => Promise<void>) | undefined;
@@ -44,6 +46,7 @@ async function main(): Promise<void> {
         await stopCasino?.();
         await stopBank?.();
         await stopPhotos?.();
+        await stopMailing?.();
         await stopNotifications?.();
         await Promise.allSettled([...pending]);
       } finally {
@@ -69,6 +72,7 @@ async function main(): Promise<void> {
     const notifications = startNotifications(database, vk, resolvePhoto);
     stopPhotos = startRoulettePhotoWorker(database, resolvePhoto);
     stopNotifications = notifications;
+    stopMailing = startMailingWorker(database, notifications.wake);
     stopBank = startBankWorker(database);
     stopCasino = startCasinoWorker(database, notifications.wake);
     stopChats = startChatRegistry(vk, database, env.vkGroupId);

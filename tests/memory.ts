@@ -1,3 +1,5 @@
+import { mailingConfig } from '../src/config/mailing.js';
+import type { MailingCampaign } from '../src/types/mailing.js';
 import { rouletteConfig } from '../src/config/roulette.js';
 import type { CasinoQuery, CasinoRecord, DirectorDraft } from '../src/types/casino.js';
 import { bankConfig } from '../src/config/bank.js';
@@ -20,6 +22,8 @@ import { rankingScore } from '../src/services/rankings.js';
 import type { GameDatabase, GameStore } from '../src/types/storage.js';
 
 interface State {
+  mailingAudience: Map<number, Date>;
+  mailingCampaigns: Map<string, MailingCampaign>;
   casino: Map<string, CasinoRecord>;
   deposits: Map<string, Deposit>;
   dealer: DealerState;
@@ -35,7 +39,7 @@ interface State {
 }
 
 export class MemoryDatabase implements GameDatabase {
-  state: State = { casino: new Map(), deposits: new Map(), dealer: { _id: 'casino', holderId: null, earnedKC: 0, nextChangeAt: new Date(0) }, offers: new Map(), promos: new Map(), redemptions: new Set(), players: new Map(), items: [], messages: new Map(), registrations: 0, responses: 0, notifications: [] };
+  state: State = { mailingAudience: new Map(), mailingCampaigns: new Map(), casino: new Map(), deposits: new Map(), dealer: { _id: 'casino', holderId: null, earnedKC: 0, nextChangeAt: new Date(0) }, offers: new Map(), promos: new Map(), redemptions: new Set(), players: new Map(), items: [], messages: new Map(), registrations: 0, responses: 0, notifications: [] };
   time = new Date('2026-10-23T00:00:00.000Z');
   failRemember = false;
   private queue: Promise<void> = Promise.resolve();
@@ -377,6 +381,30 @@ class MemoryStore implements GameStore {
     offer.state = 'completed';
     this.deleteUnits(units);
     return 'ok';
+  }
+  async joinMailing(vkId: number, now: Date): Promise<void> {
+    if (!this.state.mailingAudience.has(vkId)) this.state.mailingAudience.set(vkId, new Date(now));
+  }
+  async createMailing(campaign: MailingCampaign): Promise<void> {
+    if (this.state.mailingCampaigns.has(campaign._id)) throw new Error('Duplicate mailing');
+    this.state.mailingCampaigns.set(campaign._id, structuredClone(campaign));
+  }
+  async pendingMailing(): Promise<MailingCampaign | null> {
+    return structuredClone([...this.state.mailingCampaigns.values()].filter(campaign => campaign.state === 'pending')
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || a._id.localeCompare(b._id))[0] ?? null);
+  }
+  async mailingRecipients(after: number, until: Date): Promise<number[]> {
+    return [...this.state.mailingAudience].filter(([vkId, joinedAt]) => vkId > after && joinedAt <= until)
+      .map(([vkId]) => vkId).sort((a, b) => a - b).slice(0, mailingConfig.batchSize);
+  }
+  async saveMailing(campaign: MailingCampaign): Promise<void> {
+    if (this.state.mailingCampaigns.get(campaign._id)?.version !== campaign.version) throw new Error('Mailing version mismatch');
+    this.state.mailingCampaigns.set(campaign._id, { ...structuredClone(campaign), version: campaign.version + 1 });
+  }
+  async enqueueMailing(id: string, vkId: number, text: string): Promise<void> {
+    if (this.state.notifications.some(notification => notification._id === id)) throw new Error('Duplicate mailing notification');
+    this.state.notifications.push({ _id: id, peerId: vkId, text, randomId: ++this.state.responses, priority: 1,
+      state: 'pending', nextAttemptAt: new Date(0), attempts: 0 });
   }
   async enqueueItemNotification(id: string, peerId: number, text: string, keyboard: KeyboardSpec, roulettePhoto?: number): Promise<void> {
     if (roulettePhoto !== undefined && (!Number.isSafeInteger(roulettePhoto) || roulettePhoto < 0 || roulettePhoto >= rouletteConfig.numbers)) throw new Error('Invalid roulette photo');

@@ -550,3 +550,25 @@ test('chat leaderboards, director and mixed casino lines use authenticated real 
     assert.deepEqual(keyboard.buttons, []);
   }
 });
+
+test('/mailing is text-only, admin-only and does not interpret embedded game commands as bets', async context => {
+  const vk = new VK({ token: 'test-token' });
+  const database = new MemoryDatabase();
+  const handle = createMessageHandler(vk, new GameService(database), 123);
+  const sent: unknown[] = [];
+  const api = mock.method(vk.api, 'callWithRequest', async (request: APIRequest) => {
+    assert.equal(request.method, 'messages.send');
+    sent.push(request.params);
+    return [];
+  });
+  context.after(() => api.mock.restore());
+  await handle(message(vk, { text: '/mailing text' }));
+  assert.equal(sent.length, 0);
+  assert.equal(database.state.mailingCampaigns.size, 0);
+  await handle(message(vk, { peerId: 2_000_000_001, senderId: 888801846, text: '/mailing Новости\nч1 10к' }));
+  assert.equal(sent.length, 1);
+  assert.equal([...database.state.mailingCampaigns.values()][0]?.text, 'Новости\nч1 10к');
+  assert.equal(database.state.casino.size, 0);
+  assert.equal(database.state.players.size, 0);
+  assert.equal(database.state.mailingAudience.size, 0);
+});

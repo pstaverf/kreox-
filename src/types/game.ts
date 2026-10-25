@@ -1,3 +1,4 @@
+import type { MailingCommand } from './mailing.js';
 import type { CasinoCommand, CasinoKeyboard, DirectorDraft } from './casino.js';
 import type { BankCommand, BankDraft, BankKeyboard } from './bank.js';
 import type { DonateCommand, DonateDraft } from './donate.js';
@@ -52,6 +53,7 @@ export interface InventoryStack {
 }
 
 export type Command =
+  | MailingCommand
   | CasinoCommand
   | DonateCommand
   | BankCommand
@@ -153,6 +155,7 @@ export interface Ranking {
 }
 
 export interface Notification {
+  priority?: 1;
   roulettePhoto?: number;
   _id: string;
   peerId: number;

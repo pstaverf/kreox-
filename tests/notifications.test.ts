@@ -215,3 +215,39 @@ test('committed casino jobs can wake delivery immediately and shutdown disables 
   assert.equal(reads, stoppedReads);
   assert.equal(api.mock.callCount(), 1);
 });
+
+test('a blocked mailing recipient does not prevent delivery to the next recipient or add a keyboard', async context => {
+  const vk = new VK({ token: 'test-token' });
+  const notices: Notification[] = [1, 2].map(peerId => ({ _id: `mailing:test:${peerId}`, peerId, randomId: 100 + peerId,
+    text: 'Новости\nПолный текст', priority: 1, state: 'pending', nextAttemptAt: new Date(0), attempts: 1 }));
+  let index = 0;
+  const states: string[] = [];
+  const finished = Promise.withResolvers<void>();
+  const queue: NotificationQueue = {
+    async leaseNotification(leaseId) {
+      const notice = notices[index++];
+      return notice === undefined ? null : { ...notice, leaseId };
+    },
+    async finishNotification(_id, _leaseId, state) {
+      states.push(state);
+      if (states.length === 2) finished.resolve();
+    }
+  };
+  const api = mock.method(vk.api, 'callWithRequest', async (request: APIRequest) => {
+    const params: unknown = request.params;
+    assert.ok(isRecord(params));
+    assert.equal(params.message, 'Новости\nПолный текст');
+    assert.equal(params.keyboard, undefined);
+    if (params.peer_id === 1) throw new APIError({ error_code: 901, error_msg: 'Forbidden', request_params: [] });
+    assert.equal(params.peer_id, 2);
+    assert.equal(params.random_id, 102);
+    return [];
+  });
+  const logger = mock.method(console, 'error', () => {});
+  context.after(() => { api.mock.restore(); logger.mock.restore(); });
+  const stop = startNotifications(queue, vk);
+  context.after(stop);
+  await finished.promise;
+  await stop();
+  assert.deepEqual(states, ['failed', 'sent']);
+});

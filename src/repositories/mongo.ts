@@ -1,3 +1,6 @@
+import { migrateMailingRecipients } from './mongo-mailing-migration.js';
+import { mailingConfig } from '../config/mailing.js';
+import type { MailingCampaign, MailingRecipient } from '../types/mailing.js';
 import { rouletteConfig } from '../config/roulette.js';
 import type { BalanceCurrency, BalanceOperation } from '../types/admin-balance.js';
 import { isBalanceCurrency, validBalanceChange } from '../services/admin-balance.js';
@@ -29,6 +32,9 @@ export class MongoGameDatabase implements GameDatabase {
     if (!isRecord(hello) || (typeof hello.setName !== 'string' && hello.msg !== 'isdbgrid')) {
       throw new Error('MongoDB replica set is required');
     }
+    await this.db.collection<MailingCampaign>('mailing_campaigns').createIndex({ state: 1, createdAt: 1, _id: 1 });
+    await this.db.collection<Notification>('notifications').createIndex({ state: 1, priority: 1, nextAttemptAt: 1 });
+    await migrateMailingRecipients(this.db);
     await this.db.collection<CasinoRecord>('casino_records').createIndexes([
       { key: { kind: 1, stage: 1, dueAt: 1, _id: 1 } },
       { key: { kind: 1, dueAt: 1, _id: 1 } },
@@ -109,7 +115,7 @@ export class MongoGameDatabase implements GameDatabase {
         nextAttemptAt: { $add: ['$$NOW', game.notificationLeaseMs] },
         attempts: { $add: ['$attempts', 1] }
       } }],
-      { sort: { nextAttemptAt: 1 }, returnDocument: 'after', includeResultMetadata: false }
+      { sort: { priority: 1, nextAttemptAt: 1 }, returnDocument: 'after', includeResultMetadata: false }
     );
   }
 
@@ -150,6 +156,8 @@ class MongoGameStore extends MongoCasinoStore implements GameStore {
   private readonly messages;
   private readonly counters;
   private readonly notifications;
+  private readonly mailingCampaigns;
+  private readonly mailingAudience;
 
   constructor(db: Db, private readonly session: ClientSession) {
     super(db, session);
@@ -158,6 +166,8 @@ class MongoGameStore extends MongoCasinoStore implements GameStore {
     this.messages = db.collection<ProcessedMessage>('processed_messages');
     this.counters = db.collection<Counter>('counters');
     this.notifications = db.collection<Notification>('notifications');
+    this.mailingCampaigns = db.collection<MailingCampaign>('mailing_campaigns');
+    this.mailingAudience = db.collection<MailingRecipient>('mailing_recipients');
   }
 
   async updateKC(vkId: number, operation: BalanceOperation, amount: number): Promise<boolean> {
@@ -176,6 +186,30 @@ class MongoGameStore extends MongoCasinoStore implements GameStore {
     const update = operation === 'set' ? { $set: { [currency]: amount } } : { $inc: { [currency]: operation === 'take' ? -amount : amount } };
     const result = await this.players.updateOne(filter, update, { session: this.session });
     return result.matchedCount === 1;
+  }
+
+  async joinMailing(vkId: number, now: Date): Promise<void> {
+    const result = await this.mailingAudience.updateOne({ _id: vkId }, { $setOnInsert: { joinedAt: now } }, { upsert: true, session: this.session });
+    if (!result.acknowledged || result.matchedCount + result.upsertedCount !== 1) throw new Error('Mailing recipient write failed');
+  }
+  async createMailing(campaign: MailingCampaign): Promise<void> {
+    if (!(await this.mailingCampaigns.insertOne(campaign, { session: this.session })).acknowledged) throw new Error('Mailing creation failed');
+  }
+  async pendingMailing(): Promise<MailingCampaign | null> {
+    return this.mailingCampaigns.findOne({ state: 'pending' }, { sort: { createdAt: 1, _id: 1 }, session: this.session });
+  }
+  async mailingRecipients(after: number, until: Date): Promise<number[]> {
+    return (await this.mailingAudience.find({ _id: { $gt: after }, joinedAt: { $lte: until } }, { projection: { _id: 1 }, session: this.session })
+      .sort({ _id: 1 }).limit(mailingConfig.batchSize).toArray()).map(recipient => recipient._id);
+  }
+  async saveMailing(campaign: MailingCampaign): Promise<void> {
+    const result = await this.mailingCampaigns.replaceOne({ _id: campaign._id, version: campaign.version }, { ...campaign, version: campaign.version + 1 }, { session: this.session });
+    if (result.matchedCount !== 1) throw new DuplicateWriteError();
+  }
+  async enqueueMailing(id: string, vkId: number, text: string): Promise<void> {
+    const result = await this.notifications.insertOne({ _id: id, peerId: vkId, text, randomId: await this.nextRandomId(),
+      priority: 1, state: 'pending', nextAttemptAt: new Date(0), attempts: 0 }, { session: this.session });
+    if (!result.acknowledged) throw new Error('Mailing notification insert failed');
   }
 
   async enqueueItemNotification(id: string, peerId: number, text: string, keyboard: KeyboardSpec, roulettePhoto?: number): Promise<void> {

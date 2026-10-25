@@ -1,3 +1,4 @@
+import { mailingAction } from './mailing.js';
 import { casinoAction } from './casino.js';
 import { directorTextInput } from './director.js';
 import { casinoRandom, cachedCasinoRandom } from './casino-rules.js';
@@ -51,6 +52,7 @@ export class GameService {
     if (isAdminItemCommand(input.command) && !adminIds.has(input.vkId)) {
       throw new Error('Administrator access is required');
     }
+    if ((input.command.kind === 'mailing' || input.command.kind === 'mailing_invalid') && !adminIds.has(input.vkId)) throw new Error('Administrator access is required');
     if (input.command.kind === 'theft' && !input.isChat) throw new Error('Theft is chat-only');
     const casinoRoll = cachedCasinoRandom(this.casinoRoll);
     const bankRolls = new Map<number, number>();
@@ -83,6 +85,7 @@ export class GameService {
     for (let attempt = 0; attempt < game.duplicateRetries;) {
       try {
         const reply = await this.database.transaction(async store => {
+          if (!input.isChat && input.peerId === input.vkId) await store.joinMailing(input.vkId, await store.now());
           const previous = await store.processed(input.eventId);
           if (previous !== null) {
             if (previous.vkId !== input.vkId) {
@@ -138,6 +141,7 @@ export class GameService {
   }
 
   private async execute(store: GameStore, input: GameInput, name: string | null, referralUrl: string | null, resolvedTarget: number | null | undefined, roll: () => number, members: readonly number[] | undefined, donateRandom: DonateRandom, bankRandom: (maximum: number) => number, casinoRoll: CasinoRandom): Promise<Reply | 'name' | 'link' | 'target' | 'members'> {
+    if (input.command.kind === 'mailing' || input.command.kind === 'mailing_invalid') return mailingAction(store, input, input.command);
     if (input.command.kind === 'delete_keyboards') {
       return { text: texts.keyboardsDeleted, keyboard: { kind: 'none' } };
     }

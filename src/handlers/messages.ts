@@ -55,6 +55,7 @@ export function createMessageHandler(vk: VK, game: GameService, groupId: number)
       if (!context.isChat && context.text?.trim().toLowerCase() === 'вор') return;
       const payload: unknown = context.messagePayload;
       const command = parseCommand(context.text, payload, context.isChat);
+      if ((command.kind === 'mailing' || command.kind === 'mailing_invalid') && !adminIds.has(context.senderId)) return;
       if (isAdminItemCommand(command) && !adminIds.has(context.senderId)) {
         return;
       }

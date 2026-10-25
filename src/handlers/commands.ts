@@ -1,3 +1,4 @@
+import { parseMailing } from './mailing.js';
 import { parseCasinoText, parseChatRanking, parseDirectorPayload } from './casino.js';
 import { parseBankPayload, parseBankTransfer } from './bank.js';
 import { parseAdminItems, parseItemPayload } from './items.js';
@@ -9,6 +10,8 @@ import { isRankingMetric } from '../services/rankings.js';
 import { isRecord } from '../utils/validation.js';
 
 export function parseCommand(text: string | undefined, payload: unknown, isChat = false): Command {
+  const mailing = parseMailing(text);
+  if (mailing !== null) return mailing;
   if (text?.trim() === '/dk') {
     return { kind: 'delete_keyboards' };
   }
