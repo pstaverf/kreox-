@@ -247,3 +247,22 @@ test('wallet balance writes roll back with a failed event and leave ongoing dona
   await assert.rejects(send('!takedonut 1 50'));
   assert.deepEqual(database.state, before);
 });
+
+test('KC admin commands accept million suffixes, self replies and explicit targets without changing wallet syntax or bounds', async () => {
+  for (const suffix of ['кк', 'КК', 'kk', 'KK', 'kк']) {
+    assert.deepEqual(parseAdminBalance(`!set 10${suffix}`), { kind: 'admin_balance', operation: 'set', targetId: null, amount: 1_000_000_000 });
+    assert.deepEqual(parseAdminBalance(`!add @id1 2${suffix}`), { kind: 'admin_balance', operation: 'add', targetId: 1, amount: 200_000_000 });
+  }
+  for (const text of ['!set 10ккк', '!add 90071993кк', '!set 1.5кк', '!set -10кк']) {
+    assert.deepEqual(parseAdminBalance(text), { kind: 'admin_balance_invalid' });
+  }
+  const { send, database } = await fixture();
+  assert.equal((await send('!set 10кк', { replySenderId: adminId, isChat: true })).text, 'Done.');
+  assert.equal(database.player(adminId).kc, 1_000_000_000);
+  assert.equal((await send('!add 2кк', { replySenderId: adminId, isChat: true, eventId: 'add-millions' })).text, 'Done.');
+  await send('!add 2кк', { replySenderId: adminId, isChat: true, eventId: 'add-millions' });
+  assert.equal(database.player(adminId).kc, 1_200_000_000);
+  await send('!set @id1 10кк', { replySenderId: adminId });
+  assert.equal(database.player(1).kc, 1_000_000_000);
+  assert.equal(database.player(adminId).kc, 1_200_000_000);
+});

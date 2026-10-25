@@ -40,7 +40,7 @@ export const labels = {
 
 export const texts = {
   adminDone: 'Done.',
-  adminBalanceUsage: '⚠️ Формат: !set [@id123] 100 или !add [@id123] 100k. Можно ответом на сообщение. Сумма — целое неотрицательное число KC.',
+  adminBalanceUsage: '⚠️ Формат: !set [@id123] 100 или !add [@id123] 100k. Можно ответом на сообщение. Сумма — целое неотрицательное число KC; к = тысяча, кк = миллион.',
   adminWalletUsage: '⚠️ Формат: !setdonut / !adddonut / !takedonut <VK ID> <сумма евро> или !setbit / !addbit / !takebit <VK ID> <сумма BTC>. Вместо ID можно ответить на сообщение. Евро — до 2 знаков после запятой, BTC — до 3.',
   adminWalletLimit: '⚠️ Недостаточно средств или достигнут предел баланса. Баланс не изменён.',
   adminBalanceTarget: '⚠️ Укажите игрока: ответом на его сообщение или через @id123.',

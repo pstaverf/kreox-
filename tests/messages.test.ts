@@ -572,3 +572,28 @@ test('/mailing is text-only, admin-only and does not interpret embedded game com
   assert.equal(database.state.players.size, 0);
   assert.equal(database.state.mailingAudience.size, 0);
 });
+
+test('!set 10кк replying to the admin’s own VK message sets ten million KC and returns Done', async context => {
+  const vk = new VK({ token: 'test-token' });
+  const database = new MemoryDatabase();
+  const service = new GameService(database);
+  const adminId = 888801846;
+  await service.handle({ eventId: 'register-self-admin', vkId: adminId, command: { kind: 'profile' } }, async () => 'Админ');
+  const replies: Record<string, unknown>[] = [];
+  const api = mock.method(vk.api, 'callWithRequest', async (request: APIRequest) => {
+    assert.equal(request.method, 'messages.send');
+    const params: unknown = request.params;
+    assert.ok(isRecord(params));
+    replies.push(params);
+    return [];
+  });
+  context.after(() => api.mock.restore());
+  const handle = createMessageHandler(vk, service, 123);
+  const input = message(vk, { peerId: 2_000_000_001, senderId: adminId, replySenderId: adminId, text: '!set 10кк' });
+  await handle(input);
+  assert.equal(database.player(adminId).kc, 1_000_000_000);
+  assert.equal(replies[0]?.message, 'Done.');
+  await handle(input);
+  assert.equal(database.player(adminId).kc, 1_000_000_000);
+  assert.equal(replies[1]?.random_id, replies[0]?.random_id);
+});

@@ -13,7 +13,7 @@ export function parseAdminBalance(text: string | undefined): AdminBalanceCommand
   if (normalized.length > 256) {
     return invalid;
   }
-  const match = /^!(set|add)\s+(?:(?:@id(\d{1,16})|\[id(\d{1,16})\|[^\]\r\n]{1,100}\])\s+)?(\d{1,16})([kк])?$/i.exec(normalized);
+  const match = /^!(set|add)\s+(?:(?:@id(\d{1,16})|\[id(\d{1,16})\|[^\]\r\n]{1,100}\])\s+)?(\d{1,16})([kк]{1,2})?$/i.exec(normalized);
   if (match === null) {
     return invalid;
   }
@@ -27,7 +27,7 @@ export function parseAdminBalance(text: string | undefined): AdminBalanceCommand
   if (targetId !== null && !isPositiveId(targetId)) {
     return invalid;
   }
-  const amount = BigInt(whole) * (match[5] === undefined ? 1n : 1000n) * BigInt(game.kcScale);
+  const amount = BigInt(whole) * (1000n ** BigInt(match[5]?.length ?? 0)) * BigInt(game.kcScale);
   return amount <= BigInt(game.maxAmount) ? { kind: 'admin_balance', operation, targetId, amount: Number(amount) } : invalid;
 }
 
