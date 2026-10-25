@@ -175,3 +175,43 @@ test('item offer notifications preserve the inline purchase keyboard and durable
   await finished.promise;
   await stop();
 });
+
+test('committed casino jobs can wake delivery immediately and shutdown disables future wakes', async context => {
+  const vk = new VK({ token: 'test-token' });
+  const finished = Promise.withResolvers<void>();
+  let available = false;
+  let leased = false;
+  let reads = 0;
+  const queue: NotificationQueue = {
+    async leaseNotification(leaseId) {
+      reads += 1;
+      if (!available || leased) return null;
+      leased = true;
+      return { _id: 'casino-wake', peerId: 2_000_000_001, text: 'Итоги', randomId: 777, state: 'pending', nextAttemptAt: new Date(0), attempts: 1, leaseId };
+    },
+    async finishNotification(_id, _leaseId, state) {
+      assert.equal(state, 'sent');
+      finished.resolve();
+    }
+  };
+  const api = mock.method(vk.api, 'callWithRequest', async (request: APIRequest) => {
+    assert.equal(request.method, 'messages.send');
+    const params: unknown = request.params;
+    assert.ok(isRecord(params));
+    assert.equal(params.random_id, 777);
+    return [];
+  });
+  context.after(() => api.mock.restore());
+  const stop = startNotifications(queue, vk);
+  context.after(stop);
+  await new Promise<void>(resolve => setImmediate(resolve));
+  available = true;
+  stop.wake();
+  await finished.promise;
+  await stop();
+  const stoppedReads = reads;
+  stop.wake();
+  await new Promise<void>(resolve => setImmediate(resolve));
+  assert.equal(reads, stoppedReads);
+  assert.equal(api.mock.callCount(), 1);
+});

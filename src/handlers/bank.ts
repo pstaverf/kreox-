@@ -19,7 +19,7 @@ export function parseBankTransfer(text: string | undefined): BankCommand | null 
 export function parseBankPayload(value: unknown): BankCommand | null {
   if (!isRecord(value)) return null;
   switch (value.command) {
-    case 'city': case 'city_director': case 'casino': case 'bank': case 'bank_savings': case 'bank_deposit_money': case 'bank_withdraw_money': case 'bank_transfer_menu': case 'bank_deposits': case 'bank_deposit_create': case 'bank_pension': return { kind: value.command };
+    case 'city': case 'casino': case 'bank': case 'bank_savings': case 'bank_deposit_money': case 'bank_withdraw_money': case 'bank_transfer_menu': case 'bank_deposits': case 'bank_deposit_create': case 'bank_pension': return { kind: value.command };
     case 'bank_currency': return isBalanceCurrency(value.currency) ? { kind: 'bank_currency', currency: value.currency } : null;
     case 'bank_deposit_amount': return typeof value.amount === 'number' && safeBankMoney(value.amount) ? { kind: 'bank_deposit_amount', amount: value.amount } : null;
     case 'bank_deposit': case 'bank_deposit_early': return typeof value.depositId === 'number' && isPositiveId(value.depositId) ? { kind: value.command, depositId: value.depositId } : null;

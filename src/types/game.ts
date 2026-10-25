@@ -1,3 +1,4 @@
+import type { CasinoCommand, CasinoKeyboard, DirectorDraft } from './casino.js';
 import type { BankCommand, BankDraft, BankKeyboard } from './bank.js';
 import type { DonateCommand, DonateDraft } from './donate.js';
 import type { AdminItemCommand, ItemCommand, ItemDraft, ItemKeyboard, ItemKind } from './items.js';
@@ -32,6 +33,7 @@ export interface Player {
   nextPensionAt?: Date;
   nextDepositId?: number;
   bankDraft?: BankDraft;
+  directorDraft?: DirectorDraft;
 }
 
 export interface InventoryItem {
@@ -50,6 +52,7 @@ export interface InventoryStack {
 }
 
 export type Command =
+  | CasinoCommand
   | DonateCommand
   | BankCommand
   | { kind: 'delete_keyboards' }
@@ -68,6 +71,7 @@ export type Command =
   | { kind: 'ranking'; metric: RankingMetric };
 
 export type KeyboardSpec =
+  | CasinoKeyboard
   | ItemKeyboard
   | BankKeyboard
   | { kind: 'donate' | 'donate_back' }
@@ -107,6 +111,7 @@ export interface GameInput {
   vkId: number;
   command: Command;
   isChat?: boolean;
+  peerId?: number;
   text?: string;
   hasPayload?: boolean;
   referrerId?: number;

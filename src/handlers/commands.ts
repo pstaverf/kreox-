@@ -1,3 +1,4 @@
+import { parseCasinoText, parseChatRanking, parseDirectorPayload } from './casino.js';
 import { parseBankPayload, parseBankTransfer } from './bank.js';
 import { parseAdminItems, parseItemPayload } from './items.js';
 import { parseAdminBalance } from './admin-balance.js';
@@ -11,6 +12,10 @@ export function parseCommand(text: string | undefined, payload: unknown, isChat 
   if (text?.trim() === '/dk') {
     return { kind: 'delete_keyboards' };
   }
+  const casino = parseCasinoText(text, isChat);
+  if (casino !== null) return casino;
+  const ranking = parseChatRanking(text, isChat);
+  if (ranking !== null) return { kind: 'ranking', metric: ranking };
   const adminItem = parseAdminItems(text);
   if (adminItem !== null) {
     return adminItem;
@@ -36,6 +41,8 @@ export function parseCommand(text: string | undefined, payload: unknown, isChat 
       return { kind: 'development' };
     }
   }
+  const director = parseDirectorPayload(value);
+  if (director !== null) return director;
   const bankCommand = parseBankPayload(value);
   if (bankCommand !== null) return bankCommand;
   const itemCommand = parseItemPayload(value);

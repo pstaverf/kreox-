@@ -5,7 +5,7 @@ import type { NotificationQueue } from '../types/storage.js';
 import { logError } from '../utils/log.js';
 import { sendReply } from './messages.js';
 
-export function startNotifications(queue: NotificationQueue, vk: VK): () => Promise<void> {
+export function startNotifications(queue: NotificationQueue, vk: VK): (() => Promise<void>) & { wake: () => void } {
   let running: Promise<void> | undefined;
   let stopped = false;
   const flush = async (): Promise<void> => {
@@ -44,9 +44,9 @@ export function startNotifications(queue: NotificationQueue, vk: VK): () => Prom
   const timer = setInterval(tick, game.notificationIntervalMs);
   timer.unref();
   tick();
-  return async () => {
+  return Object.assign(async () => {
     stopped = true;
     clearInterval(timer);
     await running;
-  };
+  }, { wake: tick });
 }

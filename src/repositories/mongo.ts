@@ -1,7 +1,8 @@
 import type { BalanceCurrency, BalanceOperation } from '../types/admin-balance.js';
 import { isBalanceCurrency, validBalanceChange } from '../services/admin-balance.js';
 import { randomInt } from 'node:crypto';
-import { MongoBankStore } from './mongo-bank.js';
+import { MongoCasinoStore } from './mongo-casino.js';
+import type { CasinoRecord } from '../types/casino.js';
 import type { Deposit } from '../types/bank.js';
 import type { DealerState } from '../types/donate.js';
 import type { ItemOffer } from '../types/items.js';
@@ -27,6 +28,14 @@ export class MongoGameDatabase implements GameDatabase {
     if (!isRecord(hello) || (typeof hello.setName !== 'string' && hello.msg !== 'isdbgrid')) {
       throw new Error('MongoDB replica set is required');
     }
+    await this.db.collection<CasinoRecord>('casino_records').createIndexes([
+      { key: { kind: 1, stage: 1, dueAt: 1, _id: 1 } },
+      { key: { kind: 1, dueAt: 1, _id: 1 } },
+      { key: { kind: 1, roundId: 1, settled: 1, _id: 1 } },
+      { key: { kind: 1, roundId: 1, vkId: 1, _id: 1 } },
+      { key: { kind: 1, electionId: 1, settled: 1, _id: 1 } },
+      { key: { kind: 1, active: 1, _id: 1 } }
+    ]);
     await this.db.collection<Deposit>('deposits').createIndex({ vkId: 1, state: 1, depositId: 1 });
     await this.db.collection<Deposit>('deposits').createIndex({ vkId: 1, depositId: 1 }, { unique: true });
     await this.db.collection<Deposit>('deposits').createIndex({ state: 1, nextAttemptAt: 1, _id: 1 });
@@ -79,6 +88,17 @@ export class MongoGameDatabase implements GameDatabase {
   }
 
 
+  async recordChat(peerId: number, active = true): Promise<void> {
+    if (!Number.isSafeInteger(peerId) || peerId <= 2_000_000_000 || peerId > Number.MAX_SAFE_INTEGER) throw new Error('Invalid chat peer');
+    const records = this.db.collection<CasinoRecord>('casino_records');
+    const filter = { _id: `chat:${peerId}`, kind: 'chat' } satisfies Pick<CasinoRecord, '_id' | 'kind'>;
+    const result = await records.updateOne(filter, { $set: { active, peerId }, $setOnInsert: { kind: 'chat', version: 0 } }, { upsert: true }).catch(async (error: unknown) => {
+      if (!(error instanceof MongoServerError) || error.code !== 11000) throw error;
+      return records.updateOne(filter, { $set: { active, peerId } });
+    });
+    if (!result.acknowledged || result.matchedCount + result.upsertedCount !== 1) throw new Error('Chat registry update failed');
+  }
+
   async leaseNotification(leaseId: string): Promise<Notification | null> {
     return this.db.collection<Notification>('notifications').findOneAndUpdate(
       { state: 'pending', $expr: { $lte: ['$nextAttemptAt', '$$NOW'] } },
@@ -122,7 +142,7 @@ export class MongoGameDatabase implements GameDatabase {
   }
 }
 
-class MongoGameStore extends MongoBankStore implements GameStore {
+class MongoGameStore extends MongoCasinoStore implements GameStore {
   private readonly players;
   private readonly items;
   private readonly messages;

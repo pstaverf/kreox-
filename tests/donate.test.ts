@@ -215,7 +215,7 @@ test('dealer has one global cooldown; replaces role, pays the old holder once an
   const { send, text, confirmation, db, restart } = await fixture();
   db.player().euro = 3_000;
   db.player(2).euro = 3_000;
-  assert.match((await text('Крупье', 1, true)).text, /пока отсутствует/);
+  assert.match((await text('Крупье', 1, true)).text, /Государство/);
   const command = await confirmation('donate_dealer');
   assert.equal((await send(command)).text, '[id1|Игрок 1], вы успешно стали новым крупье.');
   assert.equal(db.player().euro, 1_500);

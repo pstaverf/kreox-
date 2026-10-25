@@ -10,7 +10,6 @@ import { bankTexts, depositEarlyPrompt, depositEarlySuccessText, depositText, pe
 import { finishDeposit } from './bank-deposits.js';
 import { parsePlayerTarget } from './item-rules.js';
 import { resolveStoredTarget } from './items.js';
-import { texts } from './texts.js';
 
 const back = (text: string, destination: 'bank' | 'bank_savings' | 'bank_transfer_menu' | 'bank_deposits' = 'bank'): Reply => ({ text, keyboard: { kind: 'bank_back', destination } });
 async function depositMenu(store: GameStore, player: Player): Promise<Reply> {
@@ -40,10 +39,9 @@ async function selectDepositAmount(store: GameStore, player: Player, amount: num
 }
 export async function bankAction(store: GameStore, player: Player, command: BankCommand, input: GameInput, resolved: number | null | undefined, random: (maximum: number) => number): Promise<Reply | 'target'> {
   const now = await store.now();
-  if (['city', 'city_director', 'casino', 'bank', 'bank_savings', 'bank_deposit_money', 'bank_withdraw_money', 'bank_transfer_menu', 'bank_currency', 'bank_deposits', 'bank_deposit_create', 'bank_deposit', 'bank_pension'].some(kind => kind === command.kind)) await store.setBankDraft(player._id, null);
+  if (['city', 'casino', 'bank', 'bank_savings', 'bank_deposit_money', 'bank_withdraw_money', 'bank_transfer_menu', 'bank_currency', 'bank_deposits', 'bank_deposit_create', 'bank_deposit', 'bank_pension'].some(kind => kind === command.kind)) await store.setBankDraft(player._id, null);
   switch (command.kind) {
     case 'city': return { text: bankTexts.city, keyboard: { kind: 'city' } };
-    case 'city_director': return { text: texts.development, keyboard: { kind: 'city' } };
     case 'casino': return { text: bankConfig.casinoTexts[random(bankConfig.casinoTexts.length)] ?? bankConfig.casinoTexts[0], keyboard: { kind: 'city' } };
     case 'bank': return { text: bankTexts.bank, keyboard: { kind: 'bank' } };
     case 'bank_savings': return { text: savingsText((await savings(store, player, now)).balance), keyboard: { kind: 'bank_savings' } };

@@ -71,6 +71,7 @@ export function createMessageHandler(vk: VK, game: GameService, groupId: number)
       reply = await game.handle({
         eventId,
         vkId: context.senderId,
+        peerId: context.peerId,
         command,
         ...(replySenderId === undefined ? {} : { replySenderId }),
         ...(payload === undefined || payload === null ? {} : { hasPayload: true }),
@@ -95,7 +96,7 @@ export function createMessageHandler(vk: VK, game: GameService, groupId: number)
       return;
     }
     try {
-      await sendReply(vk, context.peerId, reply.randomId, reply, context.isChat);
+      if (reply.text.length > 0) await sendReply(vk, context.peerId, reply.randomId, reply, context.isChat);
     } catch (error: unknown) {
       logError('vk_reply', error, { eventId, vkId: context.senderId });
     }

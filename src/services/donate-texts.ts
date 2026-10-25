@@ -30,7 +30,7 @@ export function subscriptionText(until: Date, purchased: boolean): string {
   return `${purchased ? '✅ Подписка на команду «вор» была приобретена.' : '✅ Подписка на команду «вор» активна.'}\n📆 Подписка активна до ${moscowDate(until)}`;
 }
 export function dealerMention(player: Player | null): string {
-  return player === null ? 'пока отсутствует' : mention(player);
+  return player === null ? 'Государство' : mention(player);
 }
 export function dealerPrompt(player: Player | null, state: DealerState): string {
   return `🤴 Крупье получает 1% от всех проигрышей в казино.\n\n💰 Крупье: ${dealerMention(player)} (заработал уже ${formatAmount(state.earnedKC, game.kcScale)} KC)\n\nСтать крупье можно за ${formatAmount(donateConfig.dealerCost, game.euroScale)} 💶.`;

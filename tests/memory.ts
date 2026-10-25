@@ -1,3 +1,4 @@
+import type { CasinoQuery, CasinoRecord, DirectorDraft } from '../src/types/casino.js';
 import { bankConfig } from '../src/config/bank.js';
 import { bankDays, depositValue, earlyDepositValue, isDepositDays, safeBankMoney, transferNet } from '../src/services/bank-rules.js';
 import type { BankDraft, Deposit, DepositDays } from '../src/types/bank.js';
@@ -18,6 +19,7 @@ import { rankingScore } from '../src/services/rankings.js';
 import type { GameDatabase, GameStore } from '../src/types/storage.js';
 
 interface State {
+  casino: Map<string, CasinoRecord>;
   deposits: Map<string, Deposit>;
   dealer: DealerState;
   offers: Map<string, ItemOffer>;
@@ -32,7 +34,7 @@ interface State {
 }
 
 export class MemoryDatabase implements GameDatabase {
-  state: State = { deposits: new Map(), dealer: { _id: 'casino', holderId: null, earnedKC: 0, nextChangeAt: new Date(0) }, offers: new Map(), promos: new Map(), redemptions: new Set(), players: new Map(), items: [], messages: new Map(), registrations: 0, responses: 0, notifications: [] };
+  state: State = { casino: new Map(), deposits: new Map(), dealer: { _id: 'casino', holderId: null, earnedKC: 0, nextChangeAt: new Date(0) }, offers: new Map(), promos: new Map(), redemptions: new Set(), players: new Map(), items: [], messages: new Map(), registrations: 0, responses: 0, notifications: [] };
   time = new Date('2026-10-23T00:00:00.000Z');
   failRemember = false;
   private queue: Promise<void> = Promise.resolve();
@@ -68,6 +70,50 @@ export class MemoryDatabase implements GameDatabase {
 class MemoryStore implements GameStore {
   constructor(private readonly state: State, private readonly database: MemoryDatabase) {}
 
+  async setDirectorDraft(vkId: number, draft: DirectorDraft | null): Promise<void> {
+    const player = this.state.players.get(vkId);
+    if (player === undefined) throw new Error('Missing director actor');
+    if (draft === null) delete player.directorDraft;
+    else player.directorDraft = draft;
+  }
+  async casinoGet(id: string): Promise<CasinoRecord | null> {
+    return structuredClone(this.state.casino.get(id) ?? null);
+  }
+  async casinoList(query: CasinoQuery, limit: number): Promise<CasinoRecord[]> {
+    return structuredClone([...this.state.casino.values()].filter(record => {
+      switch (query.kind) {
+        case 'round': return record.kind === 'round' && record.stage !== 'finished' && record.dueAt <= query.dueAt;
+        case 'credit': return record.kind === 'credit' && record.stage === 'pending' && record.dueAt <= query.dueAt;
+        case 'delivery': return record.kind === 'delivery' && record.stage === 'pending' && record.dueAt <= query.dueAt;
+        case 'election': return record.kind === 'election' && record.stage !== 'finished' && record.dueAt <= query.dueAt;
+        case 'bet': return record.kind === 'bet' && record.roundId === query.roundId && (query.vkId === undefined || query.vkId === record.vkId) && (query.settled === undefined || query.settled === record.settled);
+        case 'bid': return record.kind === 'bid' && record.electionId === query.electionId && (query.settled === undefined || query.settled === record.settled);
+        case 'chat': return record.kind === 'chat' && record.active && record._id > query.after;
+      }
+    }).sort((a, b) => {
+      if ('dueAt' in a && 'dueAt' in b && a.dueAt.getTime() !== b.dueAt.getTime()) return a.dueAt.getTime() - b.dueAt.getTime();
+      return a._id.localeCompare(b._id);
+    }).slice(0, limit));
+  }
+  async casinoInsert(record: CasinoRecord): Promise<void> {
+    if (this.state.casino.has(record._id) || record.version !== 0) throw new Error('Duplicate casino insert');
+    this.state.casino.set(record._id, structuredClone(record));
+  }
+  async casinoSave(record: CasinoRecord, notAfter?: Date): Promise<void> {
+    if (notAfter !== undefined && this.database.time >= notAfter) throw new Error('Casino deadline passed');
+    if (this.state.casino.get(record._id)?.version !== record.version) throw new Error('Casino revision conflict');
+    record.version += 1;
+    this.state.casino.set(record._id, structuredClone(record));
+  }
+  async casinoNotificationDone(id: string): Promise<boolean> {
+    const notice = this.state.notifications.find(entry => entry._id === id);
+    return notice !== undefined && (notice.state === 'sent' || notice.state === 'failed');
+  }
+  async casinoDealerIncome(vkId: number, amount: number): Promise<boolean> {
+    if (this.state.dealer.holderId !== vkId || this.state.dealer.earnedKC > game.maxAmount - amount) return false;
+    this.state.dealer.earnedKC += amount;
+    return true;
+  }
   async setBankDraft(vkId: number, draft: BankDraft | null): Promise<void> {
     const player = this.state.players.get(vkId);
     if (player === undefined) throw new Error('Missing bank actor');

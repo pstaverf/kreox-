@@ -1,3 +1,7 @@
+import { casinoAction } from './casino.js';
+import { directorTextInput } from './director.js';
+import { casinoRandom, cachedCasinoRandom } from './casino-rules.js';
+import type { CasinoRandom } from '../types/casino.js';
 import { bankAction, bankText } from './bank.js';
 import { bankTexts } from './bank-texts.js';
 import { isBankCommand } from './bank-rules.js';
@@ -30,7 +34,8 @@ export class GameService {
     private readonly resolveItemTarget?: (screenName: string) => Promise<number | null>,
     private readonly caseRoll: () => number = () => randomInt(100),
     private readonly donateRoll: DonateRandom = (_purpose, maximum) => randomInt(maximum),
-    private readonly bankRoll: (maximum: number) => number = maximum => randomInt(maximum)
+    private readonly bankRoll: (maximum: number) => number = maximum => randomInt(maximum),
+    private readonly casinoRoll: CasinoRandom = casinoRandom
   ) {}
 
   async handle(input: GameInput, resolveName: () => Promise<string>, resolveChatMembers?: () => Promise<number[]>): Promise<PreparedReply> {
@@ -47,6 +52,7 @@ export class GameService {
       throw new Error('Administrator access is required');
     }
     if (input.command.kind === 'theft' && !input.isChat) throw new Error('Theft is chat-only');
+    const casinoRoll = cachedCasinoRandom(this.casinoRoll);
     const bankRolls = new Map<number, number>();
     const bankRandom = (maximum: number): number => {
       const value = bankRolls.get(maximum) ?? this.bankRoll(maximum);
@@ -85,7 +91,7 @@ export class GameService {
             return previous.reply;
           }
           rollIndex = 0;
-          const reply = await this.execute(store, input, name, referralUrl, resolvedTarget, roll, members, donationRandom, bankRandom);
+          const reply = await this.execute(store, input, name, referralUrl, resolvedTarget, roll, members, donationRandom, bankRandom, casinoRoll);
           if (typeof reply === 'string') {
             return reply;
           }
@@ -131,7 +137,7 @@ export class GameService {
     throw new Error('Transaction retry limit reached');
   }
 
-  private async execute(store: GameStore, input: GameInput, name: string | null, referralUrl: string | null, resolvedTarget: number | null | undefined, roll: () => number, members: readonly number[] | undefined, donateRandom: DonateRandom, bankRandom: (maximum: number) => number): Promise<Reply | 'name' | 'link' | 'target' | 'members'> {
+  private async execute(store: GameStore, input: GameInput, name: string | null, referralUrl: string | null, resolvedTarget: number | null | undefined, roll: () => number, members: readonly number[] | undefined, donateRandom: DonateRandom, bankRandom: (maximum: number) => number, casinoRoll: CasinoRandom): Promise<Reply | 'name' | 'link' | 'target' | 'members'> {
     if (input.command.kind === 'delete_keyboards') {
       return { text: texts.keyboardsDeleted, keyboard: { kind: 'none' } };
     }
@@ -156,6 +162,17 @@ export class GameService {
       return { text: registered === null ? texts.registrationLimit : texts.welcome, keyboard: { kind: 'main' } };
     }
     const command = input.command;
+    if (command.kind === 'casino_bets' || command.kind === 'casino_log' || command.kind === 'director_view' || command.kind === 'director_bid' || command.kind === 'director_confirm' || command.kind === 'city_director') {
+      if (!input.isChat) {
+        await store.setBankDraft(player._id, null);
+        await store.setDonateDraft(player._id, null);
+        await store.setPromoDraft(player._id, null);
+        await store.setItemDraft(player._id, null);
+      }
+      return casinoAction(store, player, command, input, casinoRoll);
+    }
+    if (!input.isChat && !input.hasPayload && command.kind === 'development' && player.directorDraft !== undefined && input.text !== undefined) return directorTextInput(store, player, input);
+    if (!input.isChat && player.directorDraft !== undefined) await store.setDirectorDraft(player._id, null);
     if (!input.isChat && !input.hasPayload && command.kind === 'development' && player.bankDraft !== undefined && input.text !== undefined) {
       return bankText(store, player, player.bankDraft, input, resolvedTarget);
     }

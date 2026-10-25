@@ -514,3 +514,39 @@ test('city and savings DM wizard use real VK payloads while chat transfers use t
   assert.equal(database.player(2).kc, 9500);
   assert.equal(database.state.notifications.length, 1);
 });
+
+test('chat leaderboards, director and mixed casino lines use authenticated real VK contexts without keyboards', async context => {
+  const vk = new VK({ token: 'test-token' });
+  const db = new MemoryDatabase();
+  const service = new GameService(db);
+  await service.handle({ eventId: 'register-games', vkId: 1, command: { kind: 'profile' } }, async () => 'Игрок');
+  db.player().kc = 1_000_000;
+  const sent: Record<string, unknown>[] = [];
+  const api = mock.method(vk.api, 'callWithRequest', async (request: APIRequest) => {
+    assert.equal(request.method, 'messages.send');
+    const params: unknown = request.params;
+    assert.ok(isRecord(params));
+    sent.push(params);
+    return [];
+  });
+  context.after(() => api.mock.restore());
+  const handle = createMessageHandler(vk, service, 123);
+  await handle(message(vk, { peerId: 2_000_000_001, messageId: 1, text: 'Топ биткоин' }));
+  await handle(message(vk, { peerId: 2_000_000_001, messageId: 2, text: 'директор' }));
+  assert.match(String(sent.at(-1)?.message), /Директор: Государство/);
+  await handle(message(vk, { peerId: 2_000_000_001, messageId: 3, text: 'краш 1.7 1000\nдрим 20 1000' }));
+  assert.equal(sent.length, 3);
+  assert.match(String(sent.at(-1)?.message), /1.000 KC на x1.7\n✅/);
+  assert.match(String(sent.at(-1)?.message), /на сектор 20/);
+  assert.equal(db.player().kc, 800_000);
+  await handle(message(vk, { peerId: 2_000_000_001, messageId: 3, text: 'краш 1.7 1000\nдрим 20 1000' }));
+  assert.equal(db.player().kc, 800_000);
+  assert.equal(sent.at(-1)?.random_id, sent.at(-2)?.random_id);
+  for (const params of sent) {
+    assert.equal(typeof params.keyboard, 'string');
+    if (typeof params.keyboard !== 'string') throw new Error('Expected serialized keyboard');
+    const keyboard: unknown = JSON.parse(params.keyboard);
+    assert.ok(isRecord(keyboard));
+    assert.deepEqual(keyboard.buttons, []);
+  }
+});

@@ -1,3 +1,4 @@
+import { casinoTexts } from '../services/casino-texts.js';
 import { bankLabels } from '../services/bank-texts.js';
 import { game } from '../config/game.js';
 import { formatAmount } from '../services/texts.js';
@@ -14,6 +15,12 @@ export function buildKeyboard(spec: KeyboardSpec): KeyboardBuilder {
     return Keyboard.textButton({ label, payload: { command: kind, ...params } });
   };
   switch (spec.kind) {
+    case 'director': return Keyboard.keyboard([[button(casinoTexts.directorBid, { kind: 'director_bid' })], [button(labels.back, { kind: 'city' })]]).oneTime(false);
+    case 'director_back': return Keyboard.keyboard([[button(labels.back, { kind: 'director_view' })]]).oneTime(false);
+    case 'director_confirm': return Keyboard.keyboard([[
+      Keyboard.textButton({ label: donateLabels.confirm, color: Keyboard.POSITIVE_COLOR, payload: { command: 'director_confirm', token: spec.token } }),
+      Keyboard.textButton({ label: labels.back, color: Keyboard.NEGATIVE_COLOR, payload: { command: 'director_view' } })
+    ]]).oneTime(false);
     case 'city':
       return Keyboard.keyboard([
         [button(bankLabels.director, { kind: 'city_director' }), button(bankLabels.bank, { kind: 'bank' }), button(bankLabels.casino, { kind: 'casino' })],
