@@ -40,17 +40,23 @@ export function createRoulettePhotoResolver(vk: VK, cache: MessagePhotoCache, gr
     const url = roulettePhotos[result];
     if (url === undefined) throw new Error('Missing roulette photo URL');
     const key = `${groupId}:${peerId}:${url}`;
+    let stage = 'cache_read';
+    let startedAt = Date.now();
     try {
       const cached = await cache.messagePhoto(key);
       if (cached !== null && isMessagePhotoAttachment(cached)) return cached;
+      stage = 'download';
+      startedAt = Date.now();
       const value = await download(url);
+      stage = 'vk_upload';
+      startedAt = Date.now();
       const photo = await vk.upload.messagePhoto({ peer_id: peerId, source: { values: [{ value, filename: `roulette-${result}.jpg`, contentType: 'image/jpeg' }], timeout: rouletteConfig.photoTimeoutMs } });
       const attachment = photo.toString();
       if (!isMessagePhotoAttachment(attachment)) throw new Error('Invalid uploaded photo attachment');
       await cache.saveMessagePhoto(key, attachment).catch((error: unknown) => { logError('roulette_photo_cache', error, { number: result }); });
       return attachment;
     } catch (error: unknown) {
-      logError('roulette_photo_upload', error, { number: result });
+      logError('roulette_photo_upload', error, { number: result, stage, elapsedMs: Math.max(0, Date.now() - startedAt), timeoutMs: rouletteConfig.photoTimeoutMs });
       return null;
     }
   };

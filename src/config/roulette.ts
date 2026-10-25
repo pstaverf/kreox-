@@ -24,7 +24,7 @@ export const rouletteConfig = {
     { target: 50, label: 'большие', multiplier: 2, numbers: range(19, 36) },
     { target: 51, label: 'малые', multiplier: 2, numbers: range(1, 18) }
   ],
-  photoTimeoutMs: 10_000,
+  photoTimeoutMs: 30_000,
   maxPhotoBytes: 10 * 1024 * 1024
 } as const;
 

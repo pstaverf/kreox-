@@ -197,3 +197,57 @@ test('photo result delivery retries after restart with the same persisted random
   assert.equal(sends, 2);
   assert.equal(upload.mock.callCount(), 1);
 });
+
+test('photo abort diagnostics distinguish CDN body download from VK upload without disclosing network details', async context => {
+  const vk = new VK({ token: 'test-secret' });
+  const lines: string[] = [];
+  const logger = mock.method(console, 'error', (line: unknown) => { lines.push(String(line)); });
+  context.after(() => logger.mock.restore());
+  const failure = new DOMException('https://private.example/test-secret', 'AbortError');
+  const fromCdn = createRoulettePhotoResolver(vk, cache(), 123, async () => { throw failure; });
+  assert.equal(await fromCdn(2_000_000_001, 25), null);
+  const upload = mock.method(vk.upload, 'messagePhoto', async () => { throw failure; });
+  context.after(() => upload.mock.restore());
+  const fromVk = createRoulettePhotoResolver(vk, cache(), 123, async () => jpeg);
+  assert.equal(await fromVk(2_000_000_001, 25), null);
+  const brokenCache: MessagePhotoCache = {
+    async messagePhoto() { throw new Error('test-secret'); },
+    async saveMessagePhoto() { throw new Error('Must not write after a cache read failure'); }
+  };
+  assert.equal(await createRoulettePhotoResolver(vk, brokenCache, 123, async () => jpeg)(2_000_000_001, 25), null);
+  assert.equal(lines.length, 3);
+  for (const [index, stage] of ['download', 'vk_upload', 'cache_read'].entries()) {
+    const value: unknown = JSON.parse(lines[index] ?? 'null');
+    assert.ok(isRecord(value));
+    assert.equal(value.scope, 'roulette_photo_upload');
+    assert.equal(value.stage, stage);
+    assert.equal(value.number, 25);
+    assert.equal(value.timeoutMs, 30_000);
+    assert.ok(typeof value.elapsedMs === 'number' && value.elapsedMs >= 0);
+    if (stage !== 'cache_read') assert.equal(value.type, 'AbortError');
+  }
+  assert.ok(lines.every(line => !line.includes('test-secret') && !line.includes('private.example')));
+});
+
+test('download timeout remains active while reading the body, not just waiting for HTTP headers', async context => {
+  const abort = new AbortController();
+  const deadline = mock.method(AbortSignal, 'timeout', (milliseconds: number) => {
+    assert.equal(milliseconds, 30_000);
+    return abort.signal;
+  });
+  context.after(() => deadline.mock.restore());
+  const url = roulettePhotos[25];
+  assert.ok(url);
+  await assert.rejects(downloadRoulettePhoto(url, async (_input, options) => {
+    const signal = options?.signal;
+    assert.equal(signal, abort.signal);
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        signal?.addEventListener('abort', () => controller.error(signal.reason), { once: true });
+        queueMicrotask(() => abort.abort(new DOMException('Timed out', 'AbortError')));
+      }
+    });
+    return new Response(body);
+  }), { name: 'AbortError' });
+  assert.equal(deadline.mock.callCount(), 1);
+});
