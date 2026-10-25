@@ -6,9 +6,14 @@ import { parseCasinoStake } from '../services/casino-rules.js';
 import { betMinimum, casinoTexts } from '../services/casino-texts.js';
 import { isRecord } from '../utils/validation.js';
 
+function isRouletteShorthand(text: string): boolean {
+  const target = /^(\S+)\s+\S/u.exec(text.trim())?.[1];
+  return target !== undefined && parseRouletteTarget(target) !== null;
+}
 function parseLine(text: string): CasinoLine {
-  const parts = /^(краш|дрим|рулетка)\s+(\S+)\s+(\S+)$/iu.exec(text.trim());
-  const mode: CasinoMode = /^краш(?=\s|$)/iu.test(text.trim()) ? 'crash' : /^рулетка(?=\s|$)/iu.test(text.trim()) ? 'roulette' : 'dream';
+  const line = isRouletteShorthand(text) ? `рулетка ${text.trim()}` : text.trim();
+  const parts = /^(краш|дрим|рулетка)\s+(\S+)\s+(\S+)$/iu.exec(line);
+  const mode: CasinoMode = /^краш(?=\s|$)/iu.test(line) ? 'crash' : /^рулетка(?=\s|$)/iu.test(line) ? 'roulette' : 'dream';
   const usage = mode === 'crash' ? casinoTexts.crashUsage : mode === 'roulette' ? casinoTexts.rouletteUsage : casinoTexts.dreamUsage;
   if (parts?.[2] === undefined || parts[3] === undefined) return { error: usage };
   const amount = parseCasinoStake(parts[3]);
@@ -37,7 +42,7 @@ export function parseCasinoText(text: string | undefined, isChat: boolean): Casi
   if (normalized === 'директор') return { kind: 'director_view' };
   if (normalized === 'лог краш' || normalized === 'лог дрим' || normalized === 'лог рулетка') return { kind: 'casino_log', mode: normalized === 'лог краш' ? 'crash' : normalized === 'лог рулетка' ? 'roulette' : 'dream' };
   const lines = text.split(/\r?\n/u).filter(line => line.trim().length > 0);
-  if (lines.length === 0 || !lines.some(line => /^(краш|дрим|рулетка)(?=\s|$)/iu.test(line.trim()))) return null;
+  if (lines.length === 0 || !lines.some(line => /^(краш|дрим|рулетка)(?=\s|$)/iu.test(line.trim()) || isRouletteShorthand(line))) return null;
   return { kind: 'casino_bets', lines: lines.map(parseLine) };
 }
 export function parseDirectorPayload(value: unknown): CasinoCommand | null {

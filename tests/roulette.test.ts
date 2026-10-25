@@ -193,3 +193,37 @@ test('roulette maximum payout guards, transaction rollback and durable full-wall
   await f.drain();
   assert.equal(f.db.player().kc, 3_600_000);
 });
+
+test('bare roulette targets accept every group and individual number without stealing unrelated or single-number commands', () => {
+  const targets = [...rouletteConfig.groups.map(group => group.label), ...Array.from({ length: 37 }, (_, index) => String(index)), 'ЧЁТНОЕ', 'ЧЁРНОЕ'];
+  for (const target of targets) {
+    assert.deepEqual(parseCommand(`${target} 10к`, undefined, true), parseCommand(`рулетка ${target} 10к`, undefined, true));
+  }
+  for (const text of ['1', '36', '1000', 'ч1', '37 10к', 'п3 10к', 'привет 10к']) {
+    assert.equal(parseCommand(text, undefined, true).kind, 'development');
+  }
+  assert.equal(parseCommand('ч1 10к', undefined, false).kind, 'development');
+  assert.deepEqual(parseCommand('ч1 неверно', undefined, true), { kind: 'casino_bets', lines: [{ error: casinoTexts.rouletteUsage }] });
+  assert.deepEqual(parseCommand('ч1 10к лишнее', undefined, true), { kind: 'casino_bets', lines: [{ error: casinoTexts.rouletteUsage }] });
+  assert.deepEqual(parseCommand('ч1 100', undefined, true), parseCommand('рулетка ч1 100', undefined, true));
+});
+
+test('short roulette bets share balance, round extensions, caps and event deduplication with full commands', async () => {
+  const f = await fixture();
+  const first = await f.chat('ч1 10к', 1, 2_000_000_001, 'short-replayed');
+  assert.match(first.text, /✅ .*10.000 KC на ч1/);
+  assert.equal(f.db.player().kc, 9_000_000);
+  assert.equal((await f.chat('ч1 10к', 1, 2_000_000_001, 'short-replayed')).randomId, first.randomId);
+  assert.equal(f.db.player().kc, 9_000_000);
+  const reply = await f.chat('КРАСНОЕ 1к\nкраш 1.7 1к\nрулетка 0 1к\nдрим 2 1к\nЧЁРНОЕ пол');
+  assert.equal(reply.text.split('\n').filter(line => line.startsWith('✅')).length, 5);
+  assert.equal(f.db.player().kc, 4_300_000);
+  assert.equal(f.round().total, 5_500_000);
+  assert.equal(f.round().closesAt.getTime() - f.db.time.getTime(), 11_500);
+  const capped = await f.chat(Array.from({ length: 7 }, () => 'п1 1000').join('\n'));
+  assert.equal(capped.text.split('\n').filter(line => line.startsWith('✅')).length, 6);
+  assert.match(capped.text.split('\n').at(-1) ?? '', /Не более 10 ставок/);
+  const remaining = f.db.player().kc;
+  await f.chat('ч1 неверно');
+  assert.equal(f.db.player().kc, remaining);
+});
