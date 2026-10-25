@@ -1,3 +1,5 @@
+import { rouletteConfig } from '../config/roulette.js';
+import { rouletteMultiplier } from './roulette-rules.js';
 import { parseBankMoney, safeBankMoney } from './bank-rules.js';
 import { assertNever } from '../utils/validation.js';
 import { randomBytes } from 'node:crypto';
@@ -33,6 +35,7 @@ export function cachedCasinoRandom(random: CasinoRandom): CasinoRandom {
   };
 }
 export function selectOutcome(mode: CasinoMode, random: CasinoRandom, key: string): { result: number; bonus: number } {
+  if (mode === 'roulette') return { result: random(`${key}:roulette`, rouletteConfig.numbers), bonus: 1 };
   if (mode === 'crash') {
     const roll = random(`${key}:crash`, casinoConfig.crashRandomSize) + 1;
     return { result: Math.max(casinoConfig.crashPrecision, Math.min(casinoConfig.maxCrash, Number(BigInt(casinoConfig.crashReturnPercent) * BigInt(casinoConfig.crashRandomSize) / BigInt(roll)))), bonus: 1 };
@@ -50,7 +53,7 @@ export function selectOutcome(mode: CasinoMode, random: CasinoRandom, key: strin
   throw new Error('Invalid dream ticket');
 }
 export function betPayout(mode: CasinoMode, amount: number, target: number, bonus: number): number | null {
-  const value = mode === 'crash' ? BigInt(amount) * BigInt(target) / BigInt(casinoConfig.crashPrecision) : BigInt(amount) * BigInt(target + 1) * BigInt(bonus);
+  const value = mode === 'crash' ? BigInt(amount) * BigInt(target) / BigInt(casinoConfig.crashPrecision) : mode === 'roulette' ? BigInt(amount) * BigInt(rouletteMultiplier(target)) : BigInt(amount) * BigInt(target + 1) * BigInt(bonus);
   return value <= BigInt(game.maxAmount) ? Number(value) : null;
 }
 export function roundKey(peerId: number, mode: CasinoMode): string { return `round:${peerId}:${mode}`; }

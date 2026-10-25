@@ -87,6 +87,7 @@ export type KeyboardSpec =
   | { kind: 'inventory'; itemIds: number[]; page: number; hasNext: boolean };
 
 export interface Reply {
+  attachment?: string;
   text: string;
   keyboard: KeyboardSpec;
 }
@@ -152,6 +153,7 @@ export interface Ranking {
 }
 
 export interface Notification {
+  roulettePhoto?: number;
   _id: string;
   peerId: number;
   text: string;

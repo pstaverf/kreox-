@@ -1,3 +1,4 @@
+import { parseRouletteTarget } from '../services/roulette-rules.js';
 import { game } from '../config/game.js';
 import type { CasinoCommand, CasinoLine, CasinoMode } from '../types/casino.js';
 import { casinoConfig } from '../config/casino.js';
@@ -6,10 +7,16 @@ import { betMinimum, casinoTexts } from '../services/casino-texts.js';
 import { isRecord } from '../utils/validation.js';
 
 function parseLine(text: string): CasinoLine {
-  const parts = /^(краш|дрим)\s+(\S+)\s+(\S+)$/iu.exec(text.trim());
-  const mode: CasinoMode = /^краш(?=\s|$)/iu.test(text.trim()) ? 'crash' : 'dream';
-  if (parts?.[2] === undefined || parts[3] === undefined) return { error: mode === 'crash' ? casinoTexts.crashUsage : casinoTexts.dreamUsage };
+  const parts = /^(краш|дрим|рулетка)\s+(\S+)\s+(\S+)$/iu.exec(text.trim());
+  const mode: CasinoMode = /^краш(?=\s|$)/iu.test(text.trim()) ? 'crash' : /^рулетка(?=\s|$)/iu.test(text.trim()) ? 'roulette' : 'dream';
+  const usage = mode === 'crash' ? casinoTexts.crashUsage : mode === 'roulette' ? casinoTexts.rouletteUsage : casinoTexts.dreamUsage;
+  if (parts?.[2] === undefined || parts[3] === undefined) return { error: usage };
   const amount = parseCasinoStake(parts[3]);
+  if (mode === 'roulette') {
+    const target = parseRouletteTarget(parts[2]);
+    if (target === null || amount === null) return { error: usage };
+    return typeof amount === 'number' && amount < casinoConfig.minimum ? { error: betMinimum(mode) } : { mode, amount, target };
+  }
   if (mode === 'crash') {
     if (!/^\d{1,4}(?:[.,]\d{1,2})?$/.test(parts[2])) return { error: casinoTexts.crashRange };
     const [whole = '', fraction = ''] = parts[2].replace(',', '.').split('.');
@@ -28,9 +35,9 @@ export function parseCasinoText(text: string | undefined, isChat: boolean): Casi
   if (text.length > game.maxMessageLength) return null;
   const normalized = text.trim().toLowerCase();
   if (normalized === 'директор') return { kind: 'director_view' };
-  if (normalized === 'лог краш' || normalized === 'лог дрим') return { kind: 'casino_log', mode: normalized === 'лог краш' ? 'crash' : 'dream' };
+  if (normalized === 'лог краш' || normalized === 'лог дрим' || normalized === 'лог рулетка') return { kind: 'casino_log', mode: normalized === 'лог краш' ? 'crash' : normalized === 'лог рулетка' ? 'roulette' : 'dream' };
   const lines = text.split(/\r?\n/u).filter(line => line.trim().length > 0);
-  if (lines.length === 0 || !lines.some(line => /^(краш|дрим)(?=\s|$)/iu.test(line.trim()))) return null;
+  if (lines.length === 0 || !lines.some(line => /^(краш|дрим|рулетка)(?=\s|$)/iu.test(line.trim()))) return null;
   return { kind: 'casino_bets', lines: lines.map(parseLine) };
 }
 export function parseDirectorPayload(value: unknown): CasinoCommand | null {

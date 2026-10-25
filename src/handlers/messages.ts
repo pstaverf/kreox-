@@ -21,6 +21,7 @@ export async function sendReply(vk: VK, peerId: number, randomId: number, reply:
     peer_id: peerId,
     random_id: randomId,
     message: reply.text,
+    ...(reply.attachment === undefined ? {} : { attachment: reply.attachment }),
     ...(reply.keyboard.kind === 'none' && !clearKeyboard ? {} : { keyboard: buildKeyboard(reply.keyboard).toString() }),
     disable_mentions: true,
     dont_parse_links: true

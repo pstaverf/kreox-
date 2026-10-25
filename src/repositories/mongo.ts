@@ -1,3 +1,4 @@
+import { rouletteConfig } from '../config/roulette.js';
 import type { BalanceCurrency, BalanceOperation } from '../types/admin-balance.js';
 import { isBalanceCurrency, validBalanceChange } from '../services/admin-balance.js';
 import { randomInt } from 'node:crypto';
@@ -176,9 +177,10 @@ class MongoGameStore extends MongoCasinoStore implements GameStore {
     return result.matchedCount === 1;
   }
 
-  async enqueueItemNotification(id: string, peerId: number, text: string, keyboard: KeyboardSpec): Promise<void> {
+  async enqueueItemNotification(id: string, peerId: number, text: string, keyboard: KeyboardSpec, roulettePhoto?: number): Promise<void> {
+    if (roulettePhoto !== undefined && (!Number.isSafeInteger(roulettePhoto) || roulettePhoto < 0 || roulettePhoto >= rouletteConfig.numbers)) throw new Error('Invalid roulette photo');
     const result = await this.notifications.insertOne({
-      _id: id, peerId, text, keyboard, randomId: await this.nextRandomId(), state: 'pending', nextAttemptAt: new Date(0), attempts: 0
+      _id: id, peerId, text, keyboard, ...(roulettePhoto === undefined ? {} : { roulettePhoto }), randomId: await this.nextRandomId(), state: 'pending', nextAttemptAt: new Date(0), attempts: 0
     }, { session: this.session });
     if (!result.acknowledged) {
       throw new Error('Item notification insert failed');

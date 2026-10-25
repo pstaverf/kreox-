@@ -1,4 +1,4 @@
-export type CasinoMode = 'crash' | 'dream';
+export type CasinoMode = 'crash' | 'dream' | 'roulette';
 export type CasinoStake = number | 'half' | 'all';
 export type CasinoLine = { mode: CasinoMode; amount: CasinoStake; target: number } | { error: string };
 export type CasinoCommand =

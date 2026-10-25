@@ -1,3 +1,4 @@
+import type { RoulettePhotoResolver } from '../types/message-photos.js';
 import { randomUUID } from 'node:crypto';
 import { APIError, type VK } from 'vk-io';
 import { game } from '../config/game.js';
@@ -5,7 +6,7 @@ import type { NotificationQueue } from '../types/storage.js';
 import { logError } from '../utils/log.js';
 import { sendReply } from './messages.js';
 
-export function startNotifications(queue: NotificationQueue, vk: VK): (() => Promise<void>) & { wake: () => void } {
+export function startNotifications(queue: NotificationQueue, vk: VK, resolveRoulettePhoto?: RoulettePhotoResolver): (() => Promise<void>) & { wake: () => void } {
   let running: Promise<void> | undefined;
   let stopped = false;
   const flush = async (): Promise<void> => {
@@ -19,8 +20,9 @@ export function startNotifications(queue: NotificationQueue, vk: VK): (() => Pro
         let state: 'sent' | 'failed' | 'pending' = 'sent';
         let delay = 0;
         try {
+          const attachment = notification.roulettePhoto === undefined || resolveRoulettePhoto === undefined ? null : await resolveRoulettePhoto(notification.peerId, notification.roulettePhoto);
           await sendReply(vk, notification.peerId, notification.randomId, {
-            text: notification.text, keyboard: notification.keyboard ?? { kind: 'none' }
+            text: notification.text, keyboard: notification.keyboard ?? { kind: 'none' }, ...(attachment === null ? {} : { attachment })
           });
         } catch (error: unknown) {
           logError('notification_delivery', error, { notificationId: notification._id });

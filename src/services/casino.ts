@@ -1,3 +1,4 @@
+import { validRouletteTarget } from './roulette-rules.js';
 import { casinoConfig } from '../config/casino.js';
 import { game } from '../config/game.js';
 import type { CasinoCommand, CasinoLine, CasinoRandom, CasinoRound } from '../types/casino.js';
@@ -28,7 +29,7 @@ async function acceptBet(store: GameStore, player: Player, line: CasinoLine, inp
   if (current === null) throw new Error('Missing casino actor');
   const amount = resolveCasinoStake(line.amount, current.kc);
   if (!safeBankMoney(amount) || !Number.isSafeInteger(line.target)
-    || (line.mode === 'crash' ? line.target <= 100 || line.target > casinoConfig.maxCrash : !casinoConfig.sectors.some(sector => sector === line.target))) throw new Error('Invalid typed casino bet');
+    || (line.mode === 'crash' ? line.target <= 100 || line.target > casinoConfig.maxCrash : line.mode === 'roulette' ? !validRouletteTarget(line.target) : !casinoConfig.sectors.some(sector => sector === line.target))) throw new Error('Invalid typed casino bet');
   if (amount < casinoConfig.minimum) return betMinimum(line.mode);
   const now = await store.now();
   const director = await directorState(store, now);

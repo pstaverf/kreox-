@@ -1,3 +1,4 @@
+import { rouletteConfig } from '../src/config/roulette.js';
 import type { CasinoQuery, CasinoRecord, DirectorDraft } from '../src/types/casino.js';
 import { bankConfig } from '../src/config/bank.js';
 import { bankDays, depositValue, earlyDepositValue, isDepositDays, safeBankMoney, transferNet } from '../src/services/bank-rules.js';
@@ -376,11 +377,12 @@ class MemoryStore implements GameStore {
     this.deleteUnits(units);
     return 'ok';
   }
-  async enqueueItemNotification(id: string, peerId: number, text: string, keyboard: KeyboardSpec): Promise<void> {
+  async enqueueItemNotification(id: string, peerId: number, text: string, keyboard: KeyboardSpec, roulettePhoto?: number): Promise<void> {
+    if (roulettePhoto !== undefined && (!Number.isSafeInteger(roulettePhoto) || roulettePhoto < 0 || roulettePhoto >= rouletteConfig.numbers)) throw new Error('Invalid roulette photo');
     if (this.state.notifications.some(value => value._id === id)) {
       throw new Error('Duplicate notification');
     }
-    this.state.notifications.push({ _id: id, peerId, text, keyboard, randomId: ++this.state.responses,
+    this.state.notifications.push({ _id: id, peerId, text, keyboard, ...(roulettePhoto === undefined ? {} : { roulettePhoto }), randomId: ++this.state.responses,
       state: 'pending', nextAttemptAt: new Date(0), attempts: 0 });
   }
 

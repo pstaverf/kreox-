@@ -1,3 +1,4 @@
+import { rouletteWins } from './roulette-rules.js';
 import { DuplicateWriteError } from '../types/storage.js';
 import { casinoConfig } from '../config/casino.js';
 import { game } from '../config/game.js';
@@ -51,7 +52,7 @@ async function progressRound(store: GameStore, now: Date): Promise<boolean> {
         round.stage = 'announcing';
       } else {
         if (bet.kind !== 'bet') throw new Error('Invalid round bet');
-        const wins = round.mode === 'crash' ? round.result >= bet.target : round.result === bet.target;
+        const wins = round.mode === 'crash' ? round.result >= bet.target : round.mode === 'roulette' ? rouletteWins(bet.target, round.result) : round.result === bet.target;
         if (wins) {
           const payout = betPayout(round.mode, bet.amount, bet.target, round.bonus);
           if (payout === null) throw new Error('Casino payout exceeded reserved bound');
@@ -75,7 +76,7 @@ async function progressRound(store: GameStore, now: Date): Promise<boolean> {
         else {
           const page = await store.casinoGet(`page:${round.roundId}:${round.nextPage}`);
           if (page?.kind !== 'page') throw new Error('Missing result page');
-          await store.enqueueItemNotification(`result:${round.roundId}:${round.nextPage}`, round.peerId, page.text, { kind: 'none' });
+          await store.enqueueItemNotification(`result:${round.roundId}:${round.nextPage}`, round.peerId, page.text, { kind: 'none' }, round.mode === 'roulette' && round.nextPage === 0 ? round.result : undefined);
           round.nextPage += 1;
         }
       }

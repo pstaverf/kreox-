@@ -49,5 +49,5 @@ export interface ItemStore {
   reserveOffer(offer: ItemOffer, now: Date): Promise<boolean>;
   itemOffer(id: string): Promise<ItemOffer | null>;
   purchaseOffer(offer: ItemOffer, buyer: Player, seller: Player, now: Date): Promise<PurchaseResult>;
-  enqueueItemNotification(id: string, peerId: number, text: string, keyboard: KeyboardSpec): Promise<void>;
+  enqueueItemNotification(id: string, peerId: number, text: string, keyboard: KeyboardSpec, roulettePhoto?: number): Promise<void>;
 }

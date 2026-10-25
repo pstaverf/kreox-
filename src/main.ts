@@ -1,3 +1,5 @@
+import { MongoMessagePhotos } from './repositories/mongo-message-photos.js';
+import { createRoulettePhotoResolver } from './handlers/roulette-photos.js';
 import { startCasinoWorker } from './handlers/casino-worker.js';
 import { startChatRegistry, syncChatRegistry } from './handlers/chat-registry.js';
 import { startBankWorker } from './handlers/bank-worker.js';
@@ -60,7 +62,7 @@ async function main(): Promise<void> {
     await syncChatRegistry(vk, database, env.vkGroupId).catch((error: unknown) => { logError('chat_registry', error); });
     const service = new GameService(database, createReferralLinkResolver(vk, env.vkGroupId), createItemTargetResolver(vk));
     const handle = createMessageHandler(vk, service, env.vkGroupId);
-    const notifications = startNotifications(database, vk);
+    const notifications = startNotifications(database, vk, createRoulettePhotoResolver(vk, new MongoMessagePhotos(client.db(env.mongoDb)), env.vkGroupId));
     stopNotifications = notifications;
     stopBank = startBankWorker(database);
     stopCasino = startCasinoWorker(database, notifications.wake);

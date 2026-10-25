@@ -1,3 +1,4 @@
+import { rouletteHistory, rouletteOutcome, rouletteTargetText } from './roulette-texts.js';
 import { game } from '../config/game.js';
 import type { CasinoBet, CasinoMode, CasinoRound, DirectorState } from '../types/casino.js';
 import type { Player } from '../types/game.js';
@@ -12,12 +13,13 @@ export const casinoTexts = {
   closed: '💰 Прием ставок завершен.', private: '⚠️ Игры доступны только в беседах.',
   crashRange: '⛔️ Показатель должен быть больше х1, но не больше х5000!',
   crashUsage: '⛔️ Использование: краш <коэффициент> <ставка>',
+  rouletteUsage: '⛔️ Использование: рулетка <число или диапазон> <ставка>',
   dreamUsage: '⛔️ Использование: дрим <сектор> <ставка>',
   winner: '👑 Поздравляем с победой на выборах! В течение этого дня вы будете получать 1% со всех ставок в играх казино в беседах.',
   creditWaiting: '⏳ Выплата сохранена. Достигнут предел баланса; выплата будет повторена автоматически.'
 } as const;
 export function kc(value: number): string { return `${formatAmount(value, game.kcScale)} KC`; }
-export function modeName(mode: CasinoMode): string { return mode === 'crash' ? 'Краш' : 'Дрим'; }
+export function modeName(mode: CasinoMode): string { return mode === 'crash' ? 'Краш' : mode === 'roulette' ? 'Рулетка' : 'Дрим'; }
 export function coefficient(value: number): string { return (value / 100).toFixed(2).replace(/0+$/, '').replace(/\.$/, ''); }
 export function chance(amount: number, total: number): string {
   return total === 0 ? '0' : (Number(BigInt(amount) * 10_000n / BigInt(total)) / 100).toFixed(2).replace('.', ',');
@@ -36,22 +38,23 @@ export function electionRefund(amount: number): string { return `🎰 Выбор
 export function betMinimum(mode: CasinoMode): string { return `💰 Минимальная ставка в режиме «${modeName(mode)}» — 1.000 KC.`; }
 export function betLimit(mode: CasinoMode): string { return `💰 Не более 10 ставок в режиме «${modeName(mode)}».`; }
 export function betAccepted(player: Player, mode: CasinoMode, amount: number, target: number): string {
-  return `✅ ${mention(player)} — ${kc(amount)} на ${mode === 'crash' ? `x${coefficient(target)}` : `сектор ${target}`}`;
+  return `✅ ${mention(player)} — ${kc(amount)} на ${mode === 'crash' ? `x${coefficient(target)}` : mode === 'roulette' ? rouletteTargetText(target) : `сектор ${target}`}`;
 }
 export function roundClosed(mode: CasinoMode): string { return `🎰 Приём ставок для игры "${modeName(mode)}" закрыт.\n🕒 Итоги раунда через 5 секунд…`; }
 export function outcome(round: Pick<CasinoRound, 'mode' | 'result' | 'bonus'>): string {
-  return round.mode === 'crash' ? `x${coefficient(round.result)}` : `${round.bonus === 1 ? '' : `множитель х${round.bonus} - `}сектор №${round.result} - [x${(round.result + 1) * round.bonus}]`;
+  return round.mode === 'roulette' ? rouletteOutcome(round.result) : round.mode === 'crash' ? `x${coefficient(round.result)}` : `${round.bonus === 1 ? '' : `множитель х${round.bonus} - `}сектор №${round.result} - [x${(round.result + 1) * round.bonus}]`;
 }
 export function roundHeading(round: CasinoRound): string {
+  if (round.mode === 'roulette') return `🎰 Итоги игры "Рулетка":\n\n🎡 Выпало — ${rouletteOutcome(round.result)}`;
   return round.mode === 'crash' ? `📊 Итоги игры "Краш":\n\n📈 Краш на отметке: ${outcome(round)}`
     : `🎡 Итоги игры "Дрим":\n\n🎡 Выпал сектор #${round.result}${round.bonus === 1 ? '' : ` - множитель ${round.bonus}`} - [x${(round.result + 1) * round.bonus}]`;
 }
 export function winningBet(bet: CasinoBet, mode: CasinoMode, payout: number): string {
-  return `✅ [id${bet.vkId}|${bet.name}] — ${kc(bet.amount)} на ${mode === 'crash' ? coefficient(bet.target) : bet.target}\n— Приз: ${kc(payout)}`;
+  return `✅ [id${bet.vkId}|${bet.name}] — ${kc(bet.amount)} на ${mode === 'crash' ? coefficient(bet.target) : mode === 'roulette' ? rouletteTargetText(bet.target) : bet.target}\n— Приз: ${kc(payout)}`;
 }
 export function roundFooter(round: CasinoRound): string {
   return `${round.winners === 0 ? '\n\n❌ Все ставки проиграли!' : ''}${round.losses > 0 ? `\n\n💰 Проиграно: ${kc(round.losses)}` : ''}`;
 }
 export function historyText(mode: CasinoMode, history: CasinoRound['history']): string {
-  return `Последние 20 выпавших ${mode === 'crash' ? 'коэффициентов' : 'секторов'}${history.length === 0 ? '\n\nПока нет завершённых раундов.' : `\n\n${history.map(item => outcome({ ...item, mode })).join('\n')}`}`;
+  return `Последние 20 выпавших ${mode === 'crash' ? 'коэффициентов' : mode === 'roulette' ? 'чисел' : 'секторов'}${history.length === 0 ? '\n\nПока нет завершённых раундов.' : `\n\n${history.map(item => mode === 'roulette' ? rouletteHistory(item.result) : outcome({ ...item, mode })).join('\n')}`}`;
 }
