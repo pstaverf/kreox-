@@ -17,6 +17,10 @@ export function buildKeyboard(spec: KeyboardSpec): KeyboardBuilder {
     return Keyboard.textButton({ label, payload: { command: kind, ...params } });
   };
   switch (spec.kind) {
+    case 'dice_game': return Keyboard.keyboard([[
+      Keyboard.textButton({ label: 'Играть', color: Keyboard.POSITIVE_COLOR, payload: { command: 'dice_join', peerId: spec.peerId, gameId: spec.gameId } }),
+      Keyboard.textButton({ label: 'Отмена', color: Keyboard.NEGATIVE_COLOR, payload: { command: 'dice_leave', peerId: spec.peerId, gameId: spec.gameId } })
+    ]]).inline();
     case 'casino': return Keyboard.keyboard([
       [button(privateCasinoTexts.chats, { kind: 'casino_chats' })],
       [button(privateCasinoTexts.jackpot, { kind: 'jackpot' }), button(privateCasinoTexts.coin, { kind: 'coin' })]

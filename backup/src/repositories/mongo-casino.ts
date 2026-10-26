@@ -29,6 +29,8 @@ export class MongoCasinoStore extends MongoBankStore {
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > accountCapacity) throw new Error('Invalid casino query bound');
     let filter: Filter<CasinoRecord>;
     switch (query.kind) {
+      case 'dice_chat': filter = { kind: 'dice_chat', dueAt: { $lte: query.dueAt } }; break;
+      case 'dice_credit': filter = { kind: 'dice_credit', stage: 'pending', dueAt: { $lte: query.dueAt } }; break;
       case 'jackpot_entries': filter = { kind: 'jackpot_entry', roundId: query.roundId, _id: { $gt: query.after } }; break;
       case 'jackpot_draw': filter = { kind: 'jackpot_draw', stage: 'broadcast', dueAt: { $lte: query.dueAt } }; break;
       case 'roulette_photo': filter = { kind: 'round', mode: 'roulette', stage: { $in: ['open', 'closed', 'waiting', 'settling', 'announcing'] }, _id: { $gt: query.after } }; break;

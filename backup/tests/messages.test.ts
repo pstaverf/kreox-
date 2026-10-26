@@ -626,3 +626,38 @@ test('private casino keyboard opens coin stake input and handles real VK side/ba
   assert.equal(sent.at(-1)?.message, '⚠️ У вас идёт активная игра в режиме «Монетка»!');
   assert.equal(database.player().kc, 9_000_000);
 });
+
+test('dice chat transport retains inline action buttons and ignores obsolete games without a VK reply', async context => {
+  const vk = new VK({ token: 'test-token' });
+  const database = new MemoryDatabase();
+  const service = new GameService(database, undefined, undefined, undefined, undefined, undefined, purpose => purpose.endsWith(':2') ? 11 : 0);
+  for (const vkId of [1, 2, 888801846]) {
+    await service.handle({ eventId: `dice-register:${vkId}`, vkId, command: { kind: 'profile' } }, async () => `Игрок ${vkId}`);
+    database.player(vkId).kc = 1_000_000;
+  }
+  const sent: Record<string, unknown>[] = [];
+  const api = mock.method(vk.api, 'callWithRequest', async (request: APIRequest) => {
+    assert.equal(request.method, 'messages.send');
+    const params: unknown = request.params;
+    assert.ok(isRecord(params));
+    sent.push(params);
+    return 1;
+  });
+  context.after(() => api.mock.restore());
+  const handle = createMessageHandler(vk, service, 123);
+  const peerId = 2_000_000_001;
+  await handle(message(vk, { peerId, text: 'кости 1000', messageId: 100 }));
+  assert.equal(sent.length, 1);
+  assert.match(String(sent[0]?.keyboard), /"inline":true/);
+  assert.match(String(sent[0]?.keyboard), /dice_join/);
+  assert.match(String(sent[0]?.keyboard), /positive/);
+  assert.match(String(sent[0]?.keyboard), /negative/);
+  const payload = JSON.stringify({ command: 'dice_join', peerId, gameId: 1, vkId: 1 });
+  await handle(message(vk, { peerId, senderId: 2, text: 'Играть', payload, messageId: 101 }));
+  assert.equal(sent.length, 1);
+  assert.equal(database.player(2).kc, 1_098_000);
+  assert.equal(database.state.notifications.filter(value => value._id.startsWith('dice-result:')).length, 1);
+  await handle(message(vk, { peerId, senderId: 2, text: 'Играть', payload, messageId: 102 }));
+  await handle(message(vk, { peerId, senderId: 2, text: 'Отмена', payload: JSON.stringify({ command: 'dice_leave', peerId, gameId: 1 }), messageId: 103 }));
+  assert.equal(sent.length, 1);
+});

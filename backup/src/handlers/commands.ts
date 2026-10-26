@@ -1,3 +1,4 @@
+import { parseDiceText, parseDicePayload } from './dice.js';
 import { parsePrivateCasinoPayload } from './private-casino.js';
 import { parseMailing } from './mailing.js';
 import { parseCasinoText, parseChatRanking, parseDirectorPayload } from './casino.js';
@@ -16,6 +17,8 @@ export function parseCommand(text: string | undefined, payload: unknown, isChat 
   if (text?.trim() === '/dk') {
     return { kind: 'delete_keyboards' };
   }
+  const dice = parseDiceText(text, isChat);
+  if (dice !== null) return dice;
   const casino = parseCasinoText(text, isChat);
   if (casino !== null) return casino;
   const ranking = parseChatRanking(text, isChat);
@@ -45,6 +48,8 @@ export function parseCommand(text: string | undefined, payload: unknown, isChat 
       return { kind: 'development' };
     }
   }
+  const dicePayload = parseDicePayload(value);
+  if (dicePayload !== null) return dicePayload;
   const privateCasino = parsePrivateCasinoPayload(value);
   if (privateCasino !== null) return privateCasino;
   const director = parseDirectorPayload(value);

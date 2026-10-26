@@ -19,7 +19,7 @@ import { accountCapacity, game } from '../src/config/game.js';
 import type { GameInput, InventoryItem, InventoryStack, MiningFarm, Notification, Player, PreparedReply, Ranking, RankingMetric, ProcessedMessage, Reply, Reward } from '../src/types/game.js';
 import { initialFarm } from '../src/services/mining.js';
 import { rankingScore } from '../src/services/rankings.js';
-import type { GameDatabase, GameStore } from '../src/types/storage.js';
+import { DuplicateWriteError, type GameDatabase, type GameStore } from '../src/types/storage.js';
 
 interface State {
   mailingAudience: Map<number, Date>;
@@ -87,6 +87,8 @@ class MemoryStore implements GameStore {
   async casinoList(query: CasinoQuery, limit: number): Promise<CasinoRecord[]> {
     return structuredClone([...this.state.casino.values()].filter(record => {
       switch (query.kind) {
+        case 'dice_chat': return record.kind === 'dice_chat' && record.dueAt <= query.dueAt;
+        case 'dice_credit': return record.kind === 'dice_credit' && record.stage === 'pending' && record.dueAt <= query.dueAt;
         case 'jackpot_entries': return record.kind === 'jackpot_entry' && record.roundId === query.roundId && record._id > query.after;
         case 'jackpot_draw': return record.kind === 'jackpot_draw' && record.stage === 'broadcast' && record.dueAt <= query.dueAt;
         case 'roulette_photo': return record.kind === 'round' && record.mode === 'roulette' && record.stage !== 'finished' && record._id > query.after;
@@ -108,8 +110,8 @@ class MemoryStore implements GameStore {
     this.state.casino.set(record._id, structuredClone(record));
   }
   async casinoSave(record: CasinoRecord, notAfter?: Date): Promise<void> {
-    if (notAfter !== undefined && this.database.time >= notAfter) throw new Error('Casino deadline passed');
-    if (this.state.casino.get(record._id)?.version !== record.version) throw new Error('Casino revision conflict');
+    if (notAfter !== undefined && this.database.time >= notAfter) throw new DuplicateWriteError();
+    if (this.state.casino.get(record._id)?.version !== record.version) throw new DuplicateWriteError();
     record.version += 1;
     this.state.casino.set(record._id, structuredClone(record));
   }

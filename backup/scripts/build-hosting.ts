@@ -7,8 +7,9 @@ import { build } from 'esbuild';
 import { isRecord } from '../src/utils/validation.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
-const output = join(root, 'hosting');
-const archive = join(root, 'kreox-hosting.tar.gz');
+const repository = fileURLToPath(new URL('../../', import.meta.url));
+const output = join(repository, 'hosting');
+const archive = join(repository, 'kreox-hosting.tar.gz');
 const files = ['bot.mjs', 'package.json', 'package-lock.json', '.env.example', 'README.md', '.nvmrc'];
 const run = promisify(execFile);
 const source: unknown = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
@@ -43,8 +44,13 @@ await writeFile(join(output, 'package.json'), `${JSON.stringify({
 }, null, 2)}\n`);
 await copyFile(join(root, 'package-lock.json'), join(output, 'package-lock.json'));
 await run(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['install', '--package-lock-only', '--ignore-scripts', '--offline', '--no-audit', '--no-fund'], { cwd: output });
-await copyFile(join(root, '.env.example'), join(output, '.env.example'));
-await copyFile(join(root, '.nvmrc'), join(output, '.nvmrc'));
+await copyFile(join(repository, '.env.example'), join(output, '.env.example'));
+await copyFile(join(repository, '.nvmrc'), join(output, '.nvmrc'));
 await copyFile(join(root, 'HOSTING.md'), join(output, 'README.md'));
 await run('tar', ['-czf', archive, '-C', output, ...files], { cwd: root });
-console.info('Hosting files: hosting/; archive: kreox-hosting.tar.gz');
+if (process.argv.includes('--publish')) {
+  for (const file of files) await copyFile(join(output, file), join(repository, file));
+  await mkdir(join(repository, 'archives'), { recursive: true });
+  await copyFile(archive, join(repository, 'archives/kreox-hosting.tar.gz'));
+}
+console.info('Hosting files: ../hosting/; archive: ../kreox-hosting.tar.gz; --publish updates repository runtime and archives/');

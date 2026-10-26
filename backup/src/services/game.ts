@@ -1,3 +1,5 @@
+import { diceAction, diceButtonActive } from './dice.js';
+import { isDiceCommand } from './dice-rules.js';
 import { privateCasinoAction } from './private-casino.js';
 import { isPrivateCasinoCommand } from './private-casino-rules.js';
 import { coinState, coinReply, coinStakeInput } from './coin.js';
@@ -103,7 +105,7 @@ export class GameService {
           if (typeof reply === 'string') {
             return reply;
           }
-          return store.remember(input, input.isChat ? { ...reply, keyboard: { kind: 'none' } } : reply);
+          return store.remember(input, input.isChat && reply.keyboard.kind !== 'dice_game' ? { ...reply, keyboard: { kind: 'none' } } : reply);
         });
         if (typeof reply !== 'string') {
           return reply;
@@ -156,6 +158,10 @@ export class GameService {
     if (isAdminItemCommand(input.command)) {
       return adminItems(store, input.command);
     }
+    if (isDiceCommand(input.command)) {
+      if (!await diceButtonActive(store, input, input.command)) return { text: '', keyboard: { kind: 'none' } };
+      if (input.command.kind === 'dice_leave' || input.command.kind === 'dice_list' || input.command.kind === 'dice_invalid') return diceAction(store, input, null, input.command, casinoRoll);
+    }
     const player = await store.player(input.vkId);
     if (player === null) {
       if (name === null) {
@@ -171,6 +177,7 @@ export class GameService {
       return { text: registered === null ? texts.registrationLimit : texts.welcome, keyboard: { kind: 'main' } };
     }
     const command = input.command;
+    if (isDiceCommand(command)) return diceAction(store, input, player, command, casinoRoll);
     if (!input.isChat && player.coinOpen === true) {
       if (!input.hasPayload && command.kind === 'development' && input.text !== undefined) return coinStakeInput(store, player, input);
       const state = await coinState(store, player._id);

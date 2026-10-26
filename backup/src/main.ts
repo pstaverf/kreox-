@@ -1,3 +1,4 @@
+import { startDiceWorker } from './handlers/dice-worker.js';
 import { startJackpotWorker } from './handlers/jackpot-worker.js';
 import { startMailingWorker } from './handlers/mailing-worker.js';
 import { startRoulettePhotoWorker } from './handlers/roulette-photo-worker.js';
@@ -33,6 +34,7 @@ async function main(): Promise<void> {
   });
   const pending = new Set<Promise<void>>();
   let stopping: Promise<void> | undefined;
+  let stopDice: (() => Promise<void>) | undefined;
   let stopJackpot: (() => Promise<void>) | undefined;
   let stopMailing: (() => Promise<void>) | undefined;
   let stopPhotos: (() => Promise<void>) | undefined;
@@ -45,6 +47,7 @@ async function main(): Promise<void> {
       try {
         await vk.updates.stop();
         await stopChats?.();
+        await stopDice?.();
         await stopJackpot?.();
         await stopCasino?.();
         await stopBank?.();
@@ -78,6 +81,7 @@ async function main(): Promise<void> {
     stopMailing = startMailingWorker(database, notifications.wake);
     stopBank = startBankWorker(database);
     stopCasino = startCasinoWorker(database, notifications.wake);
+    stopDice = startDiceWorker(database, notifications.wake);
     stopJackpot = startJackpotWorker(database, notifications.wake);
     stopChats = startChatRegistry(vk, database, env.vkGroupId);
     vk.updates.on('message_new', async context => {
