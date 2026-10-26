@@ -1,3 +1,4 @@
+import { roulettePhotoErrorContext } from './roulette-photo-errors.js';
 import type { VK } from 'vk-io';
 import { rouletteConfig, roulettePhotos } from '../config/roulette.js';
 import { validRouletteNumber } from '../services/roulette-rules.js';
@@ -42,6 +43,7 @@ export function createRoulettePhotoResolver(vk: VK, cache: MessagePhotoCache, gr
     if (url === undefined) throw new Error('Missing roulette photo URL');
     const key = `${groupId}:${peerId}:${url}`;
     let stage = 'cache_read';
+    let photoBytes: number | undefined;
     let startedAt = Date.now();
     try {
       const cached = await cache.messagePhoto(key);
@@ -49,6 +51,7 @@ export function createRoulettePhotoResolver(vk: VK, cache: MessagePhotoCache, gr
       stage = 'download';
       startedAt = Date.now();
       const value = await download(url);
+      photoBytes = value.byteLength;
       stage = 'vk_upload';
       startedAt = Date.now();
       const photo = await vk.upload.messagePhoto({ peer_id: peerId, source: { values: [{ value, filename: `roulette-${result}.jpg`, contentType: 'image/jpeg' }], timeout: rouletteConfig.photoTimeoutMs } });
@@ -57,7 +60,8 @@ export function createRoulettePhotoResolver(vk: VK, cache: MessagePhotoCache, gr
       await cache.saveMessagePhoto(key, attachment).catch((error: unknown) => { logError('roulette_photo_cache', error, { number: result }); });
       return attachment;
     } catch (error: unknown) {
-      logError('roulette_photo_upload', error, { number: result, stage, elapsedMs: Math.max(0, Date.now() - startedAt), timeoutMs: rouletteConfig.photoTimeoutMs });
+      logError('roulette_photo_upload', error, { number: result, stage, elapsedMs: Math.max(0, Date.now() - startedAt), timeoutMs: rouletteConfig.photoTimeoutMs,
+        ...(photoBytes === undefined ? {} : { photoBytes }), ...(stage === 'vk_upload' ? roulettePhotoErrorContext(error) : {}) });
       return null;
     }
   };

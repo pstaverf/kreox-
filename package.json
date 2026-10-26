@@ -12,7 +12,8 @@
     "prestart": "npm run build",
     "start": "node --env-file-if-exists=.env dist/src/main.js",
     "test": "node --import tsx --test tests/*.test.ts",
-    "test:integration": "node --env-file-if-exists=.env --import tsx --test tests/integration/*.test.ts"
+    "test:integration": "node --env-file-if-exists=.env --import tsx --test tests/integration/*.test.ts",
+    "build:hosting": "npm run typecheck && node --import tsx scripts/build-hosting.ts"
   },
   "dependencies": {
     "mongodb": "7.7.0",
@@ -20,6 +21,7 @@
   },
   "devDependencies": {
     "@types/node": "24.19.2",
+    "esbuild": "0.28.2",
     "tsx": "4.23.15",
     "typescript": "7.0.2"
   }

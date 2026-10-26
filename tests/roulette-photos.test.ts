@@ -1,6 +1,7 @@
+import { roulettePhotoErrorContext } from '../src/handlers/roulette-photo-errors.js';
 import assert from 'node:assert/strict';
 import { mock, test } from 'node:test';
-import { PhotoAttachment, VK, type APIRequest } from 'vk-io';
+import { APIError, PhotoAttachment, VK, type APIRequest } from 'vk-io';
 import { rouletteConfig, roulettePhotos } from '../src/config/roulette.js';
 import { startNotifications } from '../src/handlers/notifications.js';
 import { createRoulettePhotoResolver, downloadRoulettePhoto } from '../src/handlers/roulette-photos.js';
@@ -274,4 +275,48 @@ test('result delivery reuses a still-running prefetch rather than uploading the 
   assert.equal(upload.mock.callCount(), 1);
   assert.equal(await resolve(2_000_000_001, 25), 'photo-123_9');
   assert.equal(downloads, 1);
+});
+
+test('VK code 100 photo logs include only an allowlisted method, parameter hint and byte count, never raw API data', async context => {
+  const vk = new VK({ token: 'test-secret' });
+  const lines: string[] = [];
+  const logger = mock.method(console, 'error', (line: unknown) => { lines.push(String(line)); });
+  context.after(() => logger.mock.restore());
+  const apiError = new APIError({
+    error_code: 100,
+    error_msg: 'photo is invalid; https://private.example/test-secret',
+    request_params: [{ key: 'method', value: 'photos.saveMessagesPhoto' }, { key: 'access_token', value: 'test-secret' },
+      { key: 'photo', value: 'private-photo-json' }, { key: 'hash', value: 'private-upload-hash' }]
+  });
+  const upload = mock.method(vk.upload, 'messagePhoto', async () => { throw apiError; });
+  context.after(() => upload.mock.restore());
+  assert.equal(await createRoulettePhotoResolver(vk, cache(), 123, async () => jpeg)(2_000_000_001, 11), null);
+  assert.equal(lines.length, 1);
+  const value: unknown = JSON.parse(lines[0] ?? 'null');
+  assert.ok(isRecord(value));
+  assert.equal(value.method, 'photos.saveMessagesPhoto');
+  assert.equal(value.parameterHint, 'photo');
+  assert.equal(value.photoBytes, jpeg.byteLength);
+  assert.equal(value.stage, 'vk_upload');
+  assert.equal(value.code, 100);
+  assert.equal(value.number, 11);
+  assert.ok(lines.every(line => !['test-secret', 'private.example', 'private-photo-json', 'private-upload-hash', 'access_token'].some(secret => line.includes(secret))));
+});
+
+test('unknown or missing VK photo methods and arbitrary error strings never become diagnostic log fields', () => {
+  for (const method of ['secret-method-with-token', '', 'messages.send']) {
+    const error = new APIError({ error_code: 100, error_msg: 'secret-message', request_params: [{ key: 'method', value: method }] });
+    assert.deepEqual(roulettePhotoErrorContext(error), { method: 'unknown' });
+  }
+  assert.deepEqual(roulettePhotoErrorContext(new Error('secret-message')), {});
+  assert.deepEqual(roulettePhotoErrorContext(new APIError({ error_code: 100, error_msg: 'peer_id must be positive', request_params: [
+    { key: 'method', value: 'photos.getMessagesUploadServer' }
+  ] })), { method: 'photos.getMessagesUploadServer', parameterHint: 'peer_id' });
+});
+
+
+test('incomplete VK error metadata cannot break the text-only fallback diagnostic', () => {
+  const error = new APIError({ error_code: 100, error_msg: 'photo is invalid', request_params: [] });
+  Object.defineProperty(error, 'params', { value: undefined });
+  assert.deepEqual(roulettePhotoErrorContext(error), { method: 'unknown', parameterHint: 'photo' });
 });
