@@ -1,9 +1,10 @@
+import type { CasinoStake } from './casino.js';
 import type { BalanceCurrency } from './admin-balance.js';
 
 export type DiceCommand =
   | { kind: 'dice_list' }
   | { kind: 'dice_invalid'; currency: BalanceCurrency; minimum: boolean }
-  | { kind: 'dice_create'; currency: BalanceCurrency; amount: number; slots: number }
+  | { kind: 'dice_create'; currency: BalanceCurrency; amount: CasinoStake; slots: number }
   | { kind: 'dice_join' | 'dice_leave'; peerId: number; gameId: number };
 export interface DiceParticipant { vkId: number; name: string; entryId: string }
 export interface DiceGame {

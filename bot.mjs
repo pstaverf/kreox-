@@ -192,6 +192,224 @@ function depositButtons(wallet) {
   return bankConfig.depositPercents.map((percent) => Number(BigInt(wallet) * BigInt(percent) / 100n / BigInt(game.kcScale) * BigInt(game.kcScale)));
 }
 
+// src/config/roulette.ts
+var range = (from, to) => Array.from({ length: to - from + 1 }, (_, index) => from + index);
+var red = [1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36];
+var black = range(1, 36).filter((number) => !red.includes(number));
+var rouletteConfig = {
+  numbers: 37,
+  straightMultiplier: 36,
+  red,
+  black,
+  groups: [
+    { target: 37, label: "п1", multiplier: 2, numbers: range(1, 18) },
+    { target: 38, label: "п2", multiplier: 2, numbers: range(19, 36) },
+    { target: 39, label: "д1", multiplier: 3, numbers: range(1, 12) },
+    { target: 40, label: "д2", multiplier: 3, numbers: range(13, 24) },
+    { target: 41, label: "д3", multiplier: 3, numbers: range(25, 36) },
+    { target: 42, label: "ч1", multiplier: 4, numbers: range(1, 9) },
+    { target: 43, label: "ч2", multiplier: 4, numbers: range(10, 18) },
+    { target: 44, label: "ч3", multiplier: 4, numbers: range(19, 27) },
+    { target: 45, label: "ч4", multiplier: 4, numbers: range(28, 36) },
+    { target: 46, label: "четное", multiplier: 2, numbers: range(1, 36).filter((number) => number % 2 === 0) },
+    { target: 47, label: "нечетное", multiplier: 2, numbers: range(1, 36).filter((number) => number % 2 !== 0) },
+    { target: 48, label: "красное", multiplier: 2, numbers: red },
+    { target: 49, label: "черное", multiplier: 2, numbers: black },
+    { target: 50, label: "большие", multiplier: 2, numbers: range(19, 36) },
+    { target: 51, label: "малые", multiplier: 2, numbers: range(1, 18) }
+  ],
+  photoPrefetchIntervalMs: 2e3,
+  photoPrefetchConcurrency: 2,
+  photoTimeoutMs: 3e4,
+  maxPhotoBytes: 10 * 1024 * 1024
+};
+var roulettePhotos = [
+  "https://cdn.kleymorf.xyz/other/1a62ac90c1eb_photo_e53303d6.jpg",
+  "https://cdn.kleymorf.xyz/other/fbe8f35afd63_photo_f1bc5cf6.jpg",
+  "https://cdn.kleymorf.xyz/other/fb85c6a73e91_photo_9b34e1f8.jpg",
+  "https://cdn.kleymorf.xyz/other/7c1bafb26aca_photo_9db44ec7.jpg",
+  "https://cdn.kleymorf.xyz/other/0438e7e24f69_photo_5b24244a.jpg",
+  "https://cdn.kleymorf.xyz/other/7ae4dd4cf8f6_photo_cc159f8b.jpg",
+  "https://cdn.kleymorf.xyz/other/74cbd17307a9_photo_5e554b4c.jpg",
+  "https://cdn.kleymorf.xyz/other/61b3c35ea629_photo_8c3da6e5.jpg",
+  "https://cdn.kleymorf.xyz/other/ec47421fe334_photo_94789985.jpg",
+  "https://cdn.kleymorf.xyz/other/6ed406a3592a_photo_581af863.jpg",
+  "https://cdn.kleymorf.xyz/other/89165b9da39f_photo_92c6c31c.jpg",
+  "https://cdn.kleymorf.xyz/other/61c7f4bee516_photo_e4d52fa6.jpg",
+  "https://cdn.kleymorf.xyz/other/5e357483f0cd_photo_b9bee276.jpg",
+  "https://cdn.kleymorf.xyz/other/de7b6e64c4b3_photo_691e9b96.jpg",
+  "https://cdn.kleymorf.xyz/other/b905849f901b_photo_d73c3f1a.jpg",
+  "https://cdn.kleymorf.xyz/other/33b7861f489e_photo_e47b4208.jpg",
+  "https://cdn.kleymorf.xyz/other/fff75695a9d5_photo_cf522a83.jpg",
+  "https://cdn.kleymorf.xyz/other/d6e6a37f7aa5_photo_d2f7dac3.jpg",
+  "https://cdn.kleymorf.xyz/other/eda40c9fd86e_photo_7d9467c9.jpg",
+  "https://cdn.kleymorf.xyz/other/fc3c1cd99a28_photo_fc200894.jpg",
+  "https://cdn.kleymorf.xyz/other/a20e6698d442_photo_c4c5b043.jpg",
+  "https://cdn.kleymorf.xyz/other/18b1007baf49_photo_30ee0385.jpg",
+  "https://cdn.kleymorf.xyz/other/85578fb1f31d_photo_1c5bbf23.jpg",
+  "https://cdn.kleymorf.xyz/other/e51ee81c280f_photo_38c03142.jpg",
+  "https://cdn.kleymorf.xyz/other/7ede9b1adfcd_photo_45cd354a.jpg",
+  "https://cdn.kleymorf.xyz/other/aa182cb6130f_photo_4f2ff8a7.jpg",
+  "https://cdn.kleymorf.xyz/other/a5419b8c2b4b_photo_e18c46e7.jpg",
+  "https://cdn.kleymorf.xyz/other/4baa5d148032_photo_c1cb97d3.jpg",
+  "https://cdn.kleymorf.xyz/other/23d243c27159_photo_7ac390d7.jpg",
+  "https://cdn.kleymorf.xyz/other/b6d98877f6ad_photo_6f971d44.jpg",
+  "https://cdn.kleymorf.xyz/other/82dac72c9de1_photo_684ed4ae.jpg",
+  "https://cdn.kleymorf.xyz/other/cc209b27f01e_photo_72709488.jpg",
+  "https://cdn.kleymorf.xyz/other/1347dde8199b_photo_307137d6.jpg",
+  "https://cdn.kleymorf.xyz/other/ede101d4a4a8_photo_09f6eb4c.jpg",
+  "https://cdn.kleymorf.xyz/other/4f6d0e5880a6_photo_b7c695a7.jpg",
+  "https://cdn.kleymorf.xyz/other/ea453e77163d_photo_9b9769fe.jpg",
+  "https://cdn.kleymorf.xyz/other/e7c188483369_photo_a2c319c7.jpg"
+];
+
+// src/services/roulette-rules.ts
+function validRouletteNumber(value) {
+  return Number.isSafeInteger(value) && value >= 0 && value < rouletteConfig.numbers;
+}
+function parseRouletteTarget(text) {
+  const value = text.trim().toLowerCase().replaceAll("ё", "е");
+  if (/^\d{1,2}$/.test(value)) {
+    const target = Number(value);
+    return validRouletteNumber(target) ? target : null;
+  }
+  return rouletteConfig.groups.find((group) => group.label === value)?.target ?? null;
+}
+function rouletteMultiplier(target) {
+  if (validRouletteNumber(target)) return rouletteConfig.straightMultiplier;
+  const group = rouletteConfig.groups.find((group2) => group2.target === target);
+  if (group === void 0) throw new Error("Invalid roulette target");
+  return group.multiplier;
+}
+function validRouletteTarget(target) {
+  return validRouletteNumber(target) || rouletteConfig.groups.some((group) => group.target === target);
+}
+function rouletteWins(target, result) {
+  if (!validRouletteNumber(result)) throw new Error("Invalid roulette outcome");
+  if (validRouletteNumber(target)) return result === target;
+  const group = rouletteConfig.groups.find((group2) => group2.target === target);
+  if (group === void 0) throw new Error("Invalid roulette target");
+  return group.numbers.includes(result);
+}
+
+// src/services/casino-rules.ts
+import { randomBytes } from "node:crypto";
+
+// src/config/casino.ts
+var casinoConfig = {
+  minimum: 1e3 * game.kcScale,
+  maxBets: 10,
+  acceptanceMs: 1e4,
+  extensionMs: 500,
+  resultsMs: 5e3,
+  workerMs: 250,
+  workerBatch: 40,
+  announcementBatch: 20,
+  chatPageSize: 200,
+  chatSyncMs: 6e4,
+  retryMs: 6e4,
+  historySize: 20,
+  directorPercent: 1,
+  dealerPercent: 1,
+  electionRefundPercent: 50,
+  sectors: [1, 2, 5, 10, 20, 40],
+  weights: [23, 15, 7, 4, 2, 1],
+  maxCrash: 5e5,
+  crashPrecision: 100,
+  crashReturnPercent: 97,
+  crashRandomSize: 1e9,
+  moscowOffsetMs: 3 * 60 * 60 * 1e3,
+  dayMs: 24 * 60 * 60 * 1e3
+};
+
+// src/services/casino-rules.ts
+function nextElection(now) {
+  return new Date((Math.floor((now.getTime() + casinoConfig.moscowOffsetMs) / casinoConfig.dayMs) + 1) * casinoConfig.dayMs - casinoConfig.moscowOffsetMs);
+}
+function casinoRandom(_purpose, maximum) {
+  if (!Number.isSafeInteger(maximum) || maximum <= 0 || maximum > game.maxAmount) throw new Error("Invalid random bound");
+  for (let attempt = 0; attempt < 128; attempt += 1) {
+    let value = 0n;
+    for (const byte of randomBytes(7)) value = value << 8n | BigInt(byte);
+    value &= (1n << 53n) - 1n;
+    if (value < BigInt(maximum)) return Number(value);
+    if (maximum < 2 ** 52) {
+      const ceiling = (1n << 53n) / BigInt(maximum) * BigInt(maximum);
+      if (value < ceiling) return Number(value % BigInt(maximum));
+    }
+  }
+  throw new Error("Random rejection limit");
+}
+function cachedCasinoRandom(random) {
+  const values = /* @__PURE__ */ new Map();
+  return (purpose, maximum) => {
+    const key = `${purpose}:${maximum}`;
+    const value = values.get(key) ?? random(purpose, maximum);
+    if (!Number.isSafeInteger(value) || value < 0 || value >= maximum) throw new Error("Invalid casino randomness");
+    values.set(key, value);
+    return value;
+  };
+}
+function selectOutcome(mode, random, key) {
+  if (mode === "roulette") return { result: random(`${key}:roulette`, rouletteConfig.numbers), bonus: 1 };
+  if (mode === "crash") {
+    const roll = random(`${key}:crash`, casinoConfig.crashRandomSize) + 1;
+    return { result: Math.max(casinoConfig.crashPrecision, Math.min(casinoConfig.maxCrash, Number(BigInt(casinoConfig.crashReturnPercent) * BigInt(casinoConfig.crashRandomSize) / BigInt(roll)))), bonus: 1 };
+  }
+  let ticket = random(`${key}:sector`, 52);
+  for (const [index, weight] of casinoConfig.weights.entries()) {
+    if (ticket < weight) {
+      const result = casinoConfig.sectors[index];
+      if (result === void 0) throw new Error("Invalid dream sector");
+      const bonus = random(`${key}:bonus`, 1e3);
+      return { result, bonus: bonus === 0 ? 7 : bonus <= 10 ? 2 : 1 };
+    }
+    ticket -= weight;
+  }
+  throw new Error("Invalid dream ticket");
+}
+function betPayout(mode, amount, target, bonus) {
+  const value = mode === "crash" ? BigInt(amount) * BigInt(target) / BigInt(casinoConfig.crashPrecision) : mode === "roulette" ? BigInt(amount) * BigInt(rouletteMultiplier(target)) : BigInt(amount) * BigInt(target + 1) * BigInt(bonus);
+  return value <= BigInt(game.maxAmount) ? Number(value) : null;
+}
+function roundKey(peerId, mode) {
+  return `round:${peerId}:${mode}`;
+}
+function closeKey(round) {
+  return `${round.roundId}:closed`;
+}
+function casinoPercent(amount, percent) {
+  if (!Number.isSafeInteger(amount) || amount < 0 || amount > game.maxAmount || !Number.isSafeInteger(percent) || percent < 0 || percent > 100) throw new Error("Invalid casino percentage");
+  return Number(BigInt(amount) * BigInt(percent) / 100n);
+}
+function parseCasinoStake(text) {
+  switch (text.trim().toLowerCase()) {
+    case "пол":
+      return "half";
+    case "все":
+    case "всё":
+    case "вб":
+      return "all";
+    default:
+      return parseBankMoney(text, "kc");
+  }
+}
+function resolveCasinoStake(stake, wallet) {
+  if (!safeBankMoney(wallet)) throw new Error("Invalid casino wallet");
+  if (typeof stake === "number") {
+    if (!safeBankMoney(stake)) throw new Error("Invalid casino stake");
+    return stake;
+  }
+  switch (stake) {
+    case "half":
+      return Number(BigInt(wallet) / 2n);
+    case "all":
+      return wallet;
+    default:
+      return assertNever(stake);
+  }
+}
+
 // src/config/items.ts
 var itemConfig = {
   maxBatch: 1e3,
@@ -561,11 +779,9 @@ function diceNumber(gameId) {
 function diceCard(value, now) {
   const seconds = Math.max(0, Math.ceil((value.expiresAt.getTime() - now.getTime()) / 1e3));
   return `🎲 Игра в кости #${diceNumber(value.gameId)}
-
 💰 Ставка: ${diceMoney(value.amount, value.currency)}
 
 👥 Мест: [${value.players.length}/${value.slots}]
-
 ✅ Игроки:
 ${value.players.map(diceMention).join("\n")}
 
@@ -676,7 +892,14 @@ async function diceAction(store, input, player, command, random) {
     return reply();
   }
   if (command.kind === "dice_create") {
-    if (!validDiceStake(command.currency, command.amount, command.slots)) return reply(diceTexts.limit);
+    let amount = command.amount;
+    if (typeof amount !== "number") {
+      const current = await store.player(input.vkId);
+      if (current === null) throw new Error("Missing dice balance");
+      amount = resolveCasinoStake(amount, current[command.currency]);
+    }
+    if (amount < diceMinimum(command.currency)) return reply(diceMinimumText(command.currency));
+    if (!validDiceStake(command.currency, amount, command.slots)) return reply(diceTexts.limit);
     if (chat === null) {
       chat = { _id: diceChatKey(peerId), kind: "dice_chat", version: 0, peerId, lastGame: 0, games: [], dueAt: now };
       refreshDiceDeadline(chat);
@@ -685,11 +908,11 @@ async function diceAction(store, input, player, command, random) {
     if (chat.games.length >= diceConfig.maxGames) return reply(diceTexts.full);
     if (chat.lastGame >= game.maxAmount) return reply(diceTexts.limit);
     if (player === null) throw new Error("Missing dice creator");
-    if (!await store.updateBalance(player._id, command.currency, "take", command.amount)) return reply(diceTexts.funds);
+    if (!await store.updateBalance(player._id, command.currency, "take", amount)) return reply(diceTexts.funds);
     const value2 = {
       gameId: ++chat.lastGame,
       currency: command.currency,
-      amount: command.amount,
+      amount,
       slots: command.slots,
       expiresAt: new Date(now.getTime() + diceConfig.lifetimeMs),
       players: [{ vkId: player._id, name: player.name, entryId: createHash("sha256").update(input.eventId).digest("hex") }]
@@ -799,133 +1022,6 @@ var privateCasinoConfig = {
   workerMs: 1e3,
   workerBatch: 20
 };
-
-// src/config/casino.ts
-var casinoConfig = {
-  minimum: 1e3 * game.kcScale,
-  maxBets: 10,
-  acceptanceMs: 1e4,
-  extensionMs: 500,
-  resultsMs: 5e3,
-  workerMs: 250,
-  workerBatch: 40,
-  announcementBatch: 20,
-  chatPageSize: 200,
-  chatSyncMs: 6e4,
-  retryMs: 6e4,
-  historySize: 20,
-  directorPercent: 1,
-  dealerPercent: 1,
-  electionRefundPercent: 50,
-  sectors: [1, 2, 5, 10, 20, 40],
-  weights: [23, 15, 7, 4, 2, 1],
-  maxCrash: 5e5,
-  crashPrecision: 100,
-  crashReturnPercent: 97,
-  crashRandomSize: 1e9,
-  moscowOffsetMs: 3 * 60 * 60 * 1e3,
-  dayMs: 24 * 60 * 60 * 1e3
-};
-
-// src/config/roulette.ts
-var range = (from, to) => Array.from({ length: to - from + 1 }, (_, index) => from + index);
-var red = [1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36];
-var black = range(1, 36).filter((number) => !red.includes(number));
-var rouletteConfig = {
-  numbers: 37,
-  straightMultiplier: 36,
-  red,
-  black,
-  groups: [
-    { target: 37, label: "п1", multiplier: 2, numbers: range(1, 18) },
-    { target: 38, label: "п2", multiplier: 2, numbers: range(19, 36) },
-    { target: 39, label: "д1", multiplier: 3, numbers: range(1, 12) },
-    { target: 40, label: "д2", multiplier: 3, numbers: range(13, 24) },
-    { target: 41, label: "д3", multiplier: 3, numbers: range(25, 36) },
-    { target: 42, label: "ч1", multiplier: 4, numbers: range(1, 9) },
-    { target: 43, label: "ч2", multiplier: 4, numbers: range(10, 18) },
-    { target: 44, label: "ч3", multiplier: 4, numbers: range(19, 27) },
-    { target: 45, label: "ч4", multiplier: 4, numbers: range(28, 36) },
-    { target: 46, label: "четное", multiplier: 2, numbers: range(1, 36).filter((number) => number % 2 === 0) },
-    { target: 47, label: "нечетное", multiplier: 2, numbers: range(1, 36).filter((number) => number % 2 !== 0) },
-    { target: 48, label: "красное", multiplier: 2, numbers: red },
-    { target: 49, label: "черное", multiplier: 2, numbers: black },
-    { target: 50, label: "большие", multiplier: 2, numbers: range(19, 36) },
-    { target: 51, label: "малые", multiplier: 2, numbers: range(1, 18) }
-  ],
-  photoPrefetchIntervalMs: 2e3,
-  photoPrefetchConcurrency: 2,
-  photoTimeoutMs: 3e4,
-  maxPhotoBytes: 10 * 1024 * 1024
-};
-var roulettePhotos = [
-  "https://cdn.kleymorf.xyz/other/1a62ac90c1eb_photo_e53303d6.jpg",
-  "https://cdn.kleymorf.xyz/other/fbe8f35afd63_photo_f1bc5cf6.jpg",
-  "https://cdn.kleymorf.xyz/other/fb85c6a73e91_photo_9b34e1f8.jpg",
-  "https://cdn.kleymorf.xyz/other/7c1bafb26aca_photo_9db44ec7.jpg",
-  "https://cdn.kleymorf.xyz/other/0438e7e24f69_photo_5b24244a.jpg",
-  "https://cdn.kleymorf.xyz/other/7ae4dd4cf8f6_photo_cc159f8b.jpg",
-  "https://cdn.kleymorf.xyz/other/74cbd17307a9_photo_5e554b4c.jpg",
-  "https://cdn.kleymorf.xyz/other/61b3c35ea629_photo_8c3da6e5.jpg",
-  "https://cdn.kleymorf.xyz/other/ec47421fe334_photo_94789985.jpg",
-  "https://cdn.kleymorf.xyz/other/6ed406a3592a_photo_581af863.jpg",
-  "https://cdn.kleymorf.xyz/other/89165b9da39f_photo_92c6c31c.jpg",
-  "https://cdn.kleymorf.xyz/other/61c7f4bee516_photo_e4d52fa6.jpg",
-  "https://cdn.kleymorf.xyz/other/5e357483f0cd_photo_b9bee276.jpg",
-  "https://cdn.kleymorf.xyz/other/de7b6e64c4b3_photo_691e9b96.jpg",
-  "https://cdn.kleymorf.xyz/other/b905849f901b_photo_d73c3f1a.jpg",
-  "https://cdn.kleymorf.xyz/other/33b7861f489e_photo_e47b4208.jpg",
-  "https://cdn.kleymorf.xyz/other/fff75695a9d5_photo_cf522a83.jpg",
-  "https://cdn.kleymorf.xyz/other/d6e6a37f7aa5_photo_d2f7dac3.jpg",
-  "https://cdn.kleymorf.xyz/other/eda40c9fd86e_photo_7d9467c9.jpg",
-  "https://cdn.kleymorf.xyz/other/fc3c1cd99a28_photo_fc200894.jpg",
-  "https://cdn.kleymorf.xyz/other/a20e6698d442_photo_c4c5b043.jpg",
-  "https://cdn.kleymorf.xyz/other/18b1007baf49_photo_30ee0385.jpg",
-  "https://cdn.kleymorf.xyz/other/85578fb1f31d_photo_1c5bbf23.jpg",
-  "https://cdn.kleymorf.xyz/other/e51ee81c280f_photo_38c03142.jpg",
-  "https://cdn.kleymorf.xyz/other/7ede9b1adfcd_photo_45cd354a.jpg",
-  "https://cdn.kleymorf.xyz/other/aa182cb6130f_photo_4f2ff8a7.jpg",
-  "https://cdn.kleymorf.xyz/other/a5419b8c2b4b_photo_e18c46e7.jpg",
-  "https://cdn.kleymorf.xyz/other/4baa5d148032_photo_c1cb97d3.jpg",
-  "https://cdn.kleymorf.xyz/other/23d243c27159_photo_7ac390d7.jpg",
-  "https://cdn.kleymorf.xyz/other/b6d98877f6ad_photo_6f971d44.jpg",
-  "https://cdn.kleymorf.xyz/other/82dac72c9de1_photo_684ed4ae.jpg",
-  "https://cdn.kleymorf.xyz/other/cc209b27f01e_photo_72709488.jpg",
-  "https://cdn.kleymorf.xyz/other/1347dde8199b_photo_307137d6.jpg",
-  "https://cdn.kleymorf.xyz/other/ede101d4a4a8_photo_09f6eb4c.jpg",
-  "https://cdn.kleymorf.xyz/other/4f6d0e5880a6_photo_b7c695a7.jpg",
-  "https://cdn.kleymorf.xyz/other/ea453e77163d_photo_9b9769fe.jpg",
-  "https://cdn.kleymorf.xyz/other/e7c188483369_photo_a2c319c7.jpg"
-];
-
-// src/services/roulette-rules.ts
-function validRouletteNumber(value) {
-  return Number.isSafeInteger(value) && value >= 0 && value < rouletteConfig.numbers;
-}
-function parseRouletteTarget(text) {
-  const value = text.trim().toLowerCase().replaceAll("ё", "е");
-  if (/^\d{1,2}$/.test(value)) {
-    const target = Number(value);
-    return validRouletteNumber(target) ? target : null;
-  }
-  return rouletteConfig.groups.find((group) => group.label === value)?.target ?? null;
-}
-function rouletteMultiplier(target) {
-  if (validRouletteNumber(target)) return rouletteConfig.straightMultiplier;
-  const group = rouletteConfig.groups.find((group2) => group2.target === target);
-  if (group === void 0) throw new Error("Invalid roulette target");
-  return group.multiplier;
-}
-function validRouletteTarget(target) {
-  return validRouletteNumber(target) || rouletteConfig.groups.some((group) => group.target === target);
-}
-function rouletteWins(target, result) {
-  if (!validRouletteNumber(result)) throw new Error("Invalid roulette outcome");
-  if (validRouletteNumber(target)) return result === target;
-  const group = rouletteConfig.groups.find((group2) => group2.target === target);
-  if (group === void 0) throw new Error("Invalid roulette target");
-  return group.numbers.includes(result);
-}
 
 // src/services/roulette-texts.ts
 function rouletteColor(number) {
@@ -1064,95 +1160,6 @@ async function payCasinoCredit(store, now) {
   }
   await store.casinoSave(credit);
   return true;
-}
-
-// src/services/casino-rules.ts
-import { randomBytes } from "node:crypto";
-function nextElection(now) {
-  return new Date((Math.floor((now.getTime() + casinoConfig.moscowOffsetMs) / casinoConfig.dayMs) + 1) * casinoConfig.dayMs - casinoConfig.moscowOffsetMs);
-}
-function casinoRandom(_purpose, maximum) {
-  if (!Number.isSafeInteger(maximum) || maximum <= 0 || maximum > game.maxAmount) throw new Error("Invalid random bound");
-  for (let attempt = 0; attempt < 128; attempt += 1) {
-    let value = 0n;
-    for (const byte of randomBytes(7)) value = value << 8n | BigInt(byte);
-    value &= (1n << 53n) - 1n;
-    if (value < BigInt(maximum)) return Number(value);
-    if (maximum < 2 ** 52) {
-      const ceiling = (1n << 53n) / BigInt(maximum) * BigInt(maximum);
-      if (value < ceiling) return Number(value % BigInt(maximum));
-    }
-  }
-  throw new Error("Random rejection limit");
-}
-function cachedCasinoRandom(random) {
-  const values = /* @__PURE__ */ new Map();
-  return (purpose, maximum) => {
-    const key = `${purpose}:${maximum}`;
-    const value = values.get(key) ?? random(purpose, maximum);
-    if (!Number.isSafeInteger(value) || value < 0 || value >= maximum) throw new Error("Invalid casino randomness");
-    values.set(key, value);
-    return value;
-  };
-}
-function selectOutcome(mode, random, key) {
-  if (mode === "roulette") return { result: random(`${key}:roulette`, rouletteConfig.numbers), bonus: 1 };
-  if (mode === "crash") {
-    const roll = random(`${key}:crash`, casinoConfig.crashRandomSize) + 1;
-    return { result: Math.max(casinoConfig.crashPrecision, Math.min(casinoConfig.maxCrash, Number(BigInt(casinoConfig.crashReturnPercent) * BigInt(casinoConfig.crashRandomSize) / BigInt(roll)))), bonus: 1 };
-  }
-  let ticket = random(`${key}:sector`, 52);
-  for (const [index, weight] of casinoConfig.weights.entries()) {
-    if (ticket < weight) {
-      const result = casinoConfig.sectors[index];
-      if (result === void 0) throw new Error("Invalid dream sector");
-      const bonus = random(`${key}:bonus`, 1e3);
-      return { result, bonus: bonus === 0 ? 7 : bonus <= 10 ? 2 : 1 };
-    }
-    ticket -= weight;
-  }
-  throw new Error("Invalid dream ticket");
-}
-function betPayout(mode, amount, target, bonus) {
-  const value = mode === "crash" ? BigInt(amount) * BigInt(target) / BigInt(casinoConfig.crashPrecision) : mode === "roulette" ? BigInt(amount) * BigInt(rouletteMultiplier(target)) : BigInt(amount) * BigInt(target + 1) * BigInt(bonus);
-  return value <= BigInt(game.maxAmount) ? Number(value) : null;
-}
-function roundKey(peerId, mode) {
-  return `round:${peerId}:${mode}`;
-}
-function closeKey(round) {
-  return `${round.roundId}:closed`;
-}
-function casinoPercent(amount, percent) {
-  if (!Number.isSafeInteger(amount) || amount < 0 || amount > game.maxAmount || !Number.isSafeInteger(percent) || percent < 0 || percent > 100) throw new Error("Invalid casino percentage");
-  return Number(BigInt(amount) * BigInt(percent) / 100n);
-}
-function parseCasinoStake(text) {
-  switch (text.trim().toLowerCase()) {
-    case "пол":
-      return "half";
-    case "все":
-    case "всё":
-    case "вб":
-      return "all";
-    default:
-      return parseBankMoney(text, "kc");
-  }
-}
-function resolveCasinoStake(stake, wallet) {
-  if (!safeBankMoney(wallet)) throw new Error("Invalid casino wallet");
-  if (typeof stake === "number") {
-    if (!safeBankMoney(stake)) throw new Error("Invalid casino stake");
-    return stake;
-  }
-  switch (stake) {
-    case "half":
-      return Number(BigInt(wallet) / 2n);
-    case "all":
-      return wallet;
-    default:
-      return assertNever(stake);
-  }
 }
 
 // src/services/private-casino-texts.ts
@@ -2221,13 +2228,14 @@ function parseDiceText(text, isChat) {
     currency = "bitcoin";
     parts.shift();
   }
-  const amount = parseBankMoney(parts[0] ?? "", currency);
+  const stake = parts[0] ?? "";
+  const amount = stake === "пол" ? "half" : stake === "все" || stake === "всё" || stake === "вб" ? "all" : parseBankMoney(stake, currency);
   const slotsText = parts[1] ?? String(diceConfig.minPlayers);
   const slots = /^\d$/.test(slotsText) ? Number(slotsText) : 0;
   if (parts.length > 2 || amount === null || slots < diceConfig.minPlayers || slots > diceConfig.maxPlayers) {
     return { kind: "dice_invalid", currency, minimum: amount === null && /^(?:0+(?:[.,]0+)?)$/.test(parts[0] ?? "") };
   }
-  if (amount < diceMinimum(currency)) return { kind: "dice_invalid", currency, minimum: true };
+  if (typeof amount === "number" && amount < diceMinimum(currency)) return { kind: "dice_invalid", currency, minimum: true };
   return { kind: "dice_create", currency, amount, slots };
 }
 function parseDicePayload(value) {

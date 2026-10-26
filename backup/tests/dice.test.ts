@@ -55,7 +55,7 @@ test('creation reserves once, exact card and inline green/red buttons remain in 
   const f = await fixture();
   const start = f.db.player().kc;
   const card = await f.text('кости 1000', 1, peer, 'same-create');
-  assert.equal(card.text, '🎲 Игра в кости #1\n\n💰 Ставка: 1.000 KC\n\n👥 Мест: [1/2]\n\n✅ Игроки:\n[id1|Игрок 1]\n\n⏱️ До отмены игры: 30 мин. 0 сек.');
+  assert.equal(card.text, '🎲 Игра в кости #1\n💰 Ставка: 1.000 KC\n\n👥 Мест: [1/2]\n✅ Игроки:\n[id1|Игрок 1]\n\n⏱️ До отмены игры: 30 мин. 0 сек.');
   assert.deepEqual(card.keyboard, { kind: 'dice_game', peerId: peer, gameId: 1 });
   const raw: unknown = JSON.parse(buildKeyboard(card.keyboard).toString());
   assert.ok(isRecord(raw) && raw.inline === true && Array.isArray(raw.buttons));
@@ -346,4 +346,71 @@ test('deadline crossed during a final join rolls back all economic writes before
   await settleDice(f.db);
   assert.equal(f.db.player().kc, 100_000_000_000);
   assert.ok(f.db.state.notifications.every(value => !value._id.startsWith('dice-result:')));
+});
+
+test('dice relative stake aliases parse for KC, euro and bitcoin with optional player counts', () => {
+  for (const [alias, amount] of [['все', 'all'], ['всё', 'all'], ['вб', 'all'], ['пол', 'half']] as const) {
+    for (const [prefix, currency] of [['', 'kc'], ['евро ', 'euro'], ['донат ', 'euro'], ['бит ', 'bitcoin'], ['биткоин ', 'bitcoin']] as const) {
+      assert.deepEqual(parseCommand(`кости ${prefix}${alias}`, undefined, true), { kind: 'dice_create', currency, amount, slots: 2 });
+      assert.deepEqual(parseCommand(`КОСТИ ${prefix}${alias} 5`, undefined, true), { kind: 'dice_create', currency, amount, slots: 5 });
+    }
+  }
+});
+
+test('relative stakes reserve the current balance of the chosen currency, enforce minimums and round half down', async () => {
+  for (const [prefix, currency] of [['', 'kc'], ['евро ', 'euro'], ['бит ', 'bitcoin']] as const) {
+    for (const alias of ['все', 'всё', 'вб', 'пол']) {
+      const f = await fixture();
+      const minimum = diceMinimum(currency);
+      f.db.player()[currency] = minimum * 2 + 1;
+      await f.text(`кости ${prefix}${alias} 3`);
+      const amount = alias === 'пол' ? minimum : minimum * 2 + 1;
+      assert.equal(f.chat().games[0]?.amount, amount);
+      assert.equal(f.db.player()[currency], alias === 'пол' ? minimum + 1 : 0);
+      for (const other of ['kc', 'euro', 'bitcoin'] as const) if (other !== currency) assert.equal(f.db.player()[other], 100_000_000_000);
+      await f.click('dice_leave', 1);
+      assert.equal(f.db.player()[currency], minimum * 2 + 1);
+    }
+    for (const [alias, balance] of [['всё', diceMinimum(currency) - 1], ['пол', diceMinimum(currency) * 2 - 1], ['вб', 0]] as const) {
+      const f = await fixture();
+      f.db.player()[currency] = balance;
+      const result = await f.text(`кости ${prefix}${alias}`);
+      assert.equal(result.text, currency === 'kc' ? '🎲 Ставка от 1.000 KC.' : currency === 'euro' ? '🎲 Ставка от 10 💶.' : '🎲 Ставка от 10₿.');
+      assert.equal(f.db.player()[currency], balance);
+      assert.equal(f.db.state.casino.has(diceChatKey(peer)), false);
+    }
+  }
+});
+
+test('relative stakes include refunds made in the same transaction, replay once and cannot reserve the same money twice', async () => {
+  const f = await fixture();
+  f.db.player().kc = 300_001;
+  await f.text('кости 1000');
+  f.db.time = new Date(f.db.time.getTime() + diceConfig.lifetimeMs);
+  await f.text('кости пол', 1, peer, 'half-after-expiry');
+  assert.equal(f.chat().games[0]?.amount, 150_000);
+  assert.equal(f.db.player().kc, 150_001);
+  await f.text('кости пол', 1, peer, 'half-after-expiry');
+  assert.equal(f.db.player().kc, 150_001);
+  const g = await fixture();
+  g.db.player().kc = 300_001;
+  await Promise.all([g.text('кости все'), g.text('кости вб')]);
+  assert.equal(g.chat().games.length, 1);
+  assert.equal(g.chat().games[0]?.amount, 300_001);
+  assert.equal(g.db.player().kc, 0);
+  const h = await fixture();
+  h.db.player().kc = game.maxAmount;
+  assert.equal((await h.text('кости всё 5')).text, diceTexts.limit);
+  assert.equal(h.db.player().kc, game.maxAmount);
+});
+
+test('listed dice cards have exactly two blank lines and consecutive heading, seats and participant lines', async () => {
+  const f = await fixture();
+  await f.text('кости 1000 3');
+  await f.click('dice_join', 2);
+  await f.text('кости');
+  const card = f.db.state.notifications.find(value => value._id.startsWith('dice-list:'));
+  assert.ok(card !== undefined);
+  assert.equal(card.text, '🎲 Игра в кости #1\n💰 Ставка: 1.000 KC\n\n👥 Мест: [2/3]\n✅ Игроки:\n[id1|Игрок 1]\n[id2|Игрок 2]\n\n⏱️ До отмены игры: 30 мин. 0 сек.');
+  assert.equal(card.text.split('\n\n').length, 3);
 });

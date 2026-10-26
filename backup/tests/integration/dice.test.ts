@@ -63,6 +63,18 @@ test('MongoDB replica set: dice last-seat races, cap serialization, event replay
     assert.equal((await players.findOne({ _id: 2 }))?.euro, 10_000);
     assert.equal(await notices.countDocuments({ _id: `dice-expired:${otherPeer}:1` }), 1);
     assert.equal(await notices.countDocuments({ peerId: { $in: [1, 2] }, text: { $regex: 'Ваша ставка в размере 10 💶 возвращена' } }), 2);
+    await send(parseCommand('кости евро 10', undefined, true), 1, undefined, otherPeer);
+    const refundThenAll = await records.findOne({ _id: diceChatKey(otherPeer) });
+    assert.ok(refundThenAll?.kind === 'dice_chat');
+    const waiting = refundThenAll.games[0];
+    assert.ok(waiting !== undefined);
+    waiting.expiresAt = new Date(0);
+    await records.updateOne({ _id: refundThenAll._id }, { $set: { games: [waiting], dueAt: new Date(0) } });
+    await send(parseCommand('кости евро всё', undefined, true), 1, undefined, otherPeer);
+    const relative = await records.findOne({ _id: diceChatKey(otherPeer) });
+    assert.ok(relative?.kind === 'dice_chat');
+    assert.equal(relative.games[0]?.amount, 10_000);
+    assert.equal((await players.findOne({ _id: 1 }))?.euro, 0);
     const before = await records.findOne({ _id: diceChatKey(peerId) });
     await assert.rejects(database.transaction(async store => {
       await store.updateBalance(1, 'kc', 'take', 100_000);

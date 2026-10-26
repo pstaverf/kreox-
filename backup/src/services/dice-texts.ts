@@ -29,7 +29,7 @@ export function diceMention(player: DiceParticipant): string { return mention({ 
 export function diceNumber(gameId: number): string { return formatAmount(gameId, 1); }
 export function diceCard(value: DiceGame, now: Date): string {
   const seconds = Math.max(0, Math.ceil((value.expiresAt.getTime() - now.getTime()) / 1_000));
-  return `🎲 Игра в кости #${diceNumber(value.gameId)}\n\n💰 Ставка: ${diceMoney(value.amount, value.currency)}\n\n👥 Мест: [${value.players.length}/${value.slots}]\n\n✅ Игроки:\n${value.players.map(diceMention).join('\n')}\n\n⏱️ До отмены игры: ${Math.floor(seconds / 60)} мин. ${seconds % 60} сек.`;
+  return `🎲 Игра в кости #${diceNumber(value.gameId)}\n💰 Ставка: ${diceMoney(value.amount, value.currency)}\n\n👥 Мест: [${value.players.length}/${value.slots}]\n✅ Игроки:\n${value.players.map(diceMention).join('\n')}\n\n⏱️ До отмены игры: ${Math.floor(seconds / 60)} мин. ${seconds % 60} сек.`;
 }
 export function diceResult(value: DiceGame, scores: readonly number[], winners: readonly DiceParticipant[], each: number): string {
   const lines = value.players.map((player, index) => `${diceMention(player)}: ${scores[index]}`).join('\n');

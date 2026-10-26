@@ -13,13 +13,14 @@ export function parseDiceText(text: string | undefined, isChat: boolean): DiceCo
   let currency: BalanceCurrency = 'kc';
   if (parts[0] === 'донат' || parts[0] === 'евро') { currency = 'euro'; parts.shift(); }
   else if (parts[0] === 'бит' || parts[0] === 'биткоин') { currency = 'bitcoin'; parts.shift(); }
-  const amount = parseBankMoney(parts[0] ?? '', currency);
+  const stake = parts[0] ?? '';
+  const amount = stake === 'пол' ? 'half' : stake === 'все' || stake === 'всё' || stake === 'вб' ? 'all' : parseBankMoney(stake, currency);
   const slotsText = parts[1] ?? String(diceConfig.minPlayers);
   const slots = /^\d$/.test(slotsText) ? Number(slotsText) : 0;
   if (parts.length > 2 || amount === null || slots < diceConfig.minPlayers || slots > diceConfig.maxPlayers) {
     return { kind: 'dice_invalid', currency, minimum: amount === null && /^(?:0+(?:[.,]0+)?)$/.test(parts[0] ?? '') };
   }
-  if (amount < diceMinimum(currency)) return { kind: 'dice_invalid', currency, minimum: true };
+  if (typeof amount === 'number' && amount < diceMinimum(currency)) return { kind: 'dice_invalid', currency, minimum: true };
   return { kind: 'dice_create', currency, amount, slots };
 }
 export function parseDicePayload(value: unknown): DiceCommand | null {

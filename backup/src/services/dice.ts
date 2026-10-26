@@ -7,7 +7,8 @@ import type { GameInput, Player, Reply } from '../types/game.js';
 import { DuplicateWriteError, type GameDatabase, type GameStore } from '../types/storage.js';
 import { isPositiveId } from '../utils/validation.js';
 import { safeBankMoney } from './bank-rules.js';
-import { diceChatKey, diceDistribution, refreshDiceDeadline, validDiceStake, validateDiceChat } from './dice-rules.js';
+import { resolveCasinoStake } from './casino-rules.js';
+import { diceChatKey, diceDistribution, diceMinimum, refreshDiceDeadline, validDiceStake, validateDiceChat } from './dice-rules.js';
 import { diceCard, diceExpired, diceMinimumText, diceMoney, diceRefund, diceResult, diceTexts } from './dice-texts.js';
 
 const reply = (text = ''): Reply => ({ text, keyboard: { kind: 'none' } });
@@ -93,7 +94,14 @@ export async function diceAction(store: GameStore, input: GameInput, player: Pla
     return reply();
   }
   if (command.kind === 'dice_create') {
-    if (!validDiceStake(command.currency, command.amount, command.slots)) return reply(diceTexts.limit);
+    let amount = command.amount;
+    if (typeof amount !== 'number') {
+      const current = await store.player(input.vkId);
+      if (current === null) throw new Error('Missing dice balance');
+      amount = resolveCasinoStake(amount, current[command.currency]);
+    }
+    if (amount < diceMinimum(command.currency)) return reply(diceMinimumText(command.currency));
+    if (!validDiceStake(command.currency, amount, command.slots)) return reply(diceTexts.limit);
     if (chat === null) {
       chat = { _id: diceChatKey(peerId), kind: 'dice_chat', version: 0, peerId, lastGame: 0, games: [], dueAt: now };
       refreshDiceDeadline(chat);
@@ -102,8 +110,8 @@ export async function diceAction(store: GameStore, input: GameInput, player: Pla
     if (chat.games.length >= diceConfig.maxGames) return reply(diceTexts.full);
     if (chat.lastGame >= game.maxAmount) return reply(diceTexts.limit);
     if (player === null) throw new Error('Missing dice creator');
-    if (!await store.updateBalance(player._id, command.currency, 'take', command.amount)) return reply(diceTexts.funds);
-    const value: DiceGame = { gameId: ++chat.lastGame, currency: command.currency, amount: command.amount, slots: command.slots,
+    if (!await store.updateBalance(player._id, command.currency, 'take', amount)) return reply(diceTexts.funds);
+    const value: DiceGame = { gameId: ++chat.lastGame, currency: command.currency, amount, slots: command.slots,
       expiresAt: new Date(now.getTime() + diceConfig.lifetimeMs), players: [{ vkId: player._id, name: player.name, entryId: createHash('sha256').update(input.eventId).digest('hex') }] };
     chat.games.push(value);
     await saveChat(store, chat, value.expiresAt);
