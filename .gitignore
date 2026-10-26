@@ -6,4 +6,4 @@ dist/
 coverage/
 *.log
 hosting/
-kreox-hosting.tar.gz
+/kreox-hosting.tar.gz
