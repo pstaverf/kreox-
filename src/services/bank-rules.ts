@@ -5,7 +5,7 @@ import type { BankCommand, Deposit, DepositDays } from '../types/bank.js';
 import type { Command } from '../types/game.js';
 
 export function isBankCommand(command: Command): command is BankCommand {
-  return command.kind === 'city' || command.kind === 'casino' || command.kind === 'bank' || command.kind.startsWith('bank_');
+  return command.kind === 'city' || command.kind === 'bank' || command.kind.startsWith('bank_');
 }
 export function isDepositDays(value: unknown): value is DepositDays { return value === 3 || value === 10; }
 export function safeBankMoney(value: number): boolean { return Number.isSafeInteger(value) && value >= 0 && value <= game.maxAmount; }

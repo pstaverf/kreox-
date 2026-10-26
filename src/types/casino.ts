@@ -1,3 +1,4 @@
+import type { CoinState, JackpotState, JackpotEntry, JackpotDraw } from './private-casino.js';
 export type CasinoMode = 'crash' | 'dream' | 'roulette';
 export type CasinoStake = number | 'half' | 'all';
 export type CasinoLine = { mode: CasinoMode; amount: CasinoStake; target: number } | { error: string };
@@ -41,8 +42,10 @@ export interface CasinoCredit extends RecordBase {
 export interface CasinoChat extends RecordBase { kind: 'chat'; peerId: number; active: boolean }
 export interface CasinoPage extends RecordBase { kind: 'page'; roundId: string; index: number; text: string }
 export interface CasinoDelivery extends RecordBase { kind: 'delivery'; peerId: number; texts: string[]; index: number; stage: 'pending' | 'finished'; dueAt: Date }
-export type CasinoRecord = CasinoDelivery | CasinoRound | CasinoBet | DirectorState | DirectorBid | DirectorElection | CasinoCredit | CasinoChat | CasinoPage;
+export type CasinoRecord = CoinState | JackpotState | JackpotEntry | JackpotDraw | CasinoDelivery | CasinoRound | CasinoBet | DirectorState | DirectorBid | DirectorElection | CasinoCredit | CasinoChat | CasinoPage;
 export type CasinoQuery =
+  | { kind: 'jackpot_entries'; roundId: string; after: string }
+  | { kind: 'jackpot_draw'; dueAt: Date }
   | { kind: 'roulette_photo'; after: string }
   | { kind: 'round' | 'election' | 'credit' | 'delivery'; dueAt: Date }
   | { kind: 'bet'; roundId: string; vkId?: number; settled?: boolean }

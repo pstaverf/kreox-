@@ -1,3 +1,4 @@
+import { parsePrivateCasinoPayload } from './private-casino.js';
 import { parseMailing } from './mailing.js';
 import { parseCasinoText, parseChatRanking, parseDirectorPayload } from './casino.js';
 import { parseBankPayload, parseBankTransfer } from './bank.js';
@@ -44,6 +45,8 @@ export function parseCommand(text: string | undefined, payload: unknown, isChat 
       return { kind: 'development' };
     }
   }
+  const privateCasino = parsePrivateCasinoPayload(value);
+  if (privateCasino !== null) return privateCasino;
   const director = parseDirectorPayload(value);
   if (director !== null) return director;
   const bankCommand = parseBankPayload(value);

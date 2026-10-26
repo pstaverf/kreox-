@@ -39,6 +39,7 @@ export class MongoGameDatabase implements GameDatabase {
       { key: { kind: 1, stage: 1, dueAt: 1, _id: 1 } },
       { key: { kind: 1, dueAt: 1, _id: 1 } },
       { key: { kind: 1, roundId: 1, settled: 1, _id: 1 } },
+      { key: { kind: 1, roundId: 1, _id: 1 } },
       { key: { kind: 1, roundId: 1, vkId: 1, _id: 1 } },
       { key: { kind: 1, electionId: 1, settled: 1, _id: 1 } },
       { key: { kind: 1, active: 1, _id: 1 } },
@@ -168,6 +169,11 @@ class MongoGameStore extends MongoCasinoStore implements GameStore {
     this.notifications = db.collection<Notification>('notifications');
     this.mailingCampaigns = db.collection<MailingCampaign>('mailing_campaigns');
     this.mailingAudience = db.collection<MailingRecipient>('mailing_recipients');
+  }
+
+  async setCoinOpen(vkId: number, open: boolean): Promise<void> {
+    const result = await this.players.updateOne({ _id: vkId }, open ? { $set: { coinOpen: true } } : { $unset: { coinOpen: '' } }, { session: this.session });
+    if (result.matchedCount !== 1) throw new Error('Missing coin player');
   }
 
   async updateKC(vkId: number, operation: BalanceOperation, amount: number): Promise<boolean> {

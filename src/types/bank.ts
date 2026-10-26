@@ -4,7 +4,7 @@ import type { Player } from './game.js';
 
 export type DepositDays = 3 | 10;
 export type BankCommand =
-  | { kind: 'city' | 'casino' | 'bank' | 'bank_savings' | 'bank_deposit_money' | 'bank_withdraw_money' | 'bank_transfer_menu' | 'bank_deposits' | 'bank_deposit_create' | 'bank_pension' | 'bank_transfer_invalid' }
+  | { kind: 'city' | 'bank' | 'bank_savings' | 'bank_deposit_money' | 'bank_withdraw_money' | 'bank_transfer_menu' | 'bank_deposits' | 'bank_deposit_create' | 'bank_pension' | 'bank_transfer_invalid' }
   | { kind: 'bank_currency'; currency: BalanceCurrency }
   | { kind: 'bank_transfer'; currency: BalanceCurrency; target: PlayerTarget | null; amount: number }
   | { kind: 'bank_deposit_amount'; amount: number }

@@ -1,3 +1,5 @@
+import { privateCasinoConfig } from '../config/private-casino.js';
+import { privateCasinoTexts } from '../services/private-casino-texts.js';
 import { casinoTexts } from '../services/casino-texts.js';
 import { bankLabels } from '../services/bank-texts.js';
 import { game } from '../config/game.js';
@@ -15,6 +17,23 @@ export function buildKeyboard(spec: KeyboardSpec): KeyboardBuilder {
     return Keyboard.textButton({ label, payload: { command: kind, ...params } });
   };
   switch (spec.kind) {
+    case 'casino': return Keyboard.keyboard([
+      [button(privateCasinoTexts.chats, { kind: 'casino_chats' })],
+      [button(privateCasinoTexts.jackpot, { kind: 'jackpot' }), button(privateCasinoTexts.coin, { kind: 'coin' })]
+    ]).oneTime(false);
+    case 'casino_chats': return Keyboard.keyboard([
+      [Keyboard.urlButton({ label: 'Чат #1', url: privateCasinoConfig.chatUrl, payload: { command: 'casino_chats' } })],
+      [button(labels.back, { kind: 'casino' })]
+    ]).oneTime(false);
+    case 'jackpot': return Keyboard.keyboard([
+      [button(privateCasinoTexts.join, { kind: 'jackpot_join' })],
+      [button(labels.back, { kind: 'casino' }), button(labels.menu, { kind: 'menu' })]
+    ]).oneTime(false);
+    case 'coin': return Keyboard.keyboard([
+      [button('💎', { kind: 'coin_flip', side: 'diamond', token: spec.token, step: spec.step }), button('🟢', { kind: 'coin_flip', side: 'emerald', token: spec.token, step: spec.step })],
+      [button(privateCasinoTexts.cashout, { kind: 'coin_cashout', token: spec.token, step: spec.step })],
+      [button(labels.back, { kind: 'casino' })]
+    ]).oneTime(false);
     case 'director': return Keyboard.keyboard([[button(casinoTexts.directorBid, { kind: 'director_bid' })], [button(labels.back, { kind: 'city' })]]).oneTime(false);
     case 'director_back': return Keyboard.keyboard([[button(labels.back, { kind: 'director_view' })]]).oneTime(false);
     case 'director_confirm': return Keyboard.keyboard([[

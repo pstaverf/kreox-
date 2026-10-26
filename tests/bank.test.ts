@@ -80,12 +80,12 @@ test('bank money parsing, net fee and weekly compounding use integer arithmetic 
   assert.equal(settleSavings(game.maxAmount, since, new Date('9999-01-01')).balance, game.maxAmount);
 });
 
-test('city, bank and casino navigation do not add games or change balances', async () => {
+test('city, bank and casino lobby navigation do not change balances', async () => {
   const { send, db } = await fixture();
   assert.deepEqual((await send({ kind: 'city' })).keyboard, { kind: 'city' });
   assert.equal((await send({ kind: 'city' })).text, '🏙️ Город:');
   assert.equal((await send({ kind: 'bank' })).text, '🏛️ Банк:');
-  assert.equal((await send({ kind: 'casino' })).text, bankConfig.casinoTexts[0]);
+  assert.match((await send({ kind: 'casino' })).text, /казино:\n\n🤑 Крупье:/);
   assert.equal(db.player().kc, 0);
 });
 

@@ -597,3 +597,32 @@ test('!set 10кк replying to the admin’s own VK message sets ten million KC a
   assert.equal(database.player(adminId).kc, 1_000_000_000);
   assert.equal(replies[1]?.random_id, replies[0]?.random_id);
 });
+
+test('private casino keyboard opens coin stake input and handles real VK side/back payloads without extra debits', async context => {
+  const vk = new VK({ token: 'test-token' });
+  const database = new MemoryDatabase();
+  const service = new GameService(database, undefined, undefined, undefined, undefined, undefined, () => 0);
+  await service.handle({ eventId: 'coin-register', vkId: 1, command: { kind: 'profile' } }, async () => 'Игрок');
+  database.player().kc = 10_000_000;
+  const sent: Record<string, unknown>[] = [];
+  const api = mock.method(vk.api, 'callWithRequest', async (request: APIRequest) => {
+    assert.equal(request.method, 'messages.send');
+    const params: unknown = request.params;
+    assert.ok(isRecord(params));
+    sent.push(params);
+    return [];
+  });
+  context.after(() => api.mock.restore());
+  const handle = createMessageHandler(vk, service, 123);
+  await handle(message(vk, { messageId: 1, text: '🪙 Монетка', payload: '{"command":"coin"}' }));
+  assert.match(String(sent.at(-1)?.message), /Режим «Монетка»/);
+  await handle(message(vk, { messageId: 2, text: '10к' }));
+  assert.equal(database.player().kc, 9_000_000);
+  const state = database.state.casino.get('coin:1');
+  assert.ok(state?.kind === 'coin');
+  await handle(message(vk, { messageId: 3, text: '💎', payload: JSON.stringify({ command: 'coin_flip', side: 'diamond', token: state.sessionId, step: 0 }) }));
+  assert.match(String(sent.at(-1)?.message), /Множитель: x1.8/);
+  await handle(message(vk, { messageId: 4, text: '↩️ Назад', payload: '{"command":"casino"}' }));
+  assert.equal(sent.at(-1)?.message, '⚠️ У вас идёт активная игра в режиме «Монетка»!');
+  assert.equal(database.player().kc, 9_000_000);
+});

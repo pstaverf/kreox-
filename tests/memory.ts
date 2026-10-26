@@ -87,6 +87,8 @@ class MemoryStore implements GameStore {
   async casinoList(query: CasinoQuery, limit: number): Promise<CasinoRecord[]> {
     return structuredClone([...this.state.casino.values()].filter(record => {
       switch (query.kind) {
+        case 'jackpot_entries': return record.kind === 'jackpot_entry' && record.roundId === query.roundId && record._id > query.after;
+        case 'jackpot_draw': return record.kind === 'jackpot_draw' && record.stage === 'broadcast' && record.dueAt <= query.dueAt;
         case 'roulette_photo': return record.kind === 'round' && record.mode === 'roulette' && record.stage !== 'finished' && record._id > query.after;
         case 'round': return record.kind === 'round' && record.stage !== 'finished' && record.dueAt <= query.dueAt;
         case 'credit': return record.kind === 'credit' && record.stage === 'pending' && record.dueAt <= query.dueAt;
@@ -97,7 +99,7 @@ class MemoryStore implements GameStore {
         case 'chat': return record.kind === 'chat' && record.active && record._id > query.after;
       }
     }).sort((a, b) => {
-      if (query.kind !== 'roulette_photo' && 'dueAt' in a && 'dueAt' in b && a.dueAt.getTime() !== b.dueAt.getTime()) return a.dueAt.getTime() - b.dueAt.getTime();
+      if (query.kind !== 'roulette_photo' && query.kind !== 'jackpot_entries' && 'dueAt' in a && 'dueAt' in b && a.dueAt.getTime() !== b.dueAt.getTime()) return a.dueAt.getTime() - b.dueAt.getTime();
       return a._id.localeCompare(b._id);
     }).slice(0, limit));
   }
@@ -476,6 +478,13 @@ class MemoryStore implements GameStore {
     promo.remaining -= 1;
     this.state.redemptions.add(id);
     return 'redeemed';
+  }
+
+  async setCoinOpen(vkId: number, open: boolean): Promise<void> {
+    const player = this.state.players.get(vkId);
+    if (player === undefined) throw new Error('Missing coin player');
+    if (open) player.coinOpen = true;
+    else delete player.coinOpen;
   }
 
   async updateKC(vkId: number, operation: BalanceOperation, amount: number): Promise<boolean> {

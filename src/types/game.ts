@@ -1,3 +1,4 @@
+import type { PrivateCasinoCommand, PrivateCasinoKeyboard } from './private-casino.js';
 import type { MailingCommand } from './mailing.js';
 import type { CasinoCommand, CasinoKeyboard, DirectorDraft } from './casino.js';
 import type { BankCommand, BankDraft, BankKeyboard } from './bank.js';
@@ -7,6 +8,7 @@ import type { AdminBalanceCommand } from './admin-balance.js';
 import type { PromoCommand, PromoDraft } from './promo.js';
 
 export interface Player {
+  coinOpen?: boolean;
   _id: number;
   accountId: number;
   name: string;
@@ -53,6 +55,7 @@ export interface InventoryStack {
 }
 
 export type Command =
+  | PrivateCasinoCommand
   | MailingCommand
   | CasinoCommand
   | DonateCommand
@@ -73,6 +76,7 @@ export type Command =
   | { kind: 'ranking'; metric: RankingMetric };
 
 export type KeyboardSpec =
+  | PrivateCasinoKeyboard
   | CasinoKeyboard
   | ItemKeyboard
   | BankKeyboard

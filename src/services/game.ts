@@ -1,3 +1,8 @@
+import { privateCasinoAction } from './private-casino.js';
+import { isPrivateCasinoCommand } from './private-casino-rules.js';
+import { coinState, coinReply, coinStakeInput } from './coin.js';
+import { coinActive } from './coin-rules.js';
+import { privateCasinoTexts } from './private-casino-texts.js';
 import { mailingAction } from './mailing.js';
 import { casinoAction } from './casino.js';
 import { directorTextInput } from './director.js';
@@ -166,6 +171,23 @@ export class GameService {
       return { text: registered === null ? texts.registrationLimit : texts.welcome, keyboard: { kind: 'main' } };
     }
     const command = input.command;
+    if (!input.isChat && player.coinOpen === true) {
+      if (!input.hasPayload && command.kind === 'development' && input.text !== undefined) return coinStakeInput(store, player, input);
+      const state = await coinState(store, player._id);
+      const coinCommand = command.kind === 'coin' || command.kind === 'coin_flip' || command.kind === 'coin_cashout';
+      if (state !== null && coinActive(state) && !coinCommand) return coinReply(privateCasinoTexts.active, state);
+      if (!coinCommand) await store.setCoinOpen(player._id, false);
+    }
+    if (isPrivateCasinoCommand(command)) {
+      if (!input.isChat) {
+        if (player.bankDraft !== undefined) await store.setBankDraft(player._id, null);
+        if (player.donateDraft !== undefined) await store.setDonateDraft(player._id, null);
+        if (player.promoDraft !== undefined) await store.setPromoDraft(player._id, null);
+        if (player.itemDraft !== undefined) await store.setItemDraft(player._id, null);
+        if (player.directorDraft !== undefined) await store.setDirectorDraft(player._id, null);
+      }
+      return privateCasinoAction(store, player, command, input, casinoRoll);
+    }
     if (command.kind === 'casino_bets' || command.kind === 'casino_log' || command.kind === 'director_view' || command.kind === 'director_bid' || command.kind === 'director_confirm' || command.kind === 'city_director') {
       if (!input.isChat) {
         await store.setBankDraft(player._id, null);

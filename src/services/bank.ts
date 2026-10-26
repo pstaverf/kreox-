@@ -39,10 +39,9 @@ async function selectDepositAmount(store: GameStore, player: Player, amount: num
 }
 export async function bankAction(store: GameStore, player: Player, command: BankCommand, input: GameInput, resolved: number | null | undefined, random: (maximum: number) => number): Promise<Reply | 'target'> {
   const now = await store.now();
-  if (['city', 'casino', 'bank', 'bank_savings', 'bank_deposit_money', 'bank_withdraw_money', 'bank_transfer_menu', 'bank_currency', 'bank_deposits', 'bank_deposit_create', 'bank_deposit', 'bank_pension'].some(kind => kind === command.kind)) await store.setBankDraft(player._id, null);
+  if (['city', 'bank', 'bank_savings', 'bank_deposit_money', 'bank_withdraw_money', 'bank_transfer_menu', 'bank_currency', 'bank_deposits', 'bank_deposit_create', 'bank_deposit', 'bank_pension'].some(kind => kind === command.kind)) await store.setBankDraft(player._id, null);
   switch (command.kind) {
     case 'city': return { text: bankTexts.city, keyboard: { kind: 'city' } };
-    case 'casino': return { text: bankConfig.casinoTexts[random(bankConfig.casinoTexts.length)] ?? bankConfig.casinoTexts[0], keyboard: { kind: 'city' } };
     case 'bank': return { text: bankTexts.bank, keyboard: { kind: 'bank' } };
     case 'bank_savings': return { text: savingsText((await savings(store, player, now)).balance), keyboard: { kind: 'bank_savings' } };
     case 'bank_deposit_money': case 'bank_withdraw_money': {

@@ -8,6 +8,7 @@ import type { Promo, PromoActivation, PromoCreation, PromoDraft } from './promo.
 import type { GameInput, InventoryStack, MiningFarm, Notification, Player, Ranking, RankingMetric, PreparedReply, ProcessedMessage, Reply, Reward } from './game.js';
 
 export interface GameStore extends ItemStore, DonateStore, BankStore, CasinoStore, MailingStore {
+  setCoinOpen(vkId: number, open: boolean): Promise<void>;
   updateBalance(vkId: number, currency: BalanceCurrency, operation: BalanceOperation, amount: number): Promise<boolean>;
   updateKC(vkId: number, operation: BalanceOperation, amount: number): Promise<boolean>;
   setPromoDraft(vkId: number, draft: PromoDraft | null): Promise<void>;
