@@ -5,7 +5,7 @@ import { MongoClient } from 'mongodb';
 import { game } from '../../src/config/game.js';
 import { parseCommand } from '../../src/handlers/commands.js';
 import { MongoGameDatabase } from '../../src/repositories/mongo.js';
-import { roundKey } from '../../src/services/casino-rules.js';
+import { closeKey, roundKey } from '../../src/services/casino-rules.js';
 import { settleCasino } from '../../src/services/casino-worker.js';
 import { GameService } from '../../src/services/game.js';
 import type { CasinoRecord } from '../../src/types/casino.js';
@@ -51,11 +51,21 @@ test('MongoDB replica set: casino races, durable payouts, result delivery, elect
     const now = await database.transaction(store => store.now());
     const past = new Date(now.getTime() - 1000);
     await records.updateOne({ _id: roundKey(2_000_000_001, 'crash') }, { $set: { closesAt: past, dueAt: past } });
-    await settleCasino(database);
+    const lateInput = parseCommand('краш 1.7 все', undefined, true);
+    const closing = await Promise.all([
+      send(lateInput, 2, 'late-close:0', true),
+      send(lateInput, 2, 'late-close:1', true),
+      settleCasino(database),
+      settleCasino(database)
+    ]);
+    for (const response of closing) if (typeof response !== 'number') assert.equal(response.text, '');
+    assert.equal((await players.findOne({ _id: 2 }))?.kc, 9_900_000);
+    assert.equal(await records.countDocuments({ kind: 'bet' }), 11);
     assert.equal((await records.findOne({ _id: roundKey(2_000_000_001, 'crash') }))?.kind, 'round');
     const resultRound = await records.findOne({ _id: roundKey(2_000_000_001, 'crash') });
     assert.ok(resultRound?.kind === 'round');
     assert.equal(resultRound.stage, 'closed');
+    assert.equal(await notifications.countDocuments({ _id: closeKey(resultRound) }), 1);
     await notifications.updateMany({}, { $set: { state: 'sent' } });
     await records.updateOne({ _id: resultRound._id }, { $set: { dueAt: past } });
     await settleCasino(database);

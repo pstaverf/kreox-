@@ -153,7 +153,7 @@ test('closing notification gates five-second result timer; bets stay closed thro
   const f = await fixture();
   await f.chat('краш 1.7 1000');
   f.advance(10_000);
-  assert.equal((await f.chat('краш 1.7 1000')).text, casinoTexts.closed);
+  assert.equal((await f.chat('краш 1.7 1000')).text, '');
   await settleCasino(f.db);
   assert.equal(f.round().stage, 'closed');
   assert.match(f.db.state.notifications[0]?.text ?? '', /Приём ставок.*Краш/);
@@ -170,7 +170,7 @@ test('closing notification gates five-second result timer; bets stay closed thro
   f.advance(1);
   await settleCasino(f.db);
   assert.equal(f.round().stage, 'announcing');
-  assert.equal((await f.chat('краш 1.7 1000')).text, casinoTexts.closed);
+  assert.equal((await f.chat('краш 1.7 1000')).text, '');
   await f.drain();
   assert.equal(f.round().stage, 'finished');
   assert.match((await f.chat('краш 1.7 1000')).text, /^✅/);
@@ -468,7 +468,7 @@ test('mixed relative bets read each remaining wallet inside the transaction even
   const bets = [...f.db.state.casino.values()].filter(record => record.kind === 'bet');
   assert.deepEqual(bets.map(bet => bet.amount), [300_000, 150_000, 150_001]);
   assert.equal(reply.text.split('\n').filter(line => line.startsWith('✅')).length, 3);
-  assert.match(reply.text, /1\.500\.01 KC/);
+  assert.match(reply.text, /1\.500,01 KC/);
   assert.match(reply.text.split('\n').at(-1) ?? '', /Минимальная ставка/);
   const repeated = await service.handle(input, async () => 'Игрок');
   assert.equal(repeated.randomId, reply.randomId);
@@ -480,7 +480,7 @@ test('relative amounts retain minimum and overflow checks without spending funds
   f.db.player().kc = 199_999;
   assert.match((await f.chat('краш 1.7 пол')).text, /Минимальная ставка/);
   assert.equal(f.db.player().kc, 199_999);
-  assert.match((await f.chat('дрим 20 все')).text, /1\.999\.99 KC/);
+  assert.match((await f.chat('дрим 20 все')).text, /1\.999,99 KC/);
   assert.equal(f.db.player().kc, 0);
   assert.match((await f.chat('краш 1.7 вб')).text, /Минимальная ставка/);
   f.db.player(2).kc = game.maxAmount;

@@ -44,9 +44,9 @@ test('invalid input cannot become an economic operation', () => {
 test('integer formatting is exact even at the safe integer boundary', () => {
   assert.equal(formatAmount(0, game.bitcoinScale), '0');
   assert.equal(formatAmount(250_000, game.kcScale), '2.500');
-  assert.equal(formatAmount(1_500_000_000, game.bitcoinScale, 1), '15.0');
-  assert.equal(formatAmount(1, game.bitcoinScale), '0.00000001');
-  assert.equal(formatAmount(Number.MAX_SAFE_INTEGER, game.bitcoinScale), '90.071.992.54740991');
+  assert.equal(formatAmount(1_500_000_000, game.bitcoinScale, 1), '15,0');
+  assert.equal(formatAmount(1, game.bitcoinScale), '0,00000001');
+  assert.equal(formatAmount(Number.MAX_SAFE_INTEGER, game.bitcoinScale), '90.071.992,54740991');
   for (const amount of [-1, 0.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
     assert.throws(() => formatAmount(amount, game.kcScale));
   }
@@ -121,5 +121,18 @@ test('environment validation fails closed without exposing secret values', () =>
     { MONGODB_URI: 'https://secret' }, { MONGODB_DB: 'invalid/database' }
   ]) {
     assert.throws(() => readEnvironment({ ...env, ...invalid }), error => error instanceof Error && !error.message.includes('password'));
+  }
+});
+
+
+test('KC formatting distinguishes grouped thousands from exact fractional minor units without rounding', () => {
+  assert.equal(formatAmount(180_394_712, game.kcScale), '1.803.947,12');
+  assert.equal(formatAmount(180_394_700, game.kcScale), '1.803.947');
+  assert.equal(formatAmount(180_394_710, game.kcScale), '1.803.947,1');
+  for (const amount of [0, 1, 9, 10, 11, 99, 100, 101, 99999, 100001, 180_394_712, Number.MAX_SAFE_INTEGER]) {
+    const formatted = formatAmount(amount, game.kcScale);
+    assert.match(formatted, /^(?:0|[1-9]\d{0,2}(?:\.\d{3})*)(?:,\d{1,2})?$/u);
+    const [whole = '', fraction = ''] = formatted.replaceAll('.', '').split(',');
+    assert.equal(BigInt(whole) * 100n + BigInt(fraction.padEnd(2, '0')), BigInt(amount));
   }
 });

@@ -1,3 +1,5 @@
+import { roundKey } from '../src/services/casino-rules.js';
+import { roundClosed } from '../src/services/casino-texts.js';
 import { handleRegisteredMessage } from '../src/handlers/chat-registry.js';
 import assert from 'node:assert/strict';
 import { mock, test } from 'node:test';
@@ -374,7 +376,7 @@ test('typed bonus labels and unrelated payloads never claim rewards, including a
   assert.equal(database.player().bonusDay, 1);
   await handle(message(vk, { messageId: id++, text: labels.bonus, payload: '{"command":"bonus"}' }));
   assert.equal(database.player().kc, 750_000);
-  assert.equal(sent.at(-1)?.message, '🎁 Бонус 2-го дня:\n\n💰 5.000 KC\n💠 2.5₿');
+  assert.equal(sent.at(-1)?.message, '🎁 Бонус 2-го дня:\n\n💰 5.000 KC\n💠 2,5₿');
 });
 
 test('donate VK flow ignores DM theft, loads actual chat members outside transactions and rejects forged victim payloads', async context => {
@@ -767,4 +769,40 @@ test('concurrent chat registration still records a kicked community as inactive 
   await handleRegisteredMessage(message(vk, { peerId: 2_000_000_001, kickMemberId: -123 }), 123, registry, async () => {});
   await handleRegisteredMessage(message(vk), 123, registry, async () => {});
   assert.deepEqual(recorded, [[2_000_000_001, false]]);
+});
+
+
+test('VK all-in receipt uses a decimal comma and a late repeat only wakes the single close notification', async context => {
+  const vk = new VK({ token: 'test-token' });
+  const db = new MemoryDatabase();
+  const service = new GameService(db);
+  await service.handle({ eventId: 'register', vkId: 1, command: { kind: 'profile' } }, async () => 'Игрок');
+  db.player().kc = 180_394_712;
+  const sent: Record<string, unknown>[] = [];
+  const api = mock.method(vk.api, 'callWithRequest', async (request: APIRequest) => {
+    assert.equal(request.method, 'messages.send');
+    const params: unknown = request.params;
+    assert.ok(isRecord(params));
+    sent.push(params);
+    return 1;
+  });
+  context.after(() => api.mock.restore());
+  let wakes = 0;
+  const handle = createMessageHandler(vk, service, 123, () => {
+    wakes += 1;
+    assert.equal(db.state.notifications[0]?.text, roundClosed('roulette'));
+  });
+  await handle(message(vk, { peerId: 2_000_000_001, text: '16 все' }));
+  assert.equal(sent[0]?.message, '✅ [id1|Игрок] — 1.803.947,12 KC на 16');
+  assert.equal(db.player().kc, 0);
+  const round = db.state.casino.get(roundKey(2_000_000_001, 'roulette'));
+  assert.ok(round?.kind === 'round');
+  db.time = new Date(round.closesAt);
+  const late = message(vk, { peerId: 2_000_000_001, messageId: 2, text: '16 все' });
+  await handle(late);
+  await handle(late);
+  assert.equal(sent.length, 1);
+  assert.equal(wakes, 1);
+  assert.equal(db.state.notifications.length, 1);
+  assert.equal(db.player().kc, 0);
 });

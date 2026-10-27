@@ -3,8 +3,8 @@ import { test } from 'node:test';
 import { rouletteConfig, roulettePhotos } from '../src/config/roulette.js';
 import { game } from '../src/config/game.js';
 import { parseCommand } from '../src/handlers/commands.js';
-import { betPayout, roundKey, selectOutcome } from '../src/services/casino-rules.js';
-import { betAccepted, casinoTexts, historyText, roundHeading, winningBet } from '../src/services/casino-texts.js';
+import { betPayout, closeKey, roundKey, selectOutcome } from '../src/services/casino-rules.js';
+import { betAccepted, casinoTexts, historyText, roundClosed, roundHeading, winningBet } from '../src/services/casino-texts.js';
 import { settleCasino } from '../src/services/casino-worker.js';
 import { GameService } from '../src/services/game.js';
 import { parseRouletteTarget, rouletteMultiplier, rouletteWins, validRouletteTarget } from '../src/services/roulette-rules.js';
@@ -112,7 +112,7 @@ test('roulette payouts and role income settle once; only the first result page r
   await f.chat('рулетка 2 1000\nрулетка ч1 1000\nрулетка красное 1000');
   assert.equal(f.db.player().kc, 9_700_000);
   f.db.time = new Date(f.round().closesAt);
-  assert.equal((await f.chat('рулетка 2 1000')).text, casinoTexts.closed);
+  assert.equal((await f.chat('рулетка 2 1000')).text, '');
   await f.drain();
   assert.equal(f.db.player().kc, 13_700_000);
   assert.equal(f.db.state.dealer.earnedKC, 1000);
@@ -227,4 +227,75 @@ test('short roulette bets share balance, round extensions, caps and event dedupl
   const remaining = f.db.player().kc;
   await f.chat('ч1 неверно');
   assert.equal(f.db.player().kc, remaining);
+});
+
+
+test('all-in roulette preserves exact fractional KC and formats the stake and payout with a decimal comma', async () => {
+  const f = await fixture(16);
+  f.db.player().kc = 180_394_712;
+  const reply = await f.chat('16 все');
+  assert.equal(reply.text, '✅ [id1|Игрок 1] — 1.803.947,12 KC на 16');
+  assert.equal(f.db.player().kc, 0);
+  const bet = [...f.db.state.casino.values()].find(value => value.kind === 'bet');
+  assert.ok(bet?.kind === 'bet');
+  assert.equal(bet.amount, 180_394_712);
+  f.db.time = new Date(f.round().closesAt);
+  await f.drain();
+  assert.equal(f.db.player().kc, 6_494_209_632);
+  const result = f.db.state.notifications.find(value => value._id.startsWith('result:'));
+  assert.ok(result?.text.includes('✅ [id1|Игрок 1] — 1.803.947,12 KC на 16\n— Приз: 64.942.096,32 KC'));
+});
+
+test('late all-in bets and the casino worker share a single committed close notice without debits or duplicate replies', async () => {
+  const f = await fixture();
+  await f.chat('16 1000');
+  const round = f.round();
+  const balance = f.db.player(2).kc;
+  const total = round.total;
+  f.db.time = new Date(round.closesAt);
+  const replies = await Promise.all([
+    ...Array.from({ length: 10 }, () => f.chat('16 все', 2)),
+    settleCasino(f.db)
+  ]);
+  for (const reply of replies) if (typeof reply !== 'number') assert.equal(reply.text, '');
+  assert.equal(f.db.player(2).kc, balance);
+  assert.equal(f.round().total, total);
+  assert.equal([...f.db.state.casino.values()].filter(value => value.kind === 'bet').length, 1);
+  const notices = f.db.state.notifications.filter(value => value._id === closeKey(round));
+  assert.equal(notices.length, 1);
+  assert.equal(notices[0]?.text, roundClosed('roulette'));
+  assert.equal(notices[0]?.text.includes('\n\n'), false);
+  assert.equal(f.round().stage, 'closed');
+  const replay = await f.chat('16 все', 2, round.peerId, 'late-once');
+  assert.deepEqual(await f.chat('16 все', 2, round.peerId, 'late-once'), replay);
+  f.db.player(2).kc = 0;
+  assert.equal((await f.chat('16 все', 2)).text, '');
+  assert.equal(f.db.state.notifications.length, 1);
+});
+
+test('close notice created by a late bet is rolled back with the event on database failure', async () => {
+  const f = await fixture();
+  await f.chat('16 1000');
+  f.db.time = new Date(f.round().closesAt);
+  const before = structuredClone(f.db.state);
+  f.db.failRemember = true;
+  await assert.rejects(f.chat('16 все', 2), /Simulated database failure/);
+  assert.deepEqual(f.db.state, before);
+  f.db.failRemember = false;
+  assert.equal((await f.chat('16 все', 2)).text, '');
+  await settleCasino(f.db);
+  assert.equal(f.db.state.notifications.length, 1);
+  assert.equal(f.round().stage, 'closed');
+});
+
+test('mixed messages omit silent closed lines without hiding a valid bet in another game or adding blank lines', async () => {
+  const f = await fixture();
+  await f.chat('16 1000');
+  f.db.time = new Date(f.round().closesAt);
+  const reply = await f.chat('16 все\nкраш 1.7 1000\n16 все', 2);
+  assert.equal(reply.text, '✅ [id2|Игрок 2] — 1.000 KC на x1.7');
+  assert.equal(f.db.player(2).kc, 9_900_000);
+  assert.equal(f.round('crash').total, 100_000);
+  assert.equal(f.round().total, 100_000);
+  assert.equal(f.db.state.notifications.length, 1);
 });

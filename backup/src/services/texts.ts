@@ -77,7 +77,7 @@ export function formatAmount(amount: number, scale: number, minimumDecimals = 0)
   const divisor = BigInt(scale);
   const whole = String(value / divisor).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
   const fraction = String(value % divisor).padStart(digits, '0').replace(/0+$/, '').padEnd(minimumDecimals, '0');
-  return fraction.length > 0 ? `${whole}.${fraction}` : whole;
+  return fraction.length > 0 ? `${whole},${fraction}` : whole;
 }
 
 export function mention(player: Pick<Player, '_id' | 'name'>): string {

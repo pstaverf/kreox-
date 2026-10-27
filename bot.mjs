@@ -502,7 +502,7 @@ function formatAmount(amount, scale, minimumDecimals = 0) {
   const divisor = BigInt(scale);
   const whole = String(value / divisor).replace(/\B(?=(\d{3})+(?!\d))/g, ".");
   const fraction = String(value % divisor).padStart(digits, "0").replace(/0+$/, "").padEnd(minimumDecimals, "0");
-  return fraction.length > 0 ? `${whole}.${fraction}` : whole;
+  return fraction.length > 0 ? `${whole},${fraction}` : whole;
 }
 function mention(player) {
   return `[id${player._id}|${player.name}]`;
@@ -1051,7 +1051,6 @@ var casinoTexts = {
   electionPending: "⏳ Подводим итоги выборов. Повторите действие после объявления результатов.",
   funds: "⚠ Недостаточно KC!",
   limit: "⚠️ Достигнут безопасный предел суммы. Ставка не принята.",
-  closed: "💰 Прием ставок завершен.",
   private: "⚠️ Игры доступны только в беседах.",
   crashRange: "⛔️ Показатель должен быть больше х1, но не больше х5000!",
   crashUsage: "⛔️ Использование: краш <коэффициент> <ставка>",
@@ -1572,6 +1571,15 @@ function createRoulettePhotoResolver(vk, cache, groupId, download = downloadRoul
   };
 }
 
+// src/services/casino-round.ts
+async function closeCasinoRound(store, round, now) {
+  if (round.stage !== "open" || round.closesAt > now) throw new Error("Premature casino close");
+  await store.enqueueItemNotification(closeKey(round), round.peerId, roundClosed(round.mode), { kind: "none" });
+  round.stage = "closed";
+  round.dueAt = new Date(now.getTime() + casinoConfig.workerMs);
+  await store.casinoSave(round);
+}
+
 // src/services/director.ts
 async function directorState(store, now) {
   const existing = await store.casinoGet("director");
@@ -1687,11 +1695,8 @@ async function progressRound(store, now) {
   if (round.kind !== "round") throw new Error("Invalid due casino round");
   switch (round.stage) {
     case "open":
-      if (round.closesAt > now) throw new Error("Premature casino close");
-      await store.enqueueItemNotification(closeKey(round), round.peerId, roundClosed(round.mode), { kind: "none" });
-      round.stage = "closed";
-      round.dueAt = new Date(now.getTime() + casinoConfig.workerMs);
-      break;
+      await closeCasinoRound(store, round, now);
+      return true;
     case "closed":
       if (await store.casinoNotificationDone(closeKey(round))) {
         round.stage = "waiting";
@@ -4793,13 +4798,16 @@ async function acceptBet(store, player, line, input, index, random) {
   if (current === null) throw new Error("Missing casino actor");
   const amount = resolveCasinoStake(line.amount, current.kc);
   if (!safeBankMoney(amount) || !Number.isSafeInteger(line.target) || (line.mode === "crash" ? line.target <= 100 || line.target > casinoConfig.maxCrash : line.mode === "roulette" ? !validRouletteTarget(line.target) : !casinoConfig.sectors.some((sector) => sector === line.target))) throw new Error("Invalid typed casino bet");
-  if (amount < casinoConfig.minimum) return betMinimum(line.mode);
   const now = await store.now();
-  const director = await directorState(store, now);
-  if (director.dueAt <= now) return casinoTexts.electionPending;
   const existing = await store.casinoGet(roundKey(peerId, line.mode));
   if (existing !== null && existing.kind !== "round") throw new Error("Invalid active round");
-  if (existing !== null && existing.stage !== "finished" && (existing.stage !== "open" || existing.closesAt <= now)) return casinoTexts.closed;
+  if (existing !== null && existing.stage !== "finished" && (existing.stage !== "open" || existing.closesAt <= now)) {
+    if (existing.stage === "open") await closeCasinoRound(store, existing, now);
+    return "";
+  }
+  if (amount < casinoConfig.minimum) return betMinimum(line.mode);
+  const director = await directorState(store, now);
+  if (director.dueAt <= now) return casinoTexts.electionPending;
   const active = existing !== null && existing.stage !== "finished";
   const roundId = active ? existing.roundId : `game:${input.eventId}:${index}`;
   if ((await store.casinoList({ kind: "bet", roundId, vkId: player._id }, casinoConfig.maxBets)).length >= casinoConfig.maxBets) return betLimit(line.mode);
@@ -4850,14 +4858,17 @@ async function casinoAction(store, player, command, input, random) {
     return { text: historyText(command.mode, round?.history ?? []), keyboard: { kind: "none" } };
   }
   const replies = [];
-  for (const [index, line] of command.lines.entries()) replies.push(await acceptBet(store, player, line, input, index, random));
+  for (const [index, line] of command.lines.entries()) {
+    const text = await acceptBet(store, player, line, input, index, random);
+    if (text.length > 0) replies.push(text);
+  }
   const parts = messageParts(replies.join("\n"));
   if (parts.length > 1) {
     if (input.peerId === void 0) throw new Error("Missing delivery peer");
     await store.casinoInsert({ _id: `delivery:${input.eventId}`, kind: "delivery", version: 0, peerId: input.peerId, texts: parts, index: 0, stage: "pending", dueAt: /* @__PURE__ */ new Date(0) });
     return { text: "", keyboard: { kind: "none" } };
   }
-  return { text: parts[0] ?? casinoTexts.crashUsage, keyboard: { kind: "none" } };
+  return { text: parts[0] ?? "", keyboard: { kind: "none" } };
 }
 
 // src/services/items.ts

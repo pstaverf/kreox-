@@ -47,7 +47,7 @@ test('profile, menu, empty inventory and navigation have requested text and keyb
 
 test('bonus is immediate, blocked until exactly four hours, then advances', async () => {
   const { database, send } = await fixture();
-  assert.equal((await send({ kind: 'bonus' })).text, '🎁 Бонус 1-го дня:\n\n💰 2.500 KC\n💠 1.5₿');
+  assert.equal((await send({ kind: 'bonus' })).text, '🎁 Бонус 1-го дня:\n\n💰 2.500 KC\n💠 1,5₿');
   assert.equal(database.player().kc, 250_000);
   assert.equal(database.player().bitcoin, 150_000_000);
   assert.equal((await send({ kind: 'bonus' })).text, '⏳ Подожди ещё 4 ч. 0 мин. 0 сек.');

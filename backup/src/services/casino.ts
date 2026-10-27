@@ -1,3 +1,4 @@
+import { closeCasinoRound } from './casino-round.js';
 import { validRouletteTarget } from './roulette-rules.js';
 import { casinoConfig } from '../config/casino.js';
 import { game } from '../config/game.js';
@@ -30,13 +31,16 @@ async function acceptBet(store: GameStore, player: Player, line: CasinoLine, inp
   const amount = resolveCasinoStake(line.amount, current.kc);
   if (!safeBankMoney(amount) || !Number.isSafeInteger(line.target)
     || (line.mode === 'crash' ? line.target <= 100 || line.target > casinoConfig.maxCrash : line.mode === 'roulette' ? !validRouletteTarget(line.target) : !casinoConfig.sectors.some(sector => sector === line.target))) throw new Error('Invalid typed casino bet');
-  if (amount < casinoConfig.minimum) return betMinimum(line.mode);
   const now = await store.now();
-  const director = await directorState(store, now);
-  if (director.dueAt <= now) return casinoTexts.electionPending;
   const existing = await store.casinoGet(roundKey(peerId, line.mode));
   if (existing !== null && existing.kind !== 'round') throw new Error('Invalid active round');
-  if (existing !== null && existing.stage !== 'finished' && (existing.stage !== 'open' || existing.closesAt <= now)) return casinoTexts.closed;
+  if (existing !== null && existing.stage !== 'finished' && (existing.stage !== 'open' || existing.closesAt <= now)) {
+    if (existing.stage === 'open') await closeCasinoRound(store, existing, now);
+    return '';
+  }
+  if (amount < casinoConfig.minimum) return betMinimum(line.mode);
+  const director = await directorState(store, now);
+  if (director.dueAt <= now) return casinoTexts.electionPending;
   const active = existing !== null && existing.stage !== 'finished';
   const roundId = active ? existing.roundId : `game:${input.eventId}:${index}`;
   if ((await store.casinoList({ kind: 'bet', roundId, vkId: player._id }, casinoConfig.maxBets)).length >= casinoConfig.maxBets) return betLimit(line.mode);
@@ -69,12 +73,15 @@ export async function casinoAction(store: GameStore, player: Player, command: Ca
     return { text: historyText(command.mode, round?.history ?? []), keyboard: { kind: 'none' } };
   }
   const replies: string[] = [];
-  for (const [index, line] of command.lines.entries()) replies.push(await acceptBet(store, player, line, input, index, random));
+  for (const [index, line] of command.lines.entries()) {
+    const text = await acceptBet(store, player, line, input, index, random);
+    if (text.length > 0) replies.push(text);
+  }
   const parts = messageParts(replies.join('\n'));
   if (parts.length > 1) {
     if (input.peerId === undefined) throw new Error('Missing delivery peer');
     await store.casinoInsert({ _id: `delivery:${input.eventId}`, kind: 'delivery', version: 0, peerId: input.peerId, texts: parts, index: 0, stage: 'pending', dueAt: new Date(0) });
     return { text: '', keyboard: { kind: 'none' } };
   }
-  return { text: parts[0] ?? casinoTexts.crashUsage, keyboard: { kind: 'none' } };
+  return { text: parts[0] ?? '', keyboard: { kind: 'none' } };
 }

@@ -66,8 +66,8 @@ test('missing, malformed, unrelated and invalid payloads cannot turn bonus text 
 test('bonus spacing has one blank line after the title and single newlines between rewards including the case', () => {
   const second = game.rewards[1];
   const seventh = game.rewards[6];
-  assert.equal(bonusText(2, second), '🎁 Бонус 2-го дня:\n\n💰 5.000 KC\n💠 2.5₿');
-  assert.equal(bonusText(7, seventh), '🎁 Бонус 7-го дня:\n\n💰 100.000 KC\n💠 25.0₿\n💼 Кейс «Ждун»');
+  assert.equal(bonusText(2, second), '🎁 Бонус 2-го дня:\n\n💰 5.000 KC\n💠 2,5₿');
+  assert.equal(bonusText(7, seventh), '🎁 Бонус 7-го дня:\n\n💰 100.000 KC\n💠 25,0₿\n💼 Кейс «Ждун»');
 });
 
 test('mining spacing separates status from the compact production, balance and countdown block', () => {

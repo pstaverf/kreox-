@@ -1,3 +1,4 @@
+import { closeCasinoRound } from './casino-round.js';
 import { rouletteWins } from './roulette-rules.js';
 import { DuplicateWriteError } from '../types/storage.js';
 import { casinoConfig } from '../config/casino.js';
@@ -6,7 +7,7 @@ import type { CasinoRandom, CasinoRound } from '../types/casino.js';
 import type { GameDatabase, GameStore } from '../types/storage.js';
 import { addCasinoCredit, payCasinoCredit } from './casino-credits.js';
 import { cachedCasinoRandom, casinoRandom, betPayout, casinoPercent, closeKey } from './casino-rules.js';
-import { casinoTexts, electionRefund, roundClosed, roundFooter, roundHeading, winningBet } from './casino-texts.js';
+import { casinoTexts, electionRefund, roundFooter, roundHeading, winningBet } from './casino-texts.js';
 import { startDueElection } from './director.js';
 
 async function savePage(store: GameStore, round: CasinoRound): Promise<void> {
@@ -26,11 +27,8 @@ async function progressRound(store: GameStore, now: Date): Promise<boolean> {
   if (round.kind !== 'round') throw new Error('Invalid due casino round');
   switch (round.stage) {
     case 'open':
-      if (round.closesAt > now) throw new Error('Premature casino close');
-      await store.enqueueItemNotification(closeKey(round), round.peerId, roundClosed(round.mode), { kind: 'none' });
-      round.stage = 'closed';
-      round.dueAt = new Date(now.getTime() + casinoConfig.workerMs);
-      break;
+      await closeCasinoRound(store, round, now);
+      return true;
     case 'closed':
       if (await store.casinoNotificationDone(closeKey(round))) {
         round.stage = 'waiting';
