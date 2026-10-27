@@ -617,10 +617,10 @@ class MemoryStore implements GameStore {
     player.referralUrl = url;
   }
 
-  async rewardReferral(inviter: Player, newcomer: Player, text: string): Promise<void> {
+  async rewardReferral(inviter: Player, newcomer: Player, text: string): Promise<boolean> {
     if (inviter._id === newcomer._id || inviter.kc > game.maxAmount - game.referralRewardKC
       || inviter.nextItemId >= game.maxAmount || (inviter.referrals ?? 0) >= game.maxAmount) {
-      throw new Error('Referral reward limits exceeded');
+      return false;
     }
     const itemId = inviter.nextItemId++;
     inviter.kc += game.referralRewardKC;
@@ -631,6 +631,7 @@ class MemoryStore implements GameStore {
       state: 'pending', nextAttemptAt: new Date(0), attempts: 0
     });
     this.queuedNotifications = true;
+    return true;
   }
 
 }

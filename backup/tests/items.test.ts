@@ -1,3 +1,4 @@
+import { itemLabels } from '../src/services/item-texts.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { game } from '../src/config/game.js';
@@ -483,4 +484,10 @@ test('one of two cases can be opened while the other stays reserved and can stil
   assert.equal(db.state.items.filter(item => item.vkId === 1).length, 0);
   assert.equal(db.state.items.filter(item => item.vkId === 2).length, 1);
   assert.equal((await send({ kind: 'item_detail', itemKind: 'referral_case' })).text, itemTexts.none);
+});
+
+
+test('gift confirmation label is spelled correctly and matches the normal confirmation wording', () => {
+  assert.equal(itemLabels.giftConfirm, '✅ Подтвердить');
+  assert.equal(itemLabels.giftConfirm, itemLabels.confirm);
 });

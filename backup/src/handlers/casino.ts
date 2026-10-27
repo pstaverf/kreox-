@@ -7,8 +7,10 @@ import { betMinimum, casinoTexts } from '../services/casino-texts.js';
 import { isRecord } from '../utils/validation.js';
 
 function isRouletteShorthand(text: string): boolean {
-  const target = /^(\S+)\s+\S/u.exec(text.trim())?.[1];
-  return target !== undefined && parseRouletteTarget(target) !== null;
+  const parts = text.trim().split(/\s+/u);
+  if (parts.length !== 2 || parts[0] === undefined || parts[1] === undefined || parseRouletteTarget(parts[0]) === null) return false;
+  const stake = parseCasinoStake(parts[1]);
+  return stake !== null && (typeof stake !== 'number' || stake >= casinoConfig.minimum);
 }
 function parseLine(text: string): CasinoLine {
   const line = isRouletteShorthand(text) ? `рулетка ${text.trim()}` : text.trim();

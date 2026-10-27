@@ -1,3 +1,7 @@
+import { ChatRegistryCache } from './chat-registry-cache.js';
+import { ResponseIds } from '../utils/response-ids.js';
+import { TransactionClock } from '../utils/transaction-clock.js';
+import { storageConfig } from '../config/storage.js';
 import { migrateMailingRecipients } from './mongo-mailing-migration.js';
 import { mailingConfig } from '../config/mailing.js';
 import type { MailingCampaign, MailingRecipient } from '../types/mailing.js';
@@ -22,6 +26,16 @@ import { isRecord } from '../utils/validation.js';
 
 export class MongoGameDatabase implements GameDatabase {
   private readonly db: Db;
+  private readonly chats = new ChatRegistryCache((peerId, active) => this.writeChat(peerId, active));
+  private readonly responseIds = new ResponseIds(async () => {
+    const previous = await this.db.collection<Counter>('counters').findOneAndUpdate(
+      { _id: 'responses', value: { $gte: 0, $lt: game.maxRandomId } },
+      [{ $set: { value: { $min: [game.maxRandomId, { $add: ['$value', storageConfig.responseIdBlockSize] }] } } }],
+      { returnDocument: 'before', includeResultMetadata: false, writeConcern: { w: 'majority' }, timeoutMS: 20_000 }
+    );
+    if (previous === null) throw new Error('Response ID range is exhausted');
+    return { first: previous.value + 1, last: Math.min(game.maxRandomId, previous.value + storageConfig.responseIdBlockSize) };
+  });
 
   constructor(private readonly client: MongoClient, database: string) {
     this.db = client.db(database);
@@ -97,7 +111,11 @@ export class MongoGameDatabase implements GameDatabase {
   }
 
 
-  async recordChat(peerId: number, active = true): Promise<void> {
+  recordChat(peerId: number, active = true): Promise<void> {
+    return this.chats.recordChat(peerId, active);
+  }
+
+  private async writeChat(peerId: number, active: boolean): Promise<void> {
     if (!Number.isSafeInteger(peerId) || peerId <= 2_000_000_000 || peerId > Number.MAX_SAFE_INTEGER) throw new Error('Invalid chat peer');
     const records = this.db.collection<CasinoRecord>('casino_records');
     const filter = { _id: `chat:${peerId}`, kind: 'chat' } satisfies Pick<CasinoRecord, '_id' | 'kind'>;
@@ -139,7 +157,7 @@ export class MongoGameDatabase implements GameDatabase {
   async transaction<T>(action: (store: GameStore) => Promise<T>): Promise<T> {
     try {
       return await this.client.withSession(async session => session.withTransaction(
-        async () => action(new MongoGameStore(this.db, session)),
+        async () => action(new MongoGameStore(this.db, session, this.responseIds)),
         { readConcern: { level: 'snapshot' }, writeConcern: { w: 'majority' }, readPreference: 'primary', timeoutMS: 20_000 }
       ));
     } catch (error: unknown) {
@@ -153,6 +171,7 @@ export class MongoGameDatabase implements GameDatabase {
 
 class MongoGameStore extends MongoCasinoStore implements GameStore {
   private queuedNotifications = false;
+  private readonly clock = new TransactionClock(() => this.readTime());
   notificationsQueued(): boolean { return this.queuedNotifications; }
   private readonly players;
   private readonly items;
@@ -162,7 +181,7 @@ class MongoGameStore extends MongoCasinoStore implements GameStore {
   private readonly mailingCampaigns;
   private readonly mailingAudience;
 
-  constructor(db: Db, private readonly session: ClientSession) {
+  constructor(db: Db, private readonly session: ClientSession, private readonly responseIds: ResponseIds) {
     super(db, session);
     this.players = db.collection<Player>('players');
     this.items = db.collection<InventoryItem>('inventory');
@@ -236,16 +255,8 @@ class MongoGameStore extends MongoCasinoStore implements GameStore {
     return this.messages.findOne({ _id: eventId }, { session: this.session });
   }
 
-  private async nextRandomId(): Promise<number> {
-    const counter = await this.counters.findOneAndUpdate(
-      { _id: 'responses', value: { $gte: 0, $lt: game.maxRandomId } },
-      { $inc: { value: 1 } },
-      { session: this.session, returnDocument: 'after', includeResultMetadata: false }
-    );
-    if (counter === null) {
-      throw new Error('Response ID range is exhausted');
-    }
-    return counter.value;
+  private nextRandomId(): Promise<number> {
+    return this.responseIds.take();
   }
 
   async remember(input: GameInput, reply: Reply): Promise<PreparedReply> {
@@ -310,7 +321,9 @@ class MongoGameStore extends MongoCasinoStore implements GameStore {
     return player;
   }
 
-  async now(): Promise<Date> {
+  now(): Promise<Date> { return this.clock.now(); }
+
+  private async readTime(): Promise<Date> {
     const value = await this.counters.aggregate<{ now: Date }>([
       { $match: { _id: 'registrations' } },
       { $project: { _id: 0, now: '$$NOW' } },
@@ -408,9 +421,9 @@ class MongoGameStore extends MongoCasinoStore implements GameStore {
     }
   }
 
-  async rewardReferral(inviter: Player, newcomer: Player, text: string): Promise<void> {
+  async rewardReferral(inviter: Player, newcomer: Player, text: string): Promise<boolean> {
     if (inviter._id === newcomer._id) {
-      throw new Error('Self referral is not allowed');
+      return false;
     }
     const result = await this.players.updateOne({
       _id: inviter._id,
@@ -419,7 +432,7 @@ class MongoGameStore extends MongoCasinoStore implements GameStore {
       nextItemId: { $eq: inviter.nextItemId, $gte: 1, $lt: game.maxAmount }
     }, { $inc: { kc: game.referralRewardKC, referrals: 1, nextItemId: 1 } }, { session: this.session });
     if (result.matchedCount !== 1) {
-      throw new Error('Referral reward limits exceeded');
+      return false;
     }
     const item = await this.items.insertOne({
       _id: `${inviter._id}:${inviter.nextItemId}`, vkId: inviter._id,
@@ -433,6 +446,7 @@ class MongoGameStore extends MongoCasinoStore implements GameStore {
       throw new Error('Referral reward was not acknowledged');
     }
     this.queuedNotifications = true;
+    return true;
   }
 
 }

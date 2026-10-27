@@ -193,13 +193,24 @@ test('referral reward, registration, account ID, inventory ID and notification a
   assert.equal(database.state.notifications.length, 1);
 });
 
-test('referral upper bounds never leave a registration with a partial reward', async () => {
-  const { send, database } = await fixture();
-  database.player().kc = game.maxAmount;
-  await assert.rejects(send({ kind: 'profile' }, 2, { referrerId: 1 }));
-  assert.equal(database.state.players.has(2), false);
-  assert.equal(database.state.notifications.length, 0);
-  assert.equal(database.state.items.length, 0);
+test('inviter limits never block newcomer registration or grant partial referral rewards', async () => {
+  for (const field of ['kc', 'nextItemId', 'referrals'] as const) {
+    const { send, database } = await fixture();
+    database.player()[field] = game.maxAmount;
+    const inviter = structuredClone(database.player());
+    const options = { referrerId: 1, eventId: `limited-referral:${field}` };
+    const reply = await send({ kind: 'profile' }, 2, options);
+    assert.equal(reply.text, texts.welcome);
+    assert.ok(database.state.players.has(2));
+    assert.deepEqual(database.player(1), inviter);
+    assert.equal(database.state.notifications.length, 0);
+    assert.equal(database.state.items.length, 0);
+    assert.deepEqual(await send({ kind: 'profile' }, 2, options), reply);
+    database.player()[field] = field === 'nextItemId' ? 1 : 0;
+    await send({ kind: 'profile' }, 2, { referrerId: 1 });
+    assert.equal(database.state.notifications.length, 0);
+    assert.equal(database.state.items.length, 0);
+  }
 });
 
 test('short referral link is cached and existing users never request a new link', async () => {

@@ -203,9 +203,10 @@ test('bare roulette targets accept every group and individual number without ste
     assert.equal(parseCommand(text, undefined, true).kind, 'development');
   }
   assert.equal(parseCommand('ч1 10к', undefined, false).kind, 'development');
-  assert.deepEqual(parseCommand('ч1 неверно', undefined, true), { kind: 'casino_bets', lines: [{ error: casinoTexts.rouletteUsage }] });
-  assert.deepEqual(parseCommand('ч1 10к лишнее', undefined, true), { kind: 'casino_bets', lines: [{ error: casinoTexts.rouletteUsage }] });
-  assert.deepEqual(parseCommand('ч1 100', undefined, true), parseCommand('рулетка ч1 100', undefined, true));
+  for (const text of ['ч1 неверно', 'ч1 10к лишнее', 'ч1 100', '5 минут', '10 человек']) {
+    assert.equal(parseCommand(text, undefined, true).kind, 'development');
+  }
+  assert.equal(parseCommand('рулетка ч1 100', undefined, true).kind, 'casino_bets');
 });
 
 test('short roulette bets share balance, round extensions, caps and event deduplication with full commands', async () => {

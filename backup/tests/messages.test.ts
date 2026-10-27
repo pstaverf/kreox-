@@ -114,8 +114,11 @@ test('chat aliases send no keyboard, ignore unrelated conversation text and neve
   });
   context.after(() => api.mock.restore());
   const handle = createMessageHandler(vk, service, 123);
-  await handle(message(vk, { peerId: 2_000_000_001, messageId: 1, text: 'как дела' }));
+  for (const [index, text] of ['как дела', '5 минут', '10 человек', 'ч1 100', 'ч1 неверно', 'ч1 10к лишнее'].entries()) {
+    await handle(message(vk, { peerId: 2_000_000_001, messageId: index + 100, text }));
+  }
   assert.equal(sent.length, 0);
+  assert.equal(database.state.messages.size, 1);
   for (const [index, text] of ['я', 'и', 'инв', 'инвентарь'].entries()) {
     await handle(message(vk, { peerId: 2_000_000_001, messageId: index + 2, text }));
     const keyboard = sent.at(-1)?.keyboard;

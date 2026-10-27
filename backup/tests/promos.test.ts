@@ -362,3 +362,8 @@ test('an empty owner list has only Back and no other player’s promo', async ()
   assert.ok(Array.isArray(keyboard.buttons));
   assert.equal(keyboard.buttons.length, 1);
 });
+
+
+test('euro promo amount prompt uses the euro banknote rather than yen', () => {
+  assert.equal(promoAmountPrompt('euro'), '🔢 Введите сумму 1-го промо.\n\n💡 Мин. сумма: 5 💶');
+});

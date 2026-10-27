@@ -1965,7 +1965,7 @@ function depositText(deposit, now) {
 🆔 ID: ${deposit.depositId}
 💰 Вложено: ${bankMoney(deposit.amount, "kc")} (сейчас: ${bankMoney(depositValue(deposit, now), "kc")})
 ⌛️ Создан: ${depositDate(deposit.createdAt)}
-⏳ Депозит открыт до ${depositDate(deposit.expiresAt)} (+${bankConfig.depositRates[deposit.days]}% за ${deposit.days} дня)`;
+⏳ Депозит открыт до ${depositDate(deposit.expiresAt)} (+${bankConfig.depositRates[deposit.days]}% за ${deposit.days} ${deposit.days === 3 ? "дня" : "дней"})`;
 }
 function depositEndText(deposit, payout) {
   return `🏧 Ваш депозит ID: ${deposit.depositId} был окончен.
@@ -2335,8 +2335,10 @@ function parseMailing(text) {
 
 // src/handlers/casino.ts
 function isRouletteShorthand(text) {
-  const target = /^(\S+)\s+\S/u.exec(text.trim())?.[1];
-  return target !== void 0 && parseRouletteTarget(target) !== null;
+  const parts = text.trim().split(/\s+/u);
+  if (parts.length !== 2 || parts[0] === void 0 || parts[1] === void 0 || parseRouletteTarget(parts[0]) === null) return false;
+  const stake = parseCasinoStake(parts[1]);
+  return stake !== null && (typeof stake !== "number" || stake >= casinoConfig.minimum);
 }
 function parseLine(text) {
   const line = isRouletteShorthand(text) ? `рулетка ${text.trim()}` : text.trim();
@@ -2805,7 +2807,7 @@ var itemLabels = {
   custom: "📦 Свое кол-во",
   open: "Открыть",
   confirm: "✅ Подтвердить",
-  giftConfirm: "✅ Подтвредить"
+  giftConfirm: "✅ Подтвердить"
 };
 var itemTexts = {
   done: "Done.",
@@ -3278,6 +3280,99 @@ function startNotifications(queue, vk, resolveRoulettePhoto) {
     tick();
   } });
 }
+
+// src/config/storage.ts
+var storageConfig = {
+  responseIdBlockSize: 256,
+  chatCacheTtlMs: 6e4,
+  chatCacheLimit: 1e4
+};
+
+// src/repositories/chat-registry-cache.ts
+var ChatRegistryCache = class {
+  constructor(write, now = () => performance.now()) {
+    this.write = write;
+    this.now = now;
+  }
+  write;
+  now;
+  entries = /* @__PURE__ */ new Map();
+  pending = /* @__PURE__ */ new Map();
+  async recordChat(peerId, active = true) {
+    if (!Number.isSafeInteger(peerId) || peerId <= 2e9) throw new Error("Invalid chat peer");
+    const previous = this.pending.get(peerId) ?? Promise.resolve();
+    const current = previous.catch(() => {
+    }).then(async () => {
+      const entry = this.entries.get(peerId);
+      if (entry?.active === active && entry.expiresAt > this.now()) return;
+      try {
+        await this.write(peerId, active);
+      } catch (error) {
+        this.entries.delete(peerId);
+        throw error;
+      }
+      this.entries.delete(peerId);
+      if (this.entries.size >= storageConfig.chatCacheLimit) {
+        const oldest = this.entries.keys().next().value;
+        if (oldest !== void 0) this.entries.delete(oldest);
+      }
+      this.entries.set(peerId, { active, expiresAt: this.now() + storageConfig.chatCacheTtlMs });
+    });
+    this.pending.set(peerId, current);
+    try {
+      await current;
+    } finally {
+      if (this.pending.get(peerId) === current) this.pending.delete(peerId);
+    }
+  }
+};
+
+// src/utils/response-ids.ts
+var ResponseIds = class {
+  constructor(reserve) {
+    this.reserve = reserve;
+  }
+  reserve;
+  next = 1;
+  last = 0;
+  pending;
+  async take() {
+    while (this.next > this.last) {
+      this.pending ??= this.refill().finally(() => {
+        this.pending = void 0;
+      });
+      await this.pending;
+    }
+    const id = this.next;
+    this.next += 1;
+    return id;
+  }
+  async refill() {
+    const range2 = await this.reserve();
+    if (!Number.isSafeInteger(range2.first) || !Number.isSafeInteger(range2.last) || range2.first <= this.last || range2.first > range2.last || range2.last > game.maxRandomId) {
+      throw new Error("Invalid response ID range");
+    }
+    this.next = range2.first;
+    this.last = range2.last;
+  }
+};
+
+// src/utils/transaction-clock.ts
+var TransactionClock = class {
+  constructor(read) {
+    this.read = read;
+  }
+  read;
+  time;
+  async now() {
+    this.time ??= this.read().then((date) => {
+      const value = date.getTime();
+      if (!Number.isFinite(value)) throw new Error("Database time is unavailable");
+      return value;
+    });
+    return new Date(await this.time);
+  }
+};
 
 // src/repositories/mongo-mailing-migration.ts
 import { MongoServerError as MongoServerError3 } from "mongodb";
@@ -4022,6 +4117,16 @@ var MongoGameDatabase = class {
   }
   client;
   db;
+  chats = new ChatRegistryCache((peerId, active) => this.writeChat(peerId, active));
+  responseIds = new ResponseIds(async () => {
+    const previous = await this.db.collection("counters").findOneAndUpdate(
+      { _id: "responses", value: { $gte: 0, $lt: game.maxRandomId } },
+      [{ $set: { value: { $min: [game.maxRandomId, { $add: ["$value", storageConfig.responseIdBlockSize] }] } } }],
+      { returnDocument: "before", includeResultMetadata: false, writeConcern: { w: "majority" }, timeoutMS: 2e4 }
+    );
+    if (previous === null) throw new Error("Response ID range is exhausted");
+    return { first: previous.value + 1, last: Math.min(game.maxRandomId, previous.value + storageConfig.responseIdBlockSize) };
+  });
   async initialize() {
     const hello = await this.db.command({ hello: 1 });
     if (!isRecord(hello) || typeof hello.setName !== "string" && hello.msg !== "isdbgrid") {
@@ -4094,7 +4199,10 @@ var MongoGameDatabase = class {
       throw new Error("Concurrent counter initialization failed");
     }
   }
-  async recordChat(peerId, active = true) {
+  recordChat(peerId, active = true) {
+    return this.chats.recordChat(peerId, active);
+  }
+  async writeChat(peerId, active) {
     if (!Number.isSafeInteger(peerId) || peerId <= 2e9 || peerId > Number.MAX_SAFE_INTEGER) throw new Error("Invalid chat peer");
     const records = this.db.collection("casino_records");
     const filter = { _id: `chat:${peerId}`, kind: "chat" };
@@ -4133,7 +4241,7 @@ var MongoGameDatabase = class {
   async transaction(action) {
     try {
       return await this.client.withSession(async (session) => session.withTransaction(
-        async () => action(new MongoGameStore(this.db, session)),
+        async () => action(new MongoGameStore(this.db, session, this.responseIds)),
         { readConcern: { level: "snapshot" }, writeConcern: { w: "majority" }, readPreference: "primary", timeoutMS: 2e4 }
       ));
     } catch (error) {
@@ -4145,9 +4253,10 @@ var MongoGameDatabase = class {
   }
 };
 var MongoGameStore = class extends MongoCasinoStore {
-  constructor(db, session) {
+  constructor(db, session, responseIds) {
     super(db, session);
     this.session = session;
+    this.responseIds = responseIds;
     this.players = db.collection("players");
     this.items = db.collection("inventory");
     this.messages = db.collection("processed_messages");
@@ -4157,7 +4266,9 @@ var MongoGameStore = class extends MongoCasinoStore {
     this.mailingAudience = db.collection("mailing_recipients");
   }
   session;
+  responseIds;
   queuedNotifications = false;
+  clock = new TransactionClock(() => this.readTime());
   notificationsQueued() {
     return this.queuedNotifications;
   }
@@ -4240,16 +4351,8 @@ var MongoGameStore = class extends MongoCasinoStore {
   async processed(eventId) {
     return this.messages.findOne({ _id: eventId }, { session: this.session });
   }
-  async nextRandomId() {
-    const counter = await this.counters.findOneAndUpdate(
-      { _id: "responses", value: { $gte: 0, $lt: game.maxRandomId } },
-      { $inc: { value: 1 } },
-      { session: this.session, returnDocument: "after", includeResultMetadata: false }
-    );
-    if (counter === null) {
-      throw new Error("Response ID range is exhausted");
-    }
-    return counter.value;
+  nextRandomId() {
+    return this.responseIds.take();
   }
   async remember(input, reply3) {
     const prepared = { ...reply3, randomId: await this.nextRandomId() };
@@ -4311,7 +4414,10 @@ var MongoGameStore = class extends MongoCasinoStore {
     }
     return player;
   }
-  async now() {
+  now() {
+    return this.clock.now();
+  }
+  async readTime() {
     const value = await this.counters.aggregate([
       { $match: { _id: "registrations" } },
       { $project: { _id: 0, now: "$$NOW" } },
@@ -4408,7 +4514,7 @@ var MongoGameStore = class extends MongoCasinoStore {
   }
   async rewardReferral(inviter, newcomer, text) {
     if (inviter._id === newcomer._id) {
-      throw new Error("Self referral is not allowed");
+      return false;
     }
     const result = await this.players.updateOne({
       _id: inviter._id,
@@ -4417,7 +4523,7 @@ var MongoGameStore = class extends MongoCasinoStore {
       nextItemId: { $eq: inviter.nextItemId, $gte: 1, $lt: game.maxAmount }
     }, { $inc: { kc: game.referralRewardKC, referrals: 1, nextItemId: 1 } }, { session: this.session });
     if (result.matchedCount !== 1) {
-      throw new Error("Referral reward limits exceeded");
+      return false;
     }
     const item = await this.items.insertOne({
       _id: `${inviter._id}:${inviter.nextItemId}`,
@@ -4438,6 +4544,7 @@ var MongoGameStore = class extends MongoCasinoStore {
       throw new Error("Referral reward was not acknowledged");
     }
     this.queuedNotifications = true;
+    return true;
   }
 };
 
@@ -5275,7 +5382,7 @@ var promoTexts = {
 };
 function promoAmountPrompt(currency) {
   const minimum = game.promo.minimum[currency];
-  const amount = currency === "kc" ? `${formatAmount(minimum, 1)} KC` : currency === "euro" ? `${minimum} 💴` : `${minimum}₿`;
+  const amount = currency === "kc" ? `${formatAmount(minimum, 1)} KC` : currency === "euro" ? `${minimum} 💶` : `${minimum}₿`;
   return `🔢 Введите сумму 1-го промо.
 
 💡 Мин. сумма: ${amount}`;

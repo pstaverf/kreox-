@@ -50,7 +50,7 @@ export function depositDate(date: Date): string {
   return `${part('day')} ${part('month')} ${part('year')} ${part('hour')}:${part('minute')}:${part('second')}`;
 }
 export function depositText(deposit: Deposit, now: Date): string {
-  return `💳 Ваш депозит:\n\n🆔 ID: ${deposit.depositId}\n💰 Вложено: ${bankMoney(deposit.amount, 'kc')} (сейчас: ${bankMoney(depositValue(deposit, now), 'kc')})\n⌛️ Создан: ${depositDate(deposit.createdAt)}\n⏳ Депозит открыт до ${depositDate(deposit.expiresAt)} (+${bankConfig.depositRates[deposit.days]}% за ${deposit.days} дня)`;
+  return `💳 Ваш депозит:\n\n🆔 ID: ${deposit.depositId}\n💰 Вложено: ${bankMoney(deposit.amount, 'kc')} (сейчас: ${bankMoney(depositValue(deposit, now), 'kc')})\n⌛️ Создан: ${depositDate(deposit.createdAt)}\n⏳ Депозит открыт до ${depositDate(deposit.expiresAt)} (+${bankConfig.depositRates[deposit.days]}% за ${deposit.days} ${deposit.days === 3 ? 'дня' : 'дней'})`;
 }
 export function depositEndText(deposit: Deposit, payout: number): string {
   return `🏧 Ваш депозит ID: ${deposit.depositId} был окончен.\n\nБаланс до: ${bankMoney(deposit.amount, 'kc')}\nБаланс после: ${bankMoney(payout, 'kc')}\nПроцент: ${bankConfig.depositRates[deposit.days]}%\n💰 Вы заработали ${bankMoney(payout - deposit.amount, 'kc')}`;

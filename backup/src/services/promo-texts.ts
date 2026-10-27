@@ -28,7 +28,7 @@ export const promoTexts = {
 
 export function promoAmountPrompt(currency: PromoCurrency): string {
   const minimum = game.promo.minimum[currency];
-  const amount = currency === 'kc' ? `${formatAmount(minimum, 1)} KC` : currency === 'euro' ? `${minimum} 💴` : `${minimum}₿`;
+  const amount = currency === 'kc' ? `${formatAmount(minimum, 1)} KC` : currency === 'euro' ? `${minimum} 💶` : `${minimum}₿`;
   return `🔢 Введите сумму 1-го промо.\n\n💡 Мин. сумма: ${amount}`;
 }
 

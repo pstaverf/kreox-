@@ -6,7 +6,7 @@ import { parseCommand } from '../src/handlers/commands.js';
 import { buildKeyboard } from '../src/handlers/keyboards.js';
 import { GameService } from '../src/services/game.js';
 import { bankDays, depositButtons, depositValue, earlyDepositValue, parseBankMoney, settleSavings, transferNet } from '../src/services/bank-rules.js';
-import { bankTexts, depositDate, depositEndText } from '../src/services/bank-texts.js';
+import { bankTexts, depositDate, depositEndText, depositText } from '../src/services/bank-texts.js';
 import { finishDeposit, settleBankDeposits } from '../src/services/bank-deposits.js';
 import type { BankCommand, DepositDays } from '../src/types/bank.js';
 import type { Command, GameInput, KeyboardSpec } from '../src/types/game.js';
@@ -390,4 +390,38 @@ test('chat transfers preserve an active DM wizard and UI money fields cannot be 
     { command: 'bank_deposit_confirm', token: '' }, { command: 'bank_deposit_term', days: 999, token: 'x' },
     { command: 'bank_deposit_amount', amount: -1 }, { command: 'bank_currency', currency: 'name' }
   ]) assert.equal(parseCommand(undefined, payload).kind, 'development');
+});
+
+
+test('savings money movements cannot earn interest for time before a top-up or reopen an old empty-account week', async () => {
+  const { db, send, text } = await fixture();
+  db.player().kc = 1_000_000;
+  db.player().savingsBalance = 0;
+  db.player().savingsSince = new Date(db.time.getTime() - 20 * bankConfig.weekMs);
+  await send({ kind: 'bank_deposit_money' });
+  await text('1000');
+  const firstDeposit = new Date(db.time);
+  assert.equal(db.player().savingsSince?.getTime(), firstDeposit.getTime());
+  db.time = new Date(firstDeposit.getTime() + bankConfig.weekMs - 1);
+  await send({ kind: 'bank_savings' });
+  assert.equal(db.player().savingsBalance, 100_000);
+  await send({ kind: 'bank_deposit_money' });
+  await text('1000');
+  const topUp = new Date(db.time);
+  assert.equal(db.player().savingsSince?.getTime(), topUp.getTime());
+  db.time = new Date(firstDeposit.getTime() + bankConfig.weekMs);
+  await send({ kind: 'bank_savings' });
+  assert.equal(db.player().savingsBalance, 200_000);
+  db.time = new Date(topUp.getTime() + bankConfig.weekMs);
+  await send({ kind: 'bank_savings' });
+  assert.equal(db.player().savingsBalance, 204_000);
+});
+
+test('deposit cards use correct Russian day forms for both supported terms', async () => {
+  const f = await fixture();
+  f.db.player().kc = 100_000;
+  for (const days of [3, 10] as const) {
+    const deposit = await f.create('100', days);
+    assert.ok(depositText(deposit, f.db.time).includes(days === 3 ? 'за 3 дня)' : 'за 10 дней)'));
+  }
 });

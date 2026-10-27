@@ -6,7 +6,7 @@ import { formatAmount, mention } from './texts.js';
 
 export const itemLabels = {
   use: '✅ Использовать', sell: '💰 Продать', gift: '🎁 Подарить', custom: '📦 Свое кол-во', open: 'Открыть',
-  confirm: '✅ Подтвердить', giftConfirm: '✅ Подтвредить'
+  confirm: '✅ Подтвердить', giftConfirm: '✅ Подтвердить'
 } as const;
 export const itemTexts = {
   done: 'Done.',

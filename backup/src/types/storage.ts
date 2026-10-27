@@ -28,7 +28,7 @@ export interface GameStore extends ItemStore, DonateStore, BankStore, CasinoStor
   saveMining(player: Player, farm: MiningFarm, bitcoinDelta: number): Promise<boolean>;
   ranking(metric: RankingMetric, player: Player): Promise<Ranking>;
   saveReferralUrl(vkId: number, url: string): Promise<void>;
-  rewardReferral(inviter: Player, newcomer: Player, text: string): Promise<void>;
+  rewardReferral(inviter: Player, newcomer: Player, text: string): Promise<boolean>;
 }
 
 export interface GameDatabase {
