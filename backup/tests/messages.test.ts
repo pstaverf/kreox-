@@ -772,12 +772,12 @@ test('concurrent chat registration still records a kicked community as inactive 
 });
 
 
-test('VK all-in receipt uses a decimal comma and a late repeat only wakes the single close notification', async context => {
+test('VK all-in receipt uses whole KC and a late repeat only wakes the single close notification', async context => {
   const vk = new VK({ token: 'test-token' });
   const db = new MemoryDatabase();
   const service = new GameService(db);
   await service.handle({ eventId: 'register', vkId: 1, command: { kind: 'profile' } }, async () => 'Игрок');
-  db.player().kc = 180_394_712;
+  db.player().kc = 180_394_700;
   const sent: Record<string, unknown>[] = [];
   const api = mock.method(vk.api, 'callWithRequest', async (request: APIRequest) => {
     assert.equal(request.method, 'messages.send');
@@ -793,7 +793,7 @@ test('VK all-in receipt uses a decimal comma and a late repeat only wakes the si
     assert.equal(db.state.notifications[0]?.text, roundClosed('roulette'));
   });
   await handle(message(vk, { peerId: 2_000_000_001, text: '16 все' }));
-  assert.equal(sent[0]?.message, '✅ [id1|Игрок] — 1.803.947,12 KC на 16');
+  assert.equal(sent[0]?.message, '✅ [id1|Игрок] — 1.803.947 KC на 16');
   assert.equal(db.player().kc, 0);
   const round = db.state.casino.get(roundKey(2_000_000_001, 'roulette'));
   assert.ok(round?.kind === 'round');

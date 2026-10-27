@@ -1,3 +1,4 @@
+import { maxWholeKc } from '../src/services/kc-money.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { privateCasinoConfig } from '../src/config/private-casino.js';
@@ -222,13 +223,13 @@ test('coin escrow, role earnings, decisions and payouts roll back with event rec
 test('coin limits reject unsafe liability before debit; full wallets retain an exact durable payout', async () => {
   const f = await fixture();
   await f.send({ kind: 'coin' });
-  f.db.player().kc = game.maxAmount;
+  f.db.player().kc = maxWholeKc;
   const balance = f.db.player().kc;
   assert.equal((await f.text('всё')).text, casinoTexts.limit);
   assert.equal(f.db.player().kc, balance);
   const stake = await f.text('10к');
   const win = await f.send(f.click(stake));
-  f.db.player().kc = game.maxAmount;
+  f.db.player().kc = maxWholeKc;
   const paid = await f.send(f.click(win, 'diamond', true));
   assert.match(paid.text, /Выплата сохранена/);
   assert.equal(f.state().stage, 'finished');
@@ -237,7 +238,7 @@ test('coin limits reject unsafe liability before debit; full wallets retain an e
   assert.ok(credits[0]?.kind === 'credit');
   assert.equal(credits[0].amount, 1_800_000);
   await settleCasino(f.db);
-  assert.equal(f.db.player().kc, game.maxAmount);
+  assert.equal(f.db.player().kc, maxWholeKc);
   f.db.player().kc = 0;
   f.db.time = new Date(f.db.time.getTime() + 60_000);
   await settleCasino(f.db);
@@ -387,4 +388,15 @@ test('the jackpot worker recovers a due round and wakes notifications only after
   context.after(stop);
   await committed.promise;
   await stop();
+});
+
+
+test('coin half stake rounds before checking the minimum and debits the same whole amount', async () => {
+  const f = await fixture();
+  await f.send({ kind: 'coin' });
+  f.db.player().kc = 199_900;
+  await f.text('пол');
+  assert.equal(f.state().stage, 'staked');
+  assert.equal(f.state().amount, 100_000);
+  assert.equal(f.db.player().kc, 99_900);
 });

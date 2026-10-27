@@ -223,16 +223,16 @@ test('dealer has one global cooldown; replaces role, pays the old holder once an
   assert.equal((await text('Купитькрупье')).text, donateTexts.self);
   assert.equal((await text('Купить крупье', 2, true)).text, '⚠️ Вы уже недавно становились крупье! Подождите еще 15 мин. 0 сек.');
   db.state.dealer.earnedKC = 12_345;
-  assert.equal((await text('Крупье', 2, true)).text, '🤑 Крупье: [id1|Игрок 1] (заработал: 123,45 KC)');
+  assert.equal((await text('Крупье', 2, true)).text, '🤑 Крупье: [id1|Игрок 1] (заработал: 123 KC)');
   restart();
   db.time = new Date(db.time.getTime() + donateConfig.dealerCooldownMs);
   const replies = await Promise.all(Array.from({ length: 8 }, () => text('купитькрупье', 2, true)));
   assert.equal(replies.filter(reply => reply.text.includes('вы успешно стали')).length, 1);
   assert.equal(db.player(2).euro, 1_500);
-  assert.equal(db.player().kc, 12_345);
+  assert.equal(db.player().kc, 12_300);
   assert.equal(db.state.dealer.holderId, 2);
   assert.equal(db.state.dealer.earnedKC, 0);
-  assert.equal(db.state.notifications[0]?.text, '[id2|Игрок 2] стал новым крупье. Вы успели заработать: 123,45 KC');
+  assert.equal(db.state.notifications[0]?.text, '[id2|Игрок 2] стал новым крупье. Вы успели заработать: 123 KC');
 });
 
 test('croupier item ID 3 bypasses global cooldown without consumption and cannot be opened as a case', async () => {

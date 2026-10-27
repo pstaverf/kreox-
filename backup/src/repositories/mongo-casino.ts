@@ -1,3 +1,4 @@
+import { roundKc } from '../services/kc-money.js';
 import { DuplicateWriteError } from '../types/storage.js';
 import type { ClientSession, Db, Filter } from 'mongodb';
 import { accountCapacity, game } from '../config/game.js';
@@ -59,6 +60,7 @@ export class MongoCasinoStore extends MongoBankStore {
     return await this.notices.findOne({ _id: id, state: { $in: ['sent', 'failed'] } }, { session: this.casinoSession, projection: { _id: 1 } }) !== null;
   }
   async casinoDealerIncome(vkId: number, amount: number): Promise<boolean> {
+    amount = roundKc(amount);
     if (!Number.isSafeInteger(amount) || amount < 0 || amount > game.maxAmount) throw new Error('Invalid casino income');
     const result = await this.casinoDealers.updateOne({ _id: 'casino', holderId: vkId, earnedKC: { $gte: 0, $lte: game.maxAmount - amount }, $expr: { $eq: ['$earnedKC', { $trunc: '$earnedKC' }] } }, { $inc: { earnedKC: amount } }, { session: this.casinoSession });
     return result.matchedCount === 1;

@@ -3,7 +3,7 @@ import type { Player } from '../types/game.js';
 import type { GiveawayReward, GiveawayState } from '../types/giveaway.js';
 import { assertNever } from '../utils/validation.js';
 import { promoScale } from './promo-rules.js';
-import { formatAmount, mention } from './texts.js';
+import { formatKc, formatAmount, mention } from './texts.js';
 
 export const giveawayTexts = {
   usage: '⚠️ Формат: /force Раздача монеты|евро|биткоин <игроков> <награда> или /force Раздача кейс реферальный|кейс ждун|крупьер <игроков> <количество 1–1000>. Награда указана для каждого игрока.',
@@ -17,6 +17,7 @@ export const giveawayTexts = {
   limit: '⚠️ Награда не получена: достигнут предел баланса или инвентаря. Активация не потрачена.'
 } as const;
 export function giveawayAmount(reward: Extract<GiveawayReward, { kind: 'currency' }>): string {
+  if (reward.currency === 'kc') return formatKc(reward.amount);
   const scale = BigInt(promoScale(reward.currency));
   const value = BigInt(reward.amount);
   const whole = formatAmount(Number(value / scale), 1);

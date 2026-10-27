@@ -1,8 +1,8 @@
+import { maxWholeKc } from '../../src/services/kc-money.js';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { test } from 'node:test';
 import { MongoClient } from 'mongodb';
-import { game } from '../../src/config/game.js';
 import { MongoGameDatabase } from '../../src/repositories/mongo.js';
 import { GameService } from '../../src/services/game.js';
 import { promoTexts } from '../../src/services/promo-texts.js';
@@ -97,7 +97,7 @@ test('MongoDB replica set: promo funding, global uniqueness, activation races an
     }));
     assert.deepEqual(await players.findOne({ _id: actor }), beforeRollback);
     assert.equal(await promos.findOne({ _id: 'Откатить' }), null);
-    await players.updateOne({ _id: actor }, { $set: { kc: game.maxAmount } });
+    await players.updateOne({ _id: actor }, { $set: { kc: maxWholeKc } });
     assert.equal(await database.transaction(async store => {
       const player = await store.player(actor);
       const promo = await store.promo('подарок');

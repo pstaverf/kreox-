@@ -1,3 +1,4 @@
+import { isWholeKc, roundKc } from '../src/services/kc-money.js';
 import { mailingConfig } from '../src/config/mailing.js';
 import type { MailingCampaign } from '../src/types/mailing.js';
 import { rouletteConfig } from '../src/config/roulette.js';
@@ -122,6 +123,7 @@ class MemoryStore implements GameStore {
     return notice !== undefined && (notice.state === 'sent' || notice.state === 'failed');
   }
   async casinoDealerIncome(vkId: number, amount: number): Promise<boolean> {
+    amount = roundKc(amount);
     if (this.state.dealer.holderId !== vkId || this.state.dealer.earnedKC > game.maxAmount - amount) return false;
     this.state.dealer.earnedKC += amount;
     return true;
@@ -133,7 +135,7 @@ class MemoryStore implements GameStore {
     else player.bankDraft = draft;
   }
   async saveSavings(player: Player, balance: number, since: Date, walletDelta: number): Promise<boolean> {
-    if (!safeBankMoney(balance) || !Number.isSafeInteger(walletDelta) || !Number.isFinite(since.getTime())) throw new Error('Invalid savings change');
+    if (!isWholeKc(balance) || !Number.isSafeInteger(walletDelta) || Math.abs(walletDelta) % game.kcScale !== 0 || !Number.isFinite(since.getTime())) throw new Error('Invalid savings change');
     const wallet = player.kc + walletDelta;
     if (!safeBankMoney(wallet)) return false;
     player.kc = wallet;
@@ -142,7 +144,9 @@ class MemoryStore implements GameStore {
     return true;
   }
   async transferMoney(sender: Player, receiver: Player, currency: BalanceCurrency, gross: number, net: number): Promise<boolean> {
-    if (!isBalanceCurrency(currency) || sender._id === receiver._id || net !== transferNet(gross)) throw new Error('Invalid transfer');
+    if (currency === 'kc' && gross % game.kcScale !== 0) throw new Error('Fractional KC transfer');
+    if (currency === 'kc' && (!isWholeKc(sender.kc) || !isWholeKc(receiver.kc))) return false;
+    if (!isBalanceCurrency(currency) || sender._id === receiver._id || net !== transferNet(gross, currency)) throw new Error('Invalid transfer');
     if (!safeBankMoney(sender[currency]) || !safeBankMoney(receiver[currency]) || sender[currency] < gross || receiver[currency] > game.maxAmount - net) return false;
     sender[currency] -= gross;
     receiver[currency] += net;
@@ -167,6 +171,7 @@ class MemoryStore implements GameStore {
     return [...this.state.deposits.values()].filter(deposit => deposit.state === 'active' && deposit.nextAttemptAt <= now && deposit.expiresAt <= now).sort((a, b) => a.nextAttemptAt.getTime() - b.nextAttemptAt.getTime() || a._id.localeCompare(b._id))[0] ?? null;
   }
   async createDeposit(player: Player, amount: number, days: DepositDays, now: Date): Promise<Deposit | 'funds' | 'limit'> {
+    amount = roundKc(amount);
     if (!safeBankMoney(amount) || amount <= 0 || amount > bankConfig.maxDeposit || !isDepositDays(days)) throw new Error('Invalid deposit creation');
     if ((await this.deposits(player._id)).length >= bankConfig.maxDeposits) return 'limit';
     const id = player.nextDepositId ?? 1;
@@ -237,14 +242,15 @@ class MemoryStore implements GameStore {
     return this.state.items.some(item => item.vkId === vkId && item.kind === 'croupier');
   }
   async buyDealer(player: Player, previous: Player | null, state: DealerState, now: Date): Promise<DealerPurchase> {
+    const income = roundKc(state.earnedKC);
     if (state.holderId === player._id) return 'self';
     if (state.holderId === null && previous !== null) return 'limit';
     if (!validDonateMoney(player.euro) || !validDonateMoney(state.earnedKC) || (previous !== null && !validDonateMoney(previous.kc))) return 'limit';
     if (state.nextChangeAt > now && !await this.hasCroupier(player._id)) return 'cooldown';
-    if (state.holderId !== null && (previous === null || previous._id !== state.holderId || previous.kc > game.maxAmount - state.earnedKC)) return 'limit';
+    if (state.holderId !== null && (previous === null || previous._id !== state.holderId || previous.kc > game.maxAmount - income)) return 'limit';
     if (player.euro < donateConfig.dealerCost) return 'funds';
     player.euro -= donateConfig.dealerCost;
-    if (previous !== null) previous.kc += state.earnedKC;
+    if (previous !== null) previous.kc += income;
     this.state.dealer = { _id: 'casino', holderId: player._id, earnedKC: 0, nextChangeAt: new Date(now.getTime() + donateConfig.dealerCooldownMs) };
     delete player.donateDraft;
     return 'ok';
@@ -360,6 +366,7 @@ class MemoryStore implements GameStore {
     return this.state.offers.get(id) ?? null;
   }
   async purchaseOffer(offer: ItemOffer, buyer: Player, seller: Player, now: Date): Promise<PurchaseResult> {
+    const price = roundKc(offer.price);
     validateOffer(offer);
     if (offer.buyerId !== buyer._id || offer.sellerId !== seller._id || offer.state !== 'pending') {
       return 'invalid';
@@ -373,18 +380,19 @@ class MemoryStore implements GameStore {
     if (units.length !== offer.quantity) {
       return 'items';
     }
-    if (seller.kc < 0 || seller.kc > game.maxAmount - offer.price || buyer.nextItemId > game.maxAmount - offer.quantity) {
+    if (seller.kc < 0 || seller.kc > game.maxAmount - price || buyer.nextItemId > game.maxAmount - offer.quantity) {
       return 'limit';
     }
-    if (buyer.kc < offer.price) {
+    if (buyer.kc < price) {
       return 'funds';
     }
     if (!await this.grantItems(buyer._id, offer.itemKind, offer.quantity)) {
       return 'limit';
     }
-    buyer.kc -= offer.price;
-    seller.kc += offer.price;
+    buyer.kc -= price;
+    seller.kc += price;
     offer.state = 'completed';
+    offer.price = price;
     this.deleteUnits(units);
     return 'ok';
   }
@@ -498,10 +506,12 @@ class MemoryStore implements GameStore {
   }
 
   async updateBalance(vkId: number, currency: BalanceCurrency, operation: BalanceOperation, amount: number): Promise<boolean> {
+    if (currency === 'kc') amount = roundKc(amount);
     if (!isBalanceCurrency(currency) || !validBalanceChange(operation, amount)) throw new Error('Invalid balance change');
     const player = this.state.players.get(vkId);
     if (player === undefined) return false;
     const balance = player[currency];
+    if (operation !== 'set' && currency === 'kc' && !isWholeKc(balance)) return false;
     if (operation !== 'set' && (!Number.isSafeInteger(balance) || balance < 0 || balance > game.maxAmount
       || (operation === 'add' && balance > game.maxAmount - amount) || (operation === 'take' && balance < amount))) return false;
     player[currency] = operation === 'set' ? amount : balance + (operation === 'take' ? -amount : amount);

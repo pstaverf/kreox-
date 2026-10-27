@@ -1,3 +1,4 @@
+import { maxWholeKc } from '../../src/services/kc-money.js';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { test } from 'node:test';
@@ -51,11 +52,11 @@ test('MongoDB replica set: admin balance commands are atomic, bounded and durabl
       throw new Error('Rollback after balance write');
     }));
     assert.deepEqual(await players.findOne({ _id: 1 }), before);
-    await players.updateOne({ _id: 1 }, { $set: { kc: game.maxAmount - 100 } });
+    await players.updateOne({ _id: 1 }, { $set: { kc: maxWholeKc - 100 } });
     const last = await Promise.all(Array.from({ length: 8 }, () => send('!add @id1 1')));
     assert.equal(last.filter(value => value.text === 'Done.').length, 1);
     assert.equal(last.filter(value => value.text === texts.adminBalanceLimit).length, 7);
-    assert.equal((await players.findOne({ _id: 1 }))?.kc, game.maxAmount);
+    assert.equal((await players.findOne({ _id: 1 }))?.kc, maxWholeKc);
     assert.equal((await send('!set @id1 0')).text, 'Done.');
     assert.equal((await players.findOne({ _id: 1 }))?.kc, 0);
     assert.equal((await send('!set @id999 100')).text, texts.adminBalanceMissing);

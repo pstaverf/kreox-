@@ -1,3 +1,4 @@
+import { roundKc } from '../../src/services/kc-money.js';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { test } from 'node:test';
@@ -43,9 +44,9 @@ test('MongoDB replica set: mining, referral rewards, rankings, migration and not
       assert.ok(player.mining);
       return player.mining;
     };
-    await context.test('legacy defaults are initialized without changing balances or IDs', async () => {
+    await context.test('legacy defaults and whole KC are initialized without changing IDs', async () => {
       const migrated = await getPlayer(90);
-      assert.equal(migrated.kc, legacy.kc);
+      assert.equal(migrated.kc, roundKc(legacy.kc));
       assert.equal(migrated.accountId, 0);
       assert.equal(migrated.mining?.rate, game.mining.initialRate);
       assert.equal(migrated.referrals, 0);

@@ -1,8 +1,7 @@
 import { rouletteHistory, rouletteOutcome, rouletteTargetText } from './roulette-texts.js';
-import { game } from '../config/game.js';
 import type { CasinoBet, CasinoMode, CasinoRound, DirectorState } from '../types/casino.js';
 import type { Player } from '../types/game.js';
-import { formatAmount, mention } from './texts.js';
+import { formatKc, mention } from './texts.js';
 
 export const casinoTexts = {
   state: 'Государство', directorBid: 'Сделать ставку', directorPrompt: '💰 Введите, сколько вы хотите поставить на выборах мэра.',
@@ -18,7 +17,7 @@ export const casinoTexts = {
   winner: '👑 Поздравляем с победой на выборах! В течение этого дня вы будете получать 1% со всех ставок в играх казино в беседах.',
   creditWaiting: '⏳ Выплата сохранена. Достигнут предел баланса; выплата будет повторена автоматически.'
 } as const;
-export function kc(value: number): string { return `${formatAmount(value, game.kcScale)} KC`; }
+export function kc(value: number): string { return `${formatKc(value)} KC`; }
 export function modeName(mode: CasinoMode): string { return mode === 'crash' ? 'Краш' : mode === 'roulette' ? 'Рулетка' : 'Дрим'; }
 export function coefficient(value: number): string { return (value / 100).toFixed(2).replace(/0+$/, '').replace(/\.$/, ''); }
 export function chance(amount: number, total: number): string {

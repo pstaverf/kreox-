@@ -255,9 +255,10 @@ test('payment, inventory grant, receipt and remaining count all roll back on a f
 
 test('currency reward formatting and arithmetic preserve every stored atomic unit near the safe limit', async () => {
   const f = await fixture();
-  await f.text('/force Раздача монеты 1 0,01');
-  assert.match((await f.click()).text, /💰 0,01 KC/u);
-  assert.equal(f.db.player().kc, 1);
+  assert.equal((await f.text('/force Раздача монеты 1 0,01')).text, giveawayTexts.usage);
+  await f.text('/force Раздача монеты 1 0,5');
+  assert.match((await f.click()).text, /💰 1 KC/u);
+  assert.equal(f.db.player().kc, 100);
   await f.text('/force Раздача биткоин 1 10,001');
   assert.match((await f.click()).text, /₿ 10,001 биткоинов/u);
   assert.equal(f.db.player().bitcoin, 1_000_100_000);

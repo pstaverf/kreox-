@@ -1,3 +1,4 @@
+import { roundKc } from './kc-money.js';
 import { bankConfig } from '../config/bank.js';
 import { itemConfig } from '../config/items.js';
 import { game } from '../config/game.js';
@@ -80,6 +81,18 @@ export function formatAmount(amount: number, scale: number, minimumDecimals = 0)
   return fraction.length > 0 ? `${whole},${fraction}` : whole;
 }
 
+export function formatKc(amount: number): string { return formatAmount(roundKc(amount), game.kcScale); }
+
+export function wholeKcNotice(text: string, previous: number): string {
+  const old = formatAmount(previous, game.kcScale);
+  const value = `${formatKc(previous)} KC`;
+  for (const amount of new Set([old, old.replace(',', '.')])) {
+    const escaped = amount.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    text = text.replace(new RegExp(`(?<![\\d.,])${escaped} KC`, 'gu'), value);
+  }
+  return text;
+}
+
 export function mention(player: Pick<Player, '_id' | 'name'>): string {
   return `[id${player._id}|${player.name}]`;
 }
@@ -88,7 +101,7 @@ export function profileText(player: Player, now?: Date): string {
   const percentage = game.totalTasks > 0 ? (player.completedTasks * 100 / game.totalTasks).toFixed(2) : '0.00';
   return [
     `👤Ник: ${mention(player)}`,
-    `💸 Баланс: ${formatAmount(player.kc, game.kcScale)} KC`,
+    `💸 Баланс: ${formatKc(player.kc)} KC`,
     `💶 Евро: ${formatAmount(player.euro, game.euroScale)}`,
     `💠 Биткоин: ${formatMining(player.bitcoin)}₿`,
     `👍 Репутация: ${player.reputation}`,
@@ -100,7 +113,7 @@ export function profileText(player: Player, now?: Date): string {
 
 export function bonusText(day: number, reward: Reward): string {
   return `🎁 Бонус ${day}-го дня:\n\n` + [
-    `💰 ${formatAmount(reward.kc, game.kcScale)} KC`,
+    `💰 ${formatKc(reward.kc)} KC`,
     `💠 ${formatAmount(reward.bitcoin, game.bitcoinScale, 1)}₿`,
     ...(reward.case ? [texts.caseName] : [])
   ].join('\n');
@@ -162,7 +175,7 @@ export function referralText(url: string, count: number): string {
 
 export function referralRewardText(newcomer: Player): string {
   return `👬 ${mention(newcomer)} перешел по вашей реферальной ссылке.\n\n✅ Вы получили:\n\n`
-    + `💰 ${formatAmount(game.referralRewardKC, game.kcScale)} KC\n${texts.referralCaseName} (1 шт.)`;
+    + `💰 ${formatKc(game.referralRewardKC)} KC\n${texts.referralCaseName} (1 шт.)`;
 }
 
 const rankingTitles = {
@@ -182,7 +195,7 @@ export function rankEmoji(place: number): string {
 function rankingValue(score: number, metric: RankingMetric): string {
   switch (metric) {
     case 'kc':
-    case 'stolenKC': return `${formatAmount(score, game.kcScale)} KC`;
+    case 'stolenKC': return `${formatKc(score)} KC`;
     case 'bitcoin': return `${formatMining(score)}₿`;
     case 'mining': return `${formatMining(score)}₿/час`;
     case 'euro': return `${formatAmount(score, game.euroScale)} 💶`;

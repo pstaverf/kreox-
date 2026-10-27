@@ -1,3 +1,4 @@
+import { roundKcRatio } from '../src/services/kc-money.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { casinoConfig } from '../src/config/casino.js';
@@ -300,7 +301,7 @@ test('midnight MSK elections choose weighted winner, refund half to losers, pay 
   assert.equal(f.root().total, 0);
   assert.equal(f.db.player(1).kc, 99_900_000);
   assert.equal(f.db.player(2).kc, 99_850_000);
-  assert.equal(f.db.player(3).kc, 100_012_345);
+  assert.equal(f.db.player(3).kc, 100_012_300);
   assert.equal(f.db.state.notifications.filter(notice => notice.text.includes('Всего ставок было')).length, 2);
   assert.equal(f.db.state.notifications.filter(notice => notice.text === casinoTexts.winner).length, 1);
   const refund = f.db.state.notifications.find(notice => notice.text.includes('вы проиграли'));
@@ -375,7 +376,7 @@ test('election closing and creation of old director credit are completely rolled
   assert.deepEqual(f.db.state, before);
   await f.drain();
   assert.equal(f.root().holderId, 1);
-  assert.equal(f.db.player(3).kc, 100_012_345);
+  assert.equal(f.db.player(3).kc, 100_012_300);
 });
 
 test('oversized maximum payouts are rejected before spending KC or opening rounds', async () => {
@@ -398,7 +399,7 @@ test('paying a casino credit and notifying the recipient are atomic and retry wi
   }));
   assert.deepEqual(f.db.state, before);
   await f.db.transaction(store => payCasinoCredit(store, f.db.time));
-  assert.equal(f.db.player().kc, 100_012_345);
+  assert.equal(f.db.player().kc, 100_012_300);
   assert.equal(f.db.state.notifications.filter(notice => notice.text === 'Возврат').length, 1);
   assert.equal(await f.db.transaction(store => payCasinoCredit(store, f.db.time)), false);
 });
@@ -426,7 +427,7 @@ test('casino close notices and winning lines have exactly the requested compact 
   assert.equal(winningBet({ ...bet, target: 2 }, 'dream', 300_000), '✅ [id1|Игрок] — 1.000 KC на 2\n— Приз: 3.000 KC');
 });
 
-test('relative casino stakes parse case-insensitively and half rounds down to the smallest KC unit', () => {
+test('relative casino stakes parse case-insensitively and half rounds to a whole KC', () => {
   for (const alias of ['пол', 'ПОЛ']) {
     assert.equal(parseCasinoStake(alias), 'half');
     for (const command of ['краш 1.7', 'дрим 20']) {
@@ -444,8 +445,8 @@ test('relative casino stakes parse case-insensitively and half rounds down to th
     assert.deepEqual(parsed.lines, [{ mode: 'crash', target: 170, amount: 'all' }, { mode: 'dream', target: 20, amount: 'all' }]);
   }
   assert.equal(resolveCasinoStake('half', 600_001), 300_000);
-  assert.equal(resolveCasinoStake('all', 600_001), 600_001);
-  assert.equal(resolveCasinoStake('half', game.maxAmount), 4_503_599_627_370_495);
+  assert.equal(resolveCasinoStake('all', 600_001), 600_000);
+  assert.equal(resolveCasinoStake('half', game.maxAmount), roundKcRatio(BigInt(game.maxAmount), 2n));
   assert.equal(resolveCasinoStake('all', 0), 0);
   assert.equal(parseCasinoStake('половина'), null);
   assert.throws(() => resolveCasinoStake('half', -1));
@@ -453,7 +454,7 @@ test('relative casino stakes parse case-insensitively and half rounds down to th
 
 test('mixed relative bets read each remaining wallet inside the transaction even with detached Mongo-style player reads', async () => {
   const f = await fixture();
-  f.db.player().kc = 600_001;
+  f.db.player().kc = 600_100;
   const service = new GameService({
     hasPlayer: id => f.db.hasPlayer(id),
     transaction: action => f.db.transaction(async store => {
@@ -466,9 +467,9 @@ test('mixed relative bets read each remaining wallet inside the transaction even
   const reply = await service.handle(input, async () => 'Игрок');
   assert.equal(f.db.player().kc, 0);
   const bets = [...f.db.state.casino.values()].filter(record => record.kind === 'bet');
-  assert.deepEqual(bets.map(bet => bet.amount), [300_000, 150_000, 150_001]);
+  assert.deepEqual(bets.map(bet => bet.amount), [300_100, 150_000, 150_000]);
   assert.equal(reply.text.split('\n').filter(line => line.startsWith('✅')).length, 3);
-  assert.match(reply.text, /1\.500,01 KC/);
+  assert.match(reply.text, /1\.500 KC/);
   assert.match(reply.text.split('\n').at(-1) ?? '', /Минимальная ставка/);
   const repeated = await service.handle(input, async () => 'Игрок');
   assert.equal(repeated.randomId, reply.randomId);
@@ -477,10 +478,10 @@ test('mixed relative bets read each remaining wallet inside the transaction even
 
 test('relative amounts retain minimum and overflow checks without spending funds on rejected lines', async () => {
   const f = await fixture();
-  f.db.player().kc = 199_999;
+  f.db.player().kc = 199_800;
   assert.match((await f.chat('краш 1.7 пол')).text, /Минимальная ставка/);
-  assert.equal(f.db.player().kc, 199_999);
-  assert.match((await f.chat('дрим 20 все')).text, /1\.999,99 KC/);
+  assert.equal(f.db.player().kc, 199_800);
+  assert.match((await f.chat('дрим 20 все')).text, /1\.998 KC/);
   assert.equal(f.db.player().kc, 0);
   assert.match((await f.chat('краш 1.7 вб')).text, /Минимальная ставка/);
   f.db.player(2).kc = game.maxAmount;

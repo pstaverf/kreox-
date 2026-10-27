@@ -2,7 +2,7 @@ import { donateConfig } from '../config/donate.js';
 import { game } from '../config/game.js';
 import type { DealerState } from '../types/donate.js';
 import type { Player } from '../types/game.js';
-import { formatAmount, mention } from './texts.js';
+import { formatKc, formatAmount, mention } from './texts.js';
 
 export const donateLabels = { nickname: '👤 Ник', thief: '🥷 Вор', dealer: '🤵‍♂️ Крупье', confirm: '✅ Подтвердить', cancel: '💢 Отмена' } as const;
 export const donateTexts = {
@@ -33,5 +33,5 @@ export function dealerMention(player: Player | null): string {
   return player === null ? 'Государство' : mention(player);
 }
 export function dealerPrompt(player: Player | null, state: DealerState): string {
-  return `🤴 Крупье получает 1% от всех проигрышей в казино.\n\n💰 Крупье: ${dealerMention(player)} (заработал уже ${formatAmount(state.earnedKC, game.kcScale)} KC)\n\nСтать крупье можно за ${formatAmount(donateConfig.dealerCost, game.euroScale)} 💶.`;
+  return `🤴 Крупье получает 1% от всех проигрышей в казино.\n\n💰 Крупье: ${dealerMention(player)} (заработал уже ${formatKc(state.earnedKC)} KC)\n\nСтать крупье можно за ${formatAmount(donateConfig.dealerCost, game.euroScale)} 💶.`;
 }

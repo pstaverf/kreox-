@@ -6,7 +6,7 @@ import type { GameStore } from '../types/storage.js';
 import { assertNever } from '../utils/validation.js';
 import { cooldownParts, validNickname } from './donate-rules.js';
 import { dealerMention, dealerPrompt, donateTexts, nicknamePrompt, subscriptionText, thiefPrompt } from './donate-texts.js';
-import { formatAmount, mention } from './texts.js';
+import { formatKc, mention } from './texts.js';
 
 const main = (text: string): Reply => ({ text, keyboard: { kind: 'main' } });
 const back = (text: string): Reply => ({ text, keyboard: { kind: 'donate_back' } });
@@ -40,7 +40,7 @@ async function buyDealer(store: GameStore, player: Player, now: Date, eventId: s
     case 'limit': return main(donateTexts.limit);
     case 'ok':
       if (previous !== null) await store.enqueueItemNotification(`dealer:${eventId}`, previous._id,
-        `${mention(player)} стал новым крупье. Вы успели заработать: ${formatAmount(state.earnedKC, game.kcScale)} KC`, { kind: 'none' });
+        `${mention(player)} стал новым крупье. Вы успели заработать: ${formatKc(state.earnedKC)} KC`, { kind: 'none' });
       await store.setDonateDraft(player._id, null);
       return main(`${mention(player)}, вы успешно стали новым крупье.`);
     default: return assertNever(result);
@@ -94,7 +94,7 @@ export async function donateAction(store: GameStore, player: Player, command: Do
     case 'dealer_buy': return buyDealer(store, player, now, input.eventId);
     case 'dealer_view': {
       const state = await store.dealer();
-      return { text: `🤑 Крупье: ${dealerMention(state.holderId === null ? null : await store.player(state.holderId))} (заработал: ${formatAmount(state.earnedKC, game.kcScale)} KC)`, keyboard: { kind: 'none' } };
+      return { text: `🤑 Крупье: ${dealerMention(state.holderId === null ? null : await store.player(state.holderId))} (заработал: ${formatKc(state.earnedKC)} KC)`, keyboard: { kind: 'none' } };
     }
     case 'theft': {
       if (!input.isChat) throw new Error('Theft is chat-only');
@@ -107,8 +107,8 @@ export async function donateAction(store: GameStore, player: Player, command: Do
       if (victim === null || !Number.isSafeInteger(victim.kc) || victim.kc < 0 || victim.kc > game.maxAmount) throw new Error('Invalid theft target');
       const amount = random('amount', Math.floor(victim.kc / game.kcScale) + 1) * game.kcScale;
       if (!await store.steal(player, victim, amount, now)) return main(donateTexts.limit);
-      await store.enqueueItemNotification(`theft:${input.eventId}`, victim._id, `${mention(player)} украл у тебя ${formatAmount(amount, game.kcScale)} KC`, { kind: 'none' });
-      return main(`${mention(player)} украл у игрока ${mention(victim)} ${formatAmount(amount, game.kcScale)} KC.`);
+      await store.enqueueItemNotification(`theft:${input.eventId}`, victim._id, `${mention(player)} украл у тебя ${formatKc(amount)} KC`, { kind: 'none' });
+      return main(`${mention(player)} украл у игрока ${mention(victim)} ${formatKc(amount)} KC.`);
     }
     default: return assertNever(command);
   }

@@ -1,3 +1,4 @@
+import { roundKc } from '../services/kc-money.js';
 import type { ClientSession, Db } from 'mongodb';
 import { donateConfig } from '../config/donate.js';
 import { game } from '../config/game.js';
@@ -72,15 +73,16 @@ export class MongoDonateStore extends MongoItemStore {
     return await this.donateItems.findOne({ vkId, kind: 'croupier' }, { session: this.donateSession, projection: { _id: 1 } }) !== null;
   }
   async buyDealer(player: Player, previous: Player | null, state: DealerState, now: Date): Promise<DealerPurchase> {
+    const income = roundKc(state.earnedKC);
     if (state.holderId === player._id) return 'self';
     if (state.holderId === null && previous !== null) return 'limit';
     if (!validDonateMoney(player.euro) || !validDonateMoney(state.earnedKC) || (previous !== null && !validDonateMoney(previous.kc))) return 'limit';
     if (state.nextChangeAt > now && !await this.hasCroupier(player._id)) return 'cooldown';
-    if (state.holderId !== null && (previous === null || previous._id !== state.holderId || previous.kc > game.maxAmount - state.earnedKC)) return 'limit';
+    if (state.holderId !== null && (previous === null || previous._id !== state.holderId || previous.kc > game.maxAmount - income)) return 'limit';
     const debit = await this.donatePlayers.updateOne({ _id: player._id, euro: { $gte: donateConfig.dealerCost, $lte: game.maxAmount }, $expr: { $eq: ['$euro', { $trunc: '$euro' }] } }, { $inc: { euro: -donateConfig.dealerCost }, $unset: { donateDraft: '' } }, { session: this.donateSession });
     if (debit.matchedCount !== 1) return 'funds';
     if (previous !== null) {
-      const credit = await this.donatePlayers.updateOne({ _id: previous._id, kc: { $gte: 0, $lte: game.maxAmount - state.earnedKC }, $expr: { $eq: ['$kc', { $trunc: '$kc' }] } }, { $inc: { kc: state.earnedKC } }, { session: this.donateSession });
+      const credit = await this.donatePlayers.updateOne({ _id: previous._id, kc: { $gte: 0, $lte: game.maxAmount - income }, $expr: { $eq: ['$kc', { $trunc: '$kc' }] } }, { $inc: { kc: income } }, { session: this.donateSession });
       if (credit.matchedCount !== 1) throw new Error('Dealer payout conflict');
     }
     const changed = await this.dealers.updateOne({ _id: 'casino', holderId: state.holderId, earnedKC: state.earnedKC, nextChangeAt: state.nextChangeAt }, { $set: {

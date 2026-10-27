@@ -1,6 +1,6 @@
 import { game } from '../config/game.js';
 import type { Promo, PromoCurrency } from '../types/promo.js';
-import { formatAmount } from './texts.js';
+import { formatKc, formatAmount } from './texts.js';
 import { promoScale } from './promo-rules.js';
 
 export const promoTexts = {
@@ -35,7 +35,7 @@ export function promoAmountPrompt(currency: PromoCurrency): string {
 export function promoRewardText(currency: PromoCurrency, amount: number): string {
   const value = formatAmount(amount, promoScale(currency));
   switch (currency) {
-    case 'kc': return `💰 ${value} KC`;
+    case 'kc': return `💰 ${formatKc(amount)} KC`;
     case 'euro': return `💶 ${value}`;
     case 'bitcoin': return `💠 ${value}₿`;
   }

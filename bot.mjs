@@ -15,9 +15,6 @@ var diceConfig = {
   minimum: { kc: 1e3, euro: 10, bitcoin: 10 }
 };
 
-// src/services/dice.ts
-import { createHash } from "node:crypto";
-
 // src/config/game.ts
 var game = {
   maxRandomId: 2147483647,
@@ -89,23 +86,20 @@ var game = {
 };
 var accountCapacity = game.sequentialAccounts + game.randomAccountMax - game.randomAccountMin + 1;
 
-// src/types/storage.ts
-var DuplicateWriteError = class extends Error {
-  constructor() {
-    super("Concurrent unique write");
-    this.name = "DuplicateWriteError";
-  }
-};
-
-// src/utils/validation.ts
-function isRecord(value) {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+// src/services/kc-money.ts
+var maxWholeKc = Number(BigInt(game.maxAmount) / BigInt(game.kcScale) * BigInt(game.kcScale));
+function roundKcRatio(numerator, denominator = 1n) {
+  if (numerator < 0n || denominator <= 0n) throw new Error("Invalid KC calculation");
+  const unit = denominator * BigInt(game.kcScale);
+  const rounded = (numerator * 2n + unit) / (unit * 2n) * BigInt(game.kcScale);
+  return Number(rounded > BigInt(maxWholeKc) ? BigInt(maxWholeKc) : rounded);
 }
-function isPositiveId(value) {
-  return Number.isSafeInteger(value) && value > 0;
+function roundKc(amount) {
+  if (!Number.isSafeInteger(amount) || amount < 0 || amount > game.maxAmount) throw new Error("Invalid KC amount");
+  return roundKcRatio(BigInt(amount));
 }
-function assertNever(value) {
-  throw new Error(`Unexpected variant: ${String(value)}`);
+function isWholeKc(amount) {
+  return Number.isSafeInteger(amount) && amount >= 0 && amount <= maxWholeKc && amount % game.kcScale === 0;
 }
 
 // src/config/bank.ts
@@ -129,6 +123,256 @@ var bankConfig = {
   timeZone: "Europe/Moscow"
 };
 
+// src/config/items.ts
+var itemConfig = {
+  maxBatch: 1e3,
+  offerDurationMs: 10 * 60 * 1e3,
+  catalog: [
+    { id: 1, kind: "zhdun_case", name: "💼 Кейс «Ждун»" },
+    { id: 2, kind: "referral_case", name: "👬 Кейс «Реферальный»" },
+    { id: 3, kind: "croupier", name: "🤴 Крупьер" }
+  ],
+  drops: [
+    { currency: "kc", amount: 15e4, weight: 30 },
+    { currency: "kc", amount: 25e4, weight: 30 },
+    { currency: "kc", amount: 15e5, weight: 30 },
+    { currency: "euro", amount: 100, weight: 5 },
+    { currency: "euro", amount: 200, weight: 3 },
+    { currency: "euro", amount: 500, weight: 2 }
+  ]
+};
+
+// src/services/texts.ts
+var labels = {
+  createPromo: "📝 Создать промо",
+  activatePromo: "🔑 Активировать",
+  myPromos: "📖 Мои промо",
+  confirmPromo: "✅ Подтвердить",
+  battlePass: "🎟️ BattlePass",
+  profile: "👨‍🦰 Профиль",
+  bonus: "🎁 Бонус",
+  rating: "🏆 Рейтинг",
+  promo: "🏷 Промо",
+  city: "🏙️ Город",
+  mining: "⛏️ Майнинг",
+  donate: "🍩 Донат",
+  boss: "🎩 Босс",
+  tasks: "📍 Задания",
+  help: "🆘 Помощь",
+  inventory: "🎒 Инвентарь",
+  menu: "📕 Меню",
+  back: "↩️ Назад",
+  previous: "◀️",
+  next: "▶️",
+  referral: "👤 Реф",
+  startMining: "💡 Включить",
+  withdrawMining: "💠 Снять",
+  upgradeMining: "⏫ Улучшить",
+  confirm: "Подтвердить",
+  upgradeBack: "Назад",
+  kc: "💰 KC",
+  bitcoin: "💠 Биткоин",
+  euro: "💶 Евро",
+  referrals: "👤 Рефералы",
+  reputation: "👍 Репутация",
+  thieves: "🥷 Воры"
+};
+var texts = {
+  adminDone: "Done.",
+  adminBalanceUsage: "⚠️ Формат: !set [@id123] 100 или !add [@id123] 100k. Можно ответом на сообщение. Сумма — целое неотрицательное число KC; к = тысяча, кк = миллион.",
+  adminWalletUsage: "⚠️ Формат: !setdonut / !adddonut / !takedonut <VK ID> <сумма евро> или !setbit / !addbit / !takebit <VK ID> <сумма BTC>. Вместо ID можно ответить на сообщение. Евро — до 2 знаков после запятой, BTC — до 3.",
+  adminWalletLimit: "⚠️ Недостаточно средств или достигнут предел баланса. Баланс не изменён.",
+  adminBalanceTarget: "⚠️ Укажите игрока: ответом на его сообщение или через @id123.",
+  adminBalanceMissing: "⚠️ Игрок ещё не зарегистрирован в боте.",
+  adminBalanceLimit: "⚠️ Достигнут предел баланса. Баланс не изменён.",
+  keyboardsDeleted: "Done.",
+  welcome: "👋🏻 Добро пожаловать в Kreox Bot!\n\nТут ты сможешь развиваться и влетать в топы по всему боту.\n\nТебя ждет интересный и увлекательный функционал.\n\nУдачи.",
+  development: "⚙️ В разработке…",
+  emptyInventory: "Ваш инвентарь пуст.",
+  inventoryTitle: "🎒 Ваш инвентарь:",
+  caseName: "💼 Кейс «Ждун»",
+  referralCaseName: "👬 Кейс «Реферальный»",
+  miningStarted: "✅ Ферма запущена на 6 часов.",
+  miningAlreadyStarted: "Ферма уже включена!",
+  miningEmpty: "⚠️ Баланс Вашей фермы пуст.",
+  miningInsufficient: "⚠️ Недостаточно биткоинов для улучшения фермы.",
+  miningStaleOffer: "⚠️ Это улучшение уже применено или устарело. Нажмите «⏫ Улучшить» ещё раз.",
+  miningLimit: "⚠️ Достигнут предел баланса или уровня фермы.",
+  inventoryTooLarge: "⚠️ Инвентарь не помещается в одно сообщение. Откройте его в личных сообщениях бота.",
+  error: "⚠️ Не удалось выполнить действие. Попробуйте ещё раз.",
+  balanceLimit: "⚠️ Бонус не получен: достигнут предел баланса или инвентаря.",
+  registrationLimit: "⚠️ Сейчас регистрация недоступна. Попробуйте позже."
+};
+function formatAmount(amount, scale, minimumDecimals = 0) {
+  if (!Number.isSafeInteger(amount) || amount < 0 || !Number.isSafeInteger(scale) || scale < 1) {
+    throw new Error("Invalid amount");
+  }
+  const digits = String(scale).length - 1;
+  if (scale !== 10 ** digits || !Number.isSafeInteger(minimumDecimals) || minimumDecimals < 0 || minimumDecimals > digits) {
+    throw new Error("Invalid amount scale");
+  }
+  const value = BigInt(amount);
+  const divisor = BigInt(scale);
+  const whole = String(value / divisor).replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  const fraction = String(value % divisor).padStart(digits, "0").replace(/0+$/, "").padEnd(minimumDecimals, "0");
+  return fraction.length > 0 ? `${whole},${fraction}` : whole;
+}
+function formatKc(amount) {
+  return formatAmount(roundKc(amount), game.kcScale);
+}
+function wholeKcNotice(text, previous) {
+  const old = formatAmount(previous, game.kcScale);
+  const value = `${formatKc(previous)} KC`;
+  for (const amount of /* @__PURE__ */ new Set([old, old.replace(",", ".")])) {
+    const escaped = amount.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    text = text.replace(new RegExp(`(?<![\\d.,])${escaped} KC`, "gu"), value);
+  }
+  return text;
+}
+function mention(player) {
+  return `[id${player._id}|${player.name}]`;
+}
+function profileText(player, now) {
+  const percentage = game.totalTasks > 0 ? (player.completedTasks * 100 / game.totalTasks).toFixed(2) : "0.00";
+  return [
+    `👤Ник: ${mention(player)}`,
+    `💸 Баланс: ${formatKc(player.kc)} KC`,
+    `💶 Евро: ${formatAmount(player.euro, game.euroScale)}`,
+    `💠 Биткоин: ${formatMining(player.bitcoin)}₿`,
+    `👍 Репутация: ${player.reputation}`,
+    `🏆 Задания: ${player.completedTasks}/${game.totalTasks} [${percentage}%]`,
+    ...now === void 0 || player.registeredAt === void 0 ? [] : [`🤖 В боте ${Math.max(0, Math.floor((now.getTime() - player.registeredAt.getTime()) / bankConfig.dayMs))} дней. | ${new Intl.DateTimeFormat("ru-RU", { timeZone: bankConfig.timeZone, day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(player.registeredAt).replace(", ", " ")}`],
+    `🆔${player.accountId}`
+  ].join("\n");
+}
+function bonusText(day, reward) {
+  return `🎁 Бонус ${day}-го дня:
+
+` + [
+    `💰 ${formatKc(reward.kc)} KC`,
+    `💠 ${formatAmount(reward.bitcoin, game.bitcoinScale, 1)}₿`,
+    ...reward.case ? [texts.caseName] : []
+  ].join("\n");
+}
+function cooldownText(remainingMs) {
+  const seconds = Math.max(0, Math.ceil(remainingMs / 1e3));
+  return `⏳ Подожди ещё ${Math.floor(seconds / 3600)} ч. ${Math.floor(seconds % 3600 / 60)} мин. ${seconds % 60} сек.`;
+}
+function inventoryText(items) {
+  return `${texts.inventoryTitle}
+
+${items.length === 0 ? texts.emptyInventory : items.map((item) => {
+    const entry = itemConfig.catalog.find((entry2) => entry2.kind === item.kind);
+    if (entry === void 0) throw new Error("Unknown inventory kind");
+    return `🆔 ${item.itemId} — ${entry.name} (${item.quantity} шт.)`;
+  }).join("\n")}`;
+}
+function formatMining(amount) {
+  if (!Number.isSafeInteger(amount) || amount < 0) {
+    throw new Error("Invalid mining amount");
+  }
+  const thousandths = BigInt(amount) / BigInt(game.mining.precision);
+  return `${thousandths / 1000n},${String(thousandths % 1000n).padStart(3, "0")}`;
+}
+function durationText(milliseconds) {
+  const seconds = Math.max(0, Math.ceil(milliseconds / 1e3));
+  return `${Math.floor(seconds / 3600)} ч. ${Math.floor(seconds % 3600 / 60)} мин. ${seconds % 60} сек.`;
+}
+function miningText(farm, now) {
+  const remaining = farm.activeUntil.getTime() - now.getTime();
+  return [
+    "📼 Ваша майнинг-ферма:",
+    `💡 Статус: ${remaining > 0 ? "Включена" : "Выключена"}`,
+    "",
+    `⛏️ Добыча: ${formatMining(farm.rate)}₿/час`,
+    `💠 Баланс: ${formatMining(farm.balance)}₿`,
+    ...remaining > 0 ? [`⏳ Осталось ${durationText(remaining)}`] : []
+  ].join("\n");
+}
+function miningOfferText(cost) {
+  return `💡 Улучшение фермы стоит ${formatMining(cost)}₿.`;
+}
+function miningUpgradedText(farm, increase) {
+  return `✅ Ферма прокачана! Теперь она дает ${formatMining(farm.rate)}₿/ч (+${formatMining(increase).replace(",", ".")})
+⬆ Следующее улучшение стоит ${formatMining(farm.upgradeCost)}₿.`;
+}
+function referralText(url, count) {
+  return `👬 Приглашайте друзей и получайте награды!
+
+🔗 Ссылка для приглашения: ${url}
+Вы уже пригласили игроков: ${count}`;
+}
+function referralRewardText(newcomer) {
+  return `👬 ${mention(newcomer)} перешел по вашей реферальной ссылке.
+
+✅ Вы получили:
+
+💰 ${formatKc(game.referralRewardKC)} KC
+${texts.referralCaseName} (1 шт.)`;
+}
+var rankingTitles = {
+  kc: "💰 Топ игроков по балансу:",
+  bitcoin: "💠 Топ игроков по биткоинам:",
+  mining: "⛏️ Топ игроков по майнингу:",
+  euro: "💶 Топ игроков по еврам:",
+  referrals: "👥 Топ игроков по приглашенным:",
+  reputation: "👍 Топ игроков по репутации:",
+  stolenKC: "🥷 Топ воров:"
+};
+function rankEmoji(place) {
+  return String(place).split("").map((digit) => `${digit}️⃣`).join("");
+}
+function rankingValue(score, metric) {
+  switch (metric) {
+    case "kc":
+    case "stolenKC":
+      return `${formatKc(score)} KC`;
+    case "bitcoin":
+      return `${formatMining(score)}₿`;
+    case "mining":
+      return `${formatMining(score)}₿/час`;
+    case "euro":
+      return `${formatAmount(score, game.euroScale)} 💶`;
+    case "referrals":
+      return `${formatAmount(score, 1)} рефералов.`;
+    case "reputation":
+      return formatAmount(score, 1);
+  }
+}
+function rankingText(metric, ranking, player, score) {
+  const rows = ranking.leaders.map((leader, index) => `${rankEmoji(index + 1)} ${mention(leader)} — ${rankingValue(leader.score, metric)}`);
+  return `${rankingTitles[metric]}
+
+${rows.join("\n")}
+—————————————————
+➡${rankEmoji(ranking.place)} ${mention(player)} — ${rankingValue(score, metric)}`;
+}
+function miningWithdrawalText(amount) {
+  return `✅ Вы сняли ${formatMining(amount)}₿.`;
+}
+
+// src/services/dice.ts
+import { createHash } from "node:crypto";
+
+// src/types/storage.ts
+var DuplicateWriteError = class extends Error {
+  constructor() {
+    super("Concurrent unique write");
+    this.name = "DuplicateWriteError";
+  }
+};
+
+// src/utils/validation.ts
+function isRecord(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function isPositiveId(value) {
+  return Number.isSafeInteger(value) && value > 0;
+}
+function assertNever(value) {
+  throw new Error(`Unexpected variant: ${String(value)}`);
+}
+
 // src/services/bank-rules.ts
 function isBankCommand(command) {
   return command.kind === "city" || command.kind === "bank" || command.kind.startsWith("bank_");
@@ -142,9 +386,9 @@ function safeBankMoney(value) {
 function bankDays(registeredAt, now) {
   return Math.max(0, Math.floor((now.getTime() - registeredAt.getTime()) / bankConfig.dayMs));
 }
-function transferNet(gross) {
+function transferNet(gross, currency = "kc") {
   if (!safeBankMoney(gross) || gross <= 0) throw new Error("Invalid transfer amount");
-  return Number(BigInt(gross) * BigInt(100 - bankConfig.transferPercent) / 100n);
+  return currency === "kc" ? roundKc(gross) - roundKcRatio(BigInt(gross) * BigInt(bankConfig.transferPercent), 100n) : Number(BigInt(gross) * BigInt(100 - bankConfig.transferPercent) / 100n);
 }
 function parseBankMoney(text, currency) {
   const value = text.trim();
@@ -153,7 +397,9 @@ function parseBankMoney(text, currency) {
     const match2 = /^(\d{1,16}|\d{1,3}(?:\.\d{3}){1,5})(?:,(\d{1,2}))?([kк]{1,2})?$/i.exec(value);
     if (match2?.[1] === void 0) return null;
     const result2 = (BigInt(match2[1].replaceAll(".", "")) * BigInt(game.kcScale) + BigInt((match2[2] ?? "").padEnd(2, "0"))) * 1000n ** BigInt(match2[3]?.length ?? 0);
-    return result2 > 0n && result2 <= BigInt(game.maxAmount) ? Number(result2) : null;
+    if (result2 <= 0n || result2 > BigInt(game.maxAmount)) return null;
+    const rounded = roundKc(Number(result2));
+    return rounded > 0 ? rounded : null;
   }
   const match = /^(\d{1,16})(?:[.,](\d{1,3}))?([kк]{1,2})?$/i.exec(value);
   if (match?.[1] === void 0) return null;
@@ -166,12 +412,12 @@ function parseBankMoney(text, currency) {
 function settleSavings(balance, since, now) {
   if (!safeBankMoney(balance) || !Number.isFinite(since.getTime()) || !Number.isFinite(now.getTime())) throw new Error("Invalid savings state");
   const weeks = Math.max(0, Math.floor((now.getTime() - since.getTime()) / bankConfig.weekMs));
-  let value = BigInt(balance);
+  let value = BigInt(roundKc(balance));
   for (let week = 0; week < weeks; week += 1) {
-    const next = value * BigInt(100 + bankConfig.savingsPercent) / 100n;
+    const next = BigInt(roundKcRatio(value * BigInt(100 + bankConfig.savingsPercent), 100n));
     if (next === value) break;
     if (next >= BigInt(game.maxAmount)) {
-      value = BigInt(game.maxAmount);
+      value = BigInt(roundKc(game.maxAmount));
       break;
     }
     value = next;
@@ -182,14 +428,15 @@ function depositValue(deposit, now) {
   if (!isDepositDays(deposit.days) || !safeBankMoney(deposit.amount) || deposit.amount <= 0 || deposit.amount > bankConfig.maxDeposit || !Number.isFinite(deposit.createdAt.getTime()) || deposit.expiresAt.getTime() - deposit.createdAt.getTime() !== deposit.days * bankConfig.dayMs) throw new Error("Invalid deposit");
   const duration = deposit.days * bankConfig.dayMs;
   const elapsed = Math.min(duration, Math.max(0, now.getTime() - deposit.createdAt.getTime()));
-  return deposit.amount + Number(BigInt(deposit.amount) * BigInt(bankConfig.depositRates[deposit.days]) * BigInt(elapsed) / (100n * BigInt(duration)));
+  return roundKcRatio(BigInt(deposit.amount) * (100n * BigInt(duration) + BigInt(bankConfig.depositRates[deposit.days]) * BigInt(elapsed)), 100n * BigInt(duration));
 }
 function earlyDepositValue(deposit, now) {
-  return Number(BigInt(depositValue(deposit, now)) * BigInt(100 - bankConfig.earlyPenaltyPercent) / 100n);
+  const value = depositValue(deposit, now);
+  return value - roundKcRatio(BigInt(value) * BigInt(bankConfig.earlyPenaltyPercent), 100n);
 }
 function depositButtons(wallet) {
   if (!safeBankMoney(wallet)) throw new Error("Invalid wallet");
-  return bankConfig.depositPercents.map((percent) => Number(BigInt(wallet) * BigInt(percent) / 100n / BigInt(game.kcScale) * BigInt(game.kcScale)));
+  return bankConfig.depositPercents.map((percent) => roundKcRatio(BigInt(wallet) * BigInt(percent), 100n));
 }
 
 // src/config/roulette.ts
@@ -370,7 +617,7 @@ function selectOutcome(mode, random, key) {
 }
 function betPayout(mode, amount, target, bonus) {
   const value = mode === "crash" ? BigInt(amount) * BigInt(target) / BigInt(casinoConfig.crashPrecision) : mode === "roulette" ? BigInt(amount) * BigInt(rouletteMultiplier(target)) : BigInt(amount) * BigInt(target + 1) * BigInt(bonus);
-  return value <= BigInt(game.maxAmount) ? Number(value) : null;
+  return value <= BigInt(game.maxAmount) ? roundKc(Number(value)) : null;
 }
 function roundKey(peerId, mode) {
   return `round:${peerId}:${mode}`;
@@ -380,7 +627,7 @@ function closeKey(round) {
 }
 function casinoPercent(amount, percent) {
   if (!Number.isSafeInteger(amount) || amount < 0 || amount > game.maxAmount || !Number.isSafeInteger(percent) || percent < 0 || percent > 100) throw new Error("Invalid casino percentage");
-  return Number(BigInt(amount) * BigInt(percent) / 100n);
+  return roundKcRatio(BigInt(amount) * BigInt(percent), 100n);
 }
 function parseCasinoStake(text) {
   switch (text.trim().toLowerCase()) {
@@ -394,236 +641,20 @@ function parseCasinoStake(text) {
       return parseBankMoney(text, "kc");
   }
 }
-function resolveCasinoStake(stake, wallet) {
+function resolveCasinoStake(stake, wallet, currency = "kc") {
   if (!safeBankMoney(wallet)) throw new Error("Invalid casino wallet");
   if (typeof stake === "number") {
     if (!safeBankMoney(stake)) throw new Error("Invalid casino stake");
-    return stake;
+    return currency === "kc" ? roundKc(stake) : stake;
   }
   switch (stake) {
     case "half":
-      return Number(BigInt(wallet) / 2n);
+      return currency === "kc" ? roundKcRatio(BigInt(wallet), 2n) : Number(BigInt(wallet) / 2n);
     case "all":
-      return wallet;
+      return currency === "kc" ? roundKc(wallet) : wallet;
     default:
       return assertNever(stake);
   }
-}
-
-// src/config/items.ts
-var itemConfig = {
-  maxBatch: 1e3,
-  offerDurationMs: 10 * 60 * 1e3,
-  catalog: [
-    { id: 1, kind: "zhdun_case", name: "💼 Кейс «Ждун»" },
-    { id: 2, kind: "referral_case", name: "👬 Кейс «Реферальный»" },
-    { id: 3, kind: "croupier", name: "🤴 Крупьер" }
-  ],
-  drops: [
-    { currency: "kc", amount: 15e4, weight: 30 },
-    { currency: "kc", amount: 25e4, weight: 30 },
-    { currency: "kc", amount: 15e5, weight: 30 },
-    { currency: "euro", amount: 100, weight: 5 },
-    { currency: "euro", amount: 200, weight: 3 },
-    { currency: "euro", amount: 500, weight: 2 }
-  ]
-};
-
-// src/services/texts.ts
-var labels = {
-  createPromo: "📝 Создать промо",
-  activatePromo: "🔑 Активировать",
-  myPromos: "📖 Мои промо",
-  confirmPromo: "✅ Подтвердить",
-  battlePass: "🎟️ BattlePass",
-  profile: "👨‍🦰 Профиль",
-  bonus: "🎁 Бонус",
-  rating: "🏆 Рейтинг",
-  promo: "🏷 Промо",
-  city: "🏙️ Город",
-  mining: "⛏️ Майнинг",
-  donate: "🍩 Донат",
-  boss: "🎩 Босс",
-  tasks: "📍 Задания",
-  help: "🆘 Помощь",
-  inventory: "🎒 Инвентарь",
-  menu: "📕 Меню",
-  back: "↩️ Назад",
-  previous: "◀️",
-  next: "▶️",
-  referral: "👤 Реф",
-  startMining: "💡 Включить",
-  withdrawMining: "💠 Снять",
-  upgradeMining: "⏫ Улучшить",
-  confirm: "Подтвердить",
-  upgradeBack: "Назад",
-  kc: "💰 KC",
-  bitcoin: "💠 Биткоин",
-  euro: "💶 Евро",
-  referrals: "👤 Рефералы",
-  reputation: "👍 Репутация",
-  thieves: "🥷 Воры"
-};
-var texts = {
-  adminDone: "Done.",
-  adminBalanceUsage: "⚠️ Формат: !set [@id123] 100 или !add [@id123] 100k. Можно ответом на сообщение. Сумма — целое неотрицательное число KC; к = тысяча, кк = миллион.",
-  adminWalletUsage: "⚠️ Формат: !setdonut / !adddonut / !takedonut <VK ID> <сумма евро> или !setbit / !addbit / !takebit <VK ID> <сумма BTC>. Вместо ID можно ответить на сообщение. Евро — до 2 знаков после запятой, BTC — до 3.",
-  adminWalletLimit: "⚠️ Недостаточно средств или достигнут предел баланса. Баланс не изменён.",
-  adminBalanceTarget: "⚠️ Укажите игрока: ответом на его сообщение или через @id123.",
-  adminBalanceMissing: "⚠️ Игрок ещё не зарегистрирован в боте.",
-  adminBalanceLimit: "⚠️ Достигнут предел баланса. Баланс не изменён.",
-  keyboardsDeleted: "Done.",
-  welcome: "👋🏻 Добро пожаловать в Kreox Bot!\n\nТут ты сможешь развиваться и влетать в топы по всему боту.\n\nТебя ждет интересный и увлекательный функционал.\n\nУдачи.",
-  development: "⚙️ В разработке…",
-  emptyInventory: "Ваш инвентарь пуст.",
-  inventoryTitle: "🎒 Ваш инвентарь:",
-  caseName: "💼 Кейс «Ждун»",
-  referralCaseName: "👬 Кейс «Реферальный»",
-  miningStarted: "✅ Ферма запущена на 6 часов.",
-  miningAlreadyStarted: "Ферма уже включена!",
-  miningEmpty: "⚠️ Баланс Вашей фермы пуст.",
-  miningInsufficient: "⚠️ Недостаточно биткоинов для улучшения фермы.",
-  miningStaleOffer: "⚠️ Это улучшение уже применено или устарело. Нажмите «⏫ Улучшить» ещё раз.",
-  miningLimit: "⚠️ Достигнут предел баланса или уровня фермы.",
-  inventoryTooLarge: "⚠️ Инвентарь не помещается в одно сообщение. Откройте его в личных сообщениях бота.",
-  error: "⚠️ Не удалось выполнить действие. Попробуйте ещё раз.",
-  balanceLimit: "⚠️ Бонус не получен: достигнут предел баланса или инвентаря.",
-  registrationLimit: "⚠️ Сейчас регистрация недоступна. Попробуйте позже."
-};
-function formatAmount(amount, scale, minimumDecimals = 0) {
-  if (!Number.isSafeInteger(amount) || amount < 0 || !Number.isSafeInteger(scale) || scale < 1) {
-    throw new Error("Invalid amount");
-  }
-  const digits = String(scale).length - 1;
-  if (scale !== 10 ** digits || !Number.isSafeInteger(minimumDecimals) || minimumDecimals < 0 || minimumDecimals > digits) {
-    throw new Error("Invalid amount scale");
-  }
-  const value = BigInt(amount);
-  const divisor = BigInt(scale);
-  const whole = String(value / divisor).replace(/\B(?=(\d{3})+(?!\d))/g, ".");
-  const fraction = String(value % divisor).padStart(digits, "0").replace(/0+$/, "").padEnd(minimumDecimals, "0");
-  return fraction.length > 0 ? `${whole},${fraction}` : whole;
-}
-function mention(player) {
-  return `[id${player._id}|${player.name}]`;
-}
-function profileText(player, now) {
-  const percentage = game.totalTasks > 0 ? (player.completedTasks * 100 / game.totalTasks).toFixed(2) : "0.00";
-  return [
-    `👤Ник: ${mention(player)}`,
-    `💸 Баланс: ${formatAmount(player.kc, game.kcScale)} KC`,
-    `💶 Евро: ${formatAmount(player.euro, game.euroScale)}`,
-    `💠 Биткоин: ${formatMining(player.bitcoin)}₿`,
-    `👍 Репутация: ${player.reputation}`,
-    `🏆 Задания: ${player.completedTasks}/${game.totalTasks} [${percentage}%]`,
-    ...now === void 0 || player.registeredAt === void 0 ? [] : [`🤖 В боте ${Math.max(0, Math.floor((now.getTime() - player.registeredAt.getTime()) / bankConfig.dayMs))} дней. | ${new Intl.DateTimeFormat("ru-RU", { timeZone: bankConfig.timeZone, day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(player.registeredAt).replace(", ", " ")}`],
-    `🆔${player.accountId}`
-  ].join("\n");
-}
-function bonusText(day, reward) {
-  return `🎁 Бонус ${day}-го дня:
-
-` + [
-    `💰 ${formatAmount(reward.kc, game.kcScale)} KC`,
-    `💠 ${formatAmount(reward.bitcoin, game.bitcoinScale, 1)}₿`,
-    ...reward.case ? [texts.caseName] : []
-  ].join("\n");
-}
-function cooldownText(remainingMs) {
-  const seconds = Math.max(0, Math.ceil(remainingMs / 1e3));
-  return `⏳ Подожди ещё ${Math.floor(seconds / 3600)} ч. ${Math.floor(seconds % 3600 / 60)} мин. ${seconds % 60} сек.`;
-}
-function inventoryText(items) {
-  return `${texts.inventoryTitle}
-
-${items.length === 0 ? texts.emptyInventory : items.map((item) => {
-    const entry = itemConfig.catalog.find((entry2) => entry2.kind === item.kind);
-    if (entry === void 0) throw new Error("Unknown inventory kind");
-    return `🆔 ${item.itemId} — ${entry.name} (${item.quantity} шт.)`;
-  }).join("\n")}`;
-}
-function formatMining(amount) {
-  if (!Number.isSafeInteger(amount) || amount < 0) {
-    throw new Error("Invalid mining amount");
-  }
-  const thousandths = BigInt(amount) / BigInt(game.mining.precision);
-  return `${thousandths / 1000n},${String(thousandths % 1000n).padStart(3, "0")}`;
-}
-function durationText(milliseconds) {
-  const seconds = Math.max(0, Math.ceil(milliseconds / 1e3));
-  return `${Math.floor(seconds / 3600)} ч. ${Math.floor(seconds % 3600 / 60)} мин. ${seconds % 60} сек.`;
-}
-function miningText(farm, now) {
-  const remaining = farm.activeUntil.getTime() - now.getTime();
-  return [
-    "📼 Ваша майнинг-ферма:",
-    `💡 Статус: ${remaining > 0 ? "Включена" : "Выключена"}`,
-    "",
-    `⛏️ Добыча: ${formatMining(farm.rate)}₿/час`,
-    `💠 Баланс: ${formatMining(farm.balance)}₿`,
-    ...remaining > 0 ? [`⏳ Осталось ${durationText(remaining)}`] : []
-  ].join("\n");
-}
-function miningOfferText(cost) {
-  return `💡 Улучшение фермы стоит ${formatMining(cost)}₿.`;
-}
-function miningUpgradedText(farm, increase) {
-  return `✅ Ферма прокачана! Теперь она дает ${formatMining(farm.rate)}₿/ч (+${formatMining(increase).replace(",", ".")})
-⬆ Следующее улучшение стоит ${formatMining(farm.upgradeCost)}₿.`;
-}
-function referralText(url, count) {
-  return `👬 Приглашайте друзей и получайте награды!
-
-🔗 Ссылка для приглашения: ${url}
-Вы уже пригласили игроков: ${count}`;
-}
-function referralRewardText(newcomer) {
-  return `👬 ${mention(newcomer)} перешел по вашей реферальной ссылке.
-
-✅ Вы получили:
-
-💰 ${formatAmount(game.referralRewardKC, game.kcScale)} KC
-${texts.referralCaseName} (1 шт.)`;
-}
-var rankingTitles = {
-  kc: "💰 Топ игроков по балансу:",
-  bitcoin: "💠 Топ игроков по биткоинам:",
-  mining: "⛏️ Топ игроков по майнингу:",
-  euro: "💶 Топ игроков по еврам:",
-  referrals: "👥 Топ игроков по приглашенным:",
-  reputation: "👍 Топ игроков по репутации:",
-  stolenKC: "🥷 Топ воров:"
-};
-function rankEmoji(place) {
-  return String(place).split("").map((digit) => `${digit}️⃣`).join("");
-}
-function rankingValue(score, metric) {
-  switch (metric) {
-    case "kc":
-    case "stolenKC":
-      return `${formatAmount(score, game.kcScale)} KC`;
-    case "bitcoin":
-      return `${formatMining(score)}₿`;
-    case "mining":
-      return `${formatMining(score)}₿/час`;
-    case "euro":
-      return `${formatAmount(score, game.euroScale)} 💶`;
-    case "referrals":
-      return `${formatAmount(score, 1)} рефералов.`;
-    case "reputation":
-      return formatAmount(score, 1);
-  }
-}
-function rankingText(metric, ranking, player, score) {
-  const rows = ranking.leaders.map((leader, index) => `${rankEmoji(index + 1)} ${mention(leader)} — ${rankingValue(leader.score, metric)}`);
-  return `${rankingTitles[metric]}
-
-${rows.join("\n")}
-—————————————————
-➡${rankEmoji(ranking.place)} ${mention(player)} — ${rankingValue(score, metric)}`;
-}
-function miningWithdrawalText(amount) {
-  return `✅ Вы сняли ${formatMining(amount)}₿.`;
 }
 
 // src/services/admin-balance.ts
@@ -728,12 +759,17 @@ function diceMinimum(currency) {
 function validDiceStake(currency, amount, slots) {
   return isBalanceCurrency(currency) && safeBankMoney(amount) && amount >= diceMinimum(currency) && Number.isSafeInteger(slots) && slots >= diceConfig.minPlayers && slots <= diceConfig.maxPlayers && BigInt(amount) * BigInt(slots) <= BigInt(game.maxAmount);
 }
-function diceDistribution(amount, count, winners) {
+function diceDistribution(amount, count, winners, currency = "kc") {
   if (!safeBankMoney(amount) || amount <= 0 || !Number.isSafeInteger(count) || count < 2 || count > diceConfig.maxPlayers || !Number.isSafeInteger(winners) || winners < 1 || winners > count) throw new Error("Invalid dice distribution");
-  const pot = BigInt(amount) * BigInt(count);
-  if (pot > BigInt(game.maxAmount)) throw new Error("Dice pot limit");
+  const rawPot = BigInt(amount) * BigInt(count);
+  const pot = currency === "kc" ? BigInt(roundKcRatio(rawPot)) : rawPot;
+  if (rawPot > BigInt(game.maxAmount)) throw new Error("Dice pot limit");
   const fee = winners === 1 ? diceConfig.winnerFee : diceConfig.tieFee;
-  const each = pot * BigInt(diceConfig.feeScale - fee) / (BigInt(diceConfig.feeScale) * BigInt(winners));
+  const numerator = pot * BigInt(diceConfig.feeScale - fee);
+  const denominator = BigInt(diceConfig.feeScale) * BigInt(winners);
+  const rounded = currency === "kc" ? BigInt(roundKcRatio(numerator, denominator)) : numerator / denominator;
+  const maximum = currency === "kc" ? pot / BigInt(winners) / BigInt(game.kcScale) * BigInt(game.kcScale) : pot / BigInt(winners);
+  const each = rounded > maximum ? maximum : rounded;
   return { each: Number(each), commission: Number(pot - each * BigInt(winners)) };
 }
 function refreshDiceDeadline(chat) {
@@ -764,11 +800,12 @@ function diceMinimumText(currency) {
   return currency === "kc" ? "🎲 Ставка от 1.000 KC." : currency === "euro" ? "🎲 Ставка от 10 💶." : "🎲 Ставка от 10₿.";
 }
 function diceMoney(amount, currency) {
+  if (currency === "kc") return `${formatKc(amount)} KC`;
   const scale = promoScale(currency);
   const whole = formatAmount(Number(BigInt(amount) / BigInt(scale)), 1);
   const fraction = String(BigInt(amount) % BigInt(scale)).padStart(String(scale).length - 1, "0").replace(/0+$/, "");
   const number = fraction.length === 0 ? whole : `${whole},${fraction}`;
-  return `${number}${currency === "kc" ? " KC" : currency === "euro" ? " 💶" : "₿"}`;
+  return `${number}${currency === "euro" ? " 💶" : "₿"}`;
 }
 function diceMention(player) {
   return mention({ _id: player.vkId, name: player.name });
@@ -826,7 +863,11 @@ async function diceButtonActive(store, input, command) {
 }
 async function payCredit(store, credit, now) {
   if (credit.stage !== "pending" || !safeBankMoney(credit.amount) || credit.amount <= 0 || !isPositiveId(credit.vkId)) throw new Error("Invalid dice credit");
-  const paid = await store.updateBalance(credit.vkId, credit.currency, "add", credit.amount);
+  if (credit.currency === "kc") {
+    credit.notice = wholeKcNotice(credit.notice, credit.amount);
+    credit.amount = roundKc(credit.amount);
+  }
+  const paid = credit.amount === 0 || await store.updateBalance(credit.vkId, credit.currency, "add", credit.amount);
   if (paid) {
     credit.stage = "paid";
     if (credit.notice.length > 0) await store.enqueueItemNotification(`notice:${credit._id}`, credit.vkId, credit.notice, { kind: "none" });
@@ -867,7 +908,7 @@ async function finishDice(store, chat, value, now, random) {
   });
   const best = Math.max(...scores);
   const winners = value.players.filter((_player, index) => scores[index] === best);
-  const distribution = diceDistribution(value.amount, value.players.length, winners.length);
+  const distribution = diceDistribution(value.amount, value.players.length, winners.length, value.currency);
   for (const winner of winners) {
     const paid = await creditDice(store, `winner:${key}:${winner.vkId}`, winner.vkId, value, distribution.each, now);
     if (!paid) await store.enqueueItemNotification(`dice-waiting:${key}:${winner.vkId}`, winner.vkId, `${diceTexts.pending}
@@ -896,8 +937,9 @@ async function diceAction(store, input, player, command, random) {
     if (typeof amount !== "number") {
       const current = await store.player(input.vkId);
       if (current === null) throw new Error("Missing dice balance");
-      amount = resolveCasinoStake(amount, current[command.currency]);
+      amount = resolveCasinoStake(amount, current[command.currency], command.currency);
     }
+    if (command.currency === "kc") amount = roundKc(amount);
     if (amount < diceMinimum(command.currency)) return reply(diceMinimumText(command.currency));
     if (!validDiceStake(command.currency, amount, command.slots)) return reply(diceTexts.limit);
     if (chat === null) {
@@ -1060,7 +1102,7 @@ var casinoTexts = {
   creditWaiting: "⏳ Выплата сохранена. Достигнут предел баланса; выплата будет повторена автоматически."
 };
 function kc(value) {
-  return `${formatAmount(value, game.kcScale)} KC`;
+  return `${formatKc(value)} KC`;
 }
 function modeName(mode) {
   return mode === "crash" ? "Краш" : mode === "roulette" ? "Рулетка" : "Дрим";
@@ -1140,6 +1182,8 @@ ${history.map((item) => mode === "roulette" ? rouletteHistory(item.result) : out
 // src/services/casino-credits.ts
 async function addCasinoCredit(store, key, vkId, amount, destination = "wallet", notice = "") {
   if (!isPositiveId(vkId) || !safeBankMoney(amount)) throw new Error("Invalid casino credit");
+  notice = wholeKcNotice(notice, amount);
+  amount = roundKc(amount);
   if (amount === 0) return;
   await store.casinoInsert({ _id: `credit:${key}`, kind: "credit", version: 0, vkId, amount, destination, notice, stage: "pending", dueAt: /* @__PURE__ */ new Date(0) });
 }
@@ -1147,9 +1191,11 @@ async function payCasinoCredit(store, now) {
   const credit = (await store.casinoList({ kind: "credit", dueAt: now }, 1))[0];
   if (credit === void 0) return false;
   if (credit.kind !== "credit" || !safeBankMoney(credit.amount)) throw new Error("Invalid pending casino credit");
-  let paid = false;
-  if (credit.destination === "dealer" && (await store.dealer()).holderId === credit.vkId) paid = await store.casinoDealerIncome(credit.vkId, credit.amount);
-  else paid = await store.updateBalance(credit.vkId, "kc", "add", credit.amount);
+  credit.notice = wholeKcNotice(credit.notice, credit.amount);
+  credit.amount = roundKc(credit.amount);
+  let paid = credit.amount === 0;
+  if (!paid && credit.destination === "dealer" && (await store.dealer()).holderId === credit.vkId) paid = await store.casinoDealerIncome(credit.vkId, credit.amount);
+  else if (!paid) paid = await store.updateBalance(credit.vkId, "kc", "add", credit.amount);
   if (paid) {
     credit.stage = "paid";
     if (credit.notice.length > 0) await store.enqueueItemNotification(`notice:${credit._id}`, credit.vkId, credit.notice, { kind: "none" });
@@ -1610,6 +1656,7 @@ async function directorAction(store, player, command, input) {
   if (state.dueAt <= await store.now()) return { text: casinoTexts.electionPending, keyboard: { kind: "director_back" } };
   const old = await store.casinoGet(`bid:${state.electionId}:${player._id}`);
   if (old !== null && old.kind !== "bid") throw new Error("Invalid director bid");
+  draft.amount = roundKc(draft.amount);
   if (!safeBankMoney(draft.amount) || draft.amount < casinoConfig.minimum) throw new Error("Invalid confirmed director bid");
   if (state.total > game.maxAmount - draft.amount || (old?.amount ?? 0) > game.maxAmount - draft.amount) return { text: casinoTexts.limit, keyboard: { kind: "director_back" } };
   if (!await store.updateBalance(player._id, "kc", "take", draft.amount)) return { text: casinoTexts.funds, keyboard: { kind: "director_back" } };
@@ -1939,21 +1986,21 @@ var bankTexts = {
   cancelled: "Действие отменено."
 };
 function bankMoney(amount, currency) {
-  return currency === "kc" ? `${formatAmount(amount, game.kcScale)} KC` : currency === "euro" ? `${formatAmount(amount, game.euroScale)}💶` : `${formatMining(amount)}₿`;
+  return currency === "kc" ? `${formatKc(amount)} KC` : currency === "euro" ? `${formatAmount(amount, game.euroScale)}💶` : `${formatMining(amount)}₿`;
 }
 function savingsText(amount) {
   return `💲 Накопительный счет:
 
-💰 У вас: ${formatAmount(amount, game.kcScale)} KC`;
+💰 У вас: ${formatKc(amount)} KC`;
 }
 function savingsPrompt(player, savings2, direction) {
-  return direction === "in" ? `💰 Введите количество денег, которое вы хотите положить (у вас: ${formatAmount(player.kc, game.kcScale)} KC).` : `💰 Введите количество денег, которое вы хотите снять (на счету: ${formatAmount(savings2, game.kcScale)} KC).`;
+  return direction === "in" ? `💰 Введите количество денег, которое вы хотите положить (у вас: ${formatKc(player.kc)} KC).` : `💰 Введите количество денег, которое вы хотите снять (на счету: ${formatKc(savings2)} KC).`;
 }
 function savingsResult(wallet, savings2) {
   return `💱 Транзакция совершена.
 
-💰 На руках: ${formatAmount(wallet, game.kcScale)} KC
-💳 На счету: ${formatAmount(savings2, game.kcScale)} KC`;
+💰 На руках: ${formatKc(wallet)} KC
+💳 На счету: ${formatKc(savings2)} KC`;
 }
 function transferPrompt(player, receiver, currency) {
   const name = currency === "kc" ? "KC" : currency === "euro" ? "евро" : "биткоинов";
@@ -2707,6 +2754,7 @@ var giveawayTexts = {
   limit: "⚠️ Награда не получена: достигнут предел баланса или инвентаря. Активация не потрачена."
 };
 function giveawayAmount(reward) {
+  if (reward.currency === "kc") return formatKc(reward.amount);
   const scale = BigInt(promoScale(reward.currency));
   const value = BigInt(reward.amount);
   const whole = formatAmount(Number(value / scale), 1);
@@ -2800,7 +2848,7 @@ function dealerMention(player) {
 function dealerPrompt(player, state) {
   return `🤴 Крупье получает 1% от всех проигрышей в казино.
 
-💰 Крупье: ${dealerMention(player)} (заработал уже ${formatAmount(state.earnedKC, game.kcScale)} KC)
+💰 Крупье: ${dealerMention(player)} (заработал уже ${formatKc(state.earnedKC)} KC)
 
 Стать крупье можно за ${formatAmount(donateConfig.dealerCost, game.euroScale)} 💶.`;
 }
@@ -2851,7 +2899,7 @@ function dropText(index) {
   if (drop === void 0) {
     throw new Error("Unknown case drop");
   }
-  return drop.currency === "kc" ? `💰 ${formatAmount(drop.amount, game.kcScale)} KC` : `💶 ${formatAmount(drop.amount, game.euroScale)} евро`;
+  return drop.currency === "kc" ? `💰 ${formatKc(drop.amount)} KC` : `💶 ${formatAmount(drop.amount, game.euroScale)} евро`;
 }
 function itemDetails(kind, count, use = false) {
   if (kind === "croupier") return `📒 Предмет "${itemName(kind)}" (x${count}):
@@ -2876,13 +2924,13 @@ function giftReceivedText(sender, kind, quantity) {
   return `🎁 ${mention(sender)} подарил вам ${itemName(kind)} x${quantity}`;
 }
 function offerText(seller, offer) {
-  return `Игрок ${mention(seller)} предлагает вам купить у него ${itemName(offer.itemKind)} x${offer.quantity} за ${formatAmount(offer.price, game.kcScale)} KC. Через 10 минут сделка аннулируется.`;
+  return `Игрок ${mention(seller)} предлагает вам купить у него ${itemName(offer.itemKind)} x${offer.quantity} за ${formatKc(offer.price)} KC. Через 10 минут сделка аннулируется.`;
 }
 function boughtText(buyer) {
   return `${mention(buyer)}, сделка прошла успешно!`;
 }
 function soldText(buyer, offer) {
-  return `${mention(buyer)} купил у вас ${itemName(offer.itemKind)} x${offer.quantity} за ${formatAmount(offer.price, game.kcScale)} KC`;
+  return `${mention(buyer)} купил у вас ${itemName(offer.itemKind)} x${offer.quantity} за ${formatKc(offer.price)} KC`;
 }
 function itemCatalogText() {
   return "📖 ItemList:\n\n" + itemConfig.catalog.map((item) => `🆔 ${item.id} — ${item.name}`).join("\n\n");
@@ -2970,8 +3018,8 @@ function buildKeyboard(spec) {
       ]).oneTime(false);
     case "bank_deposit_amount":
       return Keyboard.keyboard([
-        spec.amounts.slice(0, 3).map((amount) => button(formatAmount(amount, game.kcScale), { kind: "bank_deposit_amount", amount })),
-        spec.amounts.slice(3, 5).map((amount) => button(formatAmount(amount, game.kcScale), { kind: "bank_deposit_amount", amount })),
+        spec.amounts.slice(0, 3).map((amount) => button(formatKc(amount), { kind: "bank_deposit_amount", amount })),
+        spec.amounts.slice(3, 5).map((amount) => button(formatKc(amount), { kind: "bank_deposit_amount", amount })),
         [button(bankLabels.back, { kind: "bank_deposits" })]
       ]).oneTime(false);
     case "bank_deposit_term":
@@ -3289,10 +3337,77 @@ function startNotifications(queue, vk, resolveRoulettePhoto) {
 
 // src/config/storage.ts
 var storageConfig = {
+  kcMigrationPageSize: 256,
   responseIdBlockSize: 256,
   chatCacheTtlMs: 6e4,
   chatCacheLimit: 1e4
 };
+
+// src/repositories/mongo-kc-migration.ts
+function playerKcFields(player) {
+  return {
+    kc: roundKc(player.kc),
+    ...player.savingsBalance === void 0 ? {} : { savingsBalance: roundKc(player.savingsBalance) },
+    ...player.stolenKC === void 0 ? {} : { stolenKC: roundKc(player.stolenKC) }
+  };
+}
+function playerKcFilter(player) {
+  return { _id: player._id, kc: player.kc, savingsBalance: player.savingsBalance ?? { $exists: false }, stolenKC: player.stolenKC ?? { $exists: false } };
+}
+async function migrateWholeKc(db) {
+  const players = db.collection("players");
+  let after = 0;
+  let retries = 0;
+  for (; ; ) {
+    const page = await players.find({ _id: { $gt: after } }, { projection: { _id: 1, kc: 1, savingsBalance: 1, stolenKC: 1 } }).sort({ _id: 1 }).limit(storageConfig.kcMigrationPageSize).toArray();
+    const last = page.at(-1);
+    if (last === void 0) break;
+    if (!Number.isSafeInteger(last._id) || last._id <= after) throw new Error("Invalid KC migration cursor");
+    const changes = page.flatMap((player) => {
+      const rounded = playerKcFields(player);
+      if (rounded.kc === player.kc && rounded.savingsBalance === player.savingsBalance && rounded.stolenKC === player.stolenKC) return [];
+      return [{ updateOne: {
+        filter: playerKcFilter(player),
+        update: { $set: rounded }
+      } }];
+    });
+    if (changes.length > 0) {
+      const result = await players.bulkWrite(changes, { ordered: false, writeConcern: { w: "majority" } });
+      if (result.matchedCount !== changes.length) {
+        retries += 1;
+        if (retries >= game.duplicateRetries) throw new Error("Concurrent legacy KC writes; stop old bot instances before upgrading");
+        continue;
+      }
+    }
+    after = last._id;
+    retries = 0;
+  }
+  const dealers = db.collection("dealer");
+  for (let attempt = 0; attempt < game.duplicateRetries; attempt += 1) {
+    const state = await dealers.findOne({ _id: "casino" });
+    if (state === null) throw new Error("Missing dealer for KC migration");
+    const amount = roundKc(state.earnedKC);
+    if (amount === state.earnedKC) break;
+    const result = await dealers.updateOne({ _id: "casino", earnedKC: state.earnedKC }, { $set: { earnedKC: amount } }, { writeConcern: { w: "majority" } });
+    if (result.matchedCount === 1) break;
+    if (attempt + 1 === game.duplicateRetries) throw new Error("Concurrent dealer KC migration");
+  }
+  const directors = db.collection("casino_records");
+  for (let attempt = 0; attempt < game.duplicateRetries; attempt += 1) {
+    const state = await directors.findOne({ _id: "director", kind: "director" });
+    if (state === null) break;
+    const amount = roundKc(state.earnedKC);
+    if (amount === state.earnedKC) break;
+    if (!Number.isSafeInteger(state.version) || state.version < 0 || state.version >= game.maxAmount) throw new Error("Invalid director KC migration version");
+    const result = await directors.updateOne(
+      { _id: state._id, kind: "director", version: state.version, earnedKC: state.earnedKC },
+      { $set: { earnedKC: amount }, $inc: { version: 1 } },
+      { writeConcern: { w: "majority" } }
+    );
+    if (result.matchedCount === 1) break;
+    if (attempt + 1 === game.duplicateRetries) throw new Error("Concurrent director KC migration");
+  }
+}
 
 // src/repositories/chat-registry-cache.ts
 var ChatRegistryCache = class {
@@ -3707,6 +3822,7 @@ var MongoItemStore = class extends MongoPromoStore {
     return offer;
   }
   async purchaseOffer(offer, buyer, seller, now) {
+    const price = roundKc(offer.price);
     validateOffer(offer);
     if (offer.buyerId !== buyer._id || offer.sellerId !== seller._id || offer.state !== "pending") {
       return "invalid";
@@ -3724,21 +3840,21 @@ var MongoItemStore = class extends MongoPromoStore {
     if (units.length !== offer.quantity) {
       return "items";
     }
-    if (!Number.isSafeInteger(seller.kc) || seller.kc < 0 || seller.kc > game.maxAmount - offer.price) {
+    if (!Number.isSafeInteger(seller.kc) || seller.kc < 0 || seller.kc > game.maxAmount - price) {
       return "limit";
     }
     if (!Number.isSafeInteger(buyer.kc) || buyer.kc < 0 || buyer.kc > game.maxAmount) {
       return "limit";
     }
-    if (buyer.kc < offer.price) {
+    if (buyer.kc < price) {
       return "funds";
     }
     const debit = await this.itemPlayers.findOneAndUpdate({
       _id: buyer._id,
-      kc: { $gte: offer.price, $lte: game.maxAmount },
+      kc: { $gte: price, $lte: game.maxAmount },
       nextItemId: { $gte: 1, $lte: game.maxAmount - offer.quantity },
       $expr: { $eq: ["$nextItemId", { $trunc: "$nextItemId" }] }
-    }, { $inc: { kc: -offer.price, nextItemId: offer.quantity } }, {
+    }, { $inc: { kc: -price, nextItemId: offer.quantity } }, {
       session: this.itemSession,
       returnDocument: "before",
       includeResultMetadata: false
@@ -3746,11 +3862,11 @@ var MongoItemStore = class extends MongoPromoStore {
     if (debit === null) {
       return "limit";
     }
-    const credit = await this.itemPlayers.updateOne({ _id: seller._id, kc: { $gte: 0, $lte: game.maxAmount - offer.price } }, {
-      $inc: { kc: offer.price }
+    const credit = await this.itemPlayers.updateOne({ _id: seller._id, kc: { $gte: 0, $lte: game.maxAmount - price } }, {
+      $inc: { kc: price }
     }, { session: this.itemSession });
     const completed = await this.offers.updateOne({ _id: offer._id, state: "pending", expiresAt: { $gt: now }, $expr: { $gt: ["$expiresAt", "$$NOW"] } }, {
-      $set: { state: "completed" }
+      $set: { state: "completed", price }
     }, { session: this.itemSession });
     if (credit.matchedCount !== 1 || completed.matchedCount !== 1) {
       throw new Error("Purchase conflict");
@@ -3836,15 +3952,16 @@ var MongoDonateStore = class extends MongoItemStore {
     return await this.donateItems.findOne({ vkId, kind: "croupier" }, { session: this.donateSession, projection: { _id: 1 } }) !== null;
   }
   async buyDealer(player, previous, state, now) {
+    const income = roundKc(state.earnedKC);
     if (state.holderId === player._id) return "self";
     if (state.holderId === null && previous !== null) return "limit";
     if (!validDonateMoney(player.euro) || !validDonateMoney(state.earnedKC) || previous !== null && !validDonateMoney(previous.kc)) return "limit";
     if (state.nextChangeAt > now && !await this.hasCroupier(player._id)) return "cooldown";
-    if (state.holderId !== null && (previous === null || previous._id !== state.holderId || previous.kc > game.maxAmount - state.earnedKC)) return "limit";
+    if (state.holderId !== null && (previous === null || previous._id !== state.holderId || previous.kc > game.maxAmount - income)) return "limit";
     const debit = await this.donatePlayers.updateOne({ _id: player._id, euro: { $gte: donateConfig.dealerCost, $lte: game.maxAmount }, $expr: { $eq: ["$euro", { $trunc: "$euro" }] } }, { $inc: { euro: -donateConfig.dealerCost }, $unset: { donateDraft: "" } }, { session: this.donateSession });
     if (debit.matchedCount !== 1) return "funds";
     if (previous !== null) {
-      const credit = await this.donatePlayers.updateOne({ _id: previous._id, kc: { $gte: 0, $lte: game.maxAmount - state.earnedKC }, $expr: { $eq: ["$kc", { $trunc: "$kc" }] } }, { $inc: { kc: state.earnedKC } }, { session: this.donateSession });
+      const credit = await this.donatePlayers.updateOne({ _id: previous._id, kc: { $gte: 0, $lte: game.maxAmount - income }, $expr: { $eq: ["$kc", { $trunc: "$kc" }] } }, { $inc: { kc: income } }, { session: this.donateSession });
       if (credit.matchedCount !== 1) throw new Error("Dealer payout conflict");
     }
     const changed = await this.dealers.updateOne({ _id: "casino", holderId: state.holderId, earnedKC: state.earnedKC, nextChangeAt: state.nextChangeAt }, { $set: {
@@ -3873,7 +3990,7 @@ var MongoBankStore = class extends MongoDonateStore {
     if (result.matchedCount !== 1) throw new Error("Missing bank actor");
   }
   async saveSavings(player, balance, since, walletDelta) {
-    if (!safeBankMoney(balance) || !Number.isSafeInteger(walletDelta) || !Number.isFinite(since.getTime())) throw new Error("Invalid savings change");
+    if (!isWholeKc(balance) || !Number.isSafeInteger(walletDelta) || Math.abs(walletDelta) % game.kcScale !== 0 || !Number.isFinite(since.getTime())) throw new Error("Invalid savings change");
     const result = await this.bankPlayers.updateOne({
       _id: player._id,
       kc: { $gte: Math.max(0, -walletDelta), $lte: game.maxAmount - Math.max(0, walletDelta) },
@@ -3884,7 +4001,9 @@ var MongoBankStore = class extends MongoDonateStore {
     return result.matchedCount === 1;
   }
   async transferMoney(sender, receiver, currency, gross, net) {
-    if (!isBalanceCurrency(currency) || sender._id === receiver._id || !safeBankMoney(gross) || gross <= 0 || net !== transferNet(gross)) throw new Error("Invalid transfer");
+    if (currency === "kc" && gross % game.kcScale !== 0) throw new Error("Fractional KC transfer");
+    if (currency === "kc" && (!isWholeKc(sender.kc) || !isWholeKc(receiver.kc))) return false;
+    if (!isBalanceCurrency(currency) || sender._id === receiver._id || !safeBankMoney(gross) || gross <= 0 || net !== transferNet(gross, currency)) throw new Error("Invalid transfer");
     if (!safeBankMoney(sender[currency]) || !safeBankMoney(receiver[currency]) || receiver[currency] > game.maxAmount - net) return false;
     const debit = await this.bankPlayers.updateOne({ _id: sender._id, [currency]: { $gte: gross, $lte: game.maxAmount }, $expr: { $eq: [`$${currency}`, { $trunc: `$${currency}` }] } }, { $inc: { [currency]: -gross } }, { session: this.bankSession });
     if (debit.matchedCount !== 1) return false;
@@ -3915,6 +4034,7 @@ var MongoBankStore = class extends MongoDonateStore {
     return this.bankDeposits.find({ state: "active", nextAttemptAt: { $lte: now }, expiresAt: { $lte: now } }, { session: this.bankSession }).sort({ nextAttemptAt: 1, _id: 1 }).limit(1).next();
   }
   async createDeposit(player, amount, days, now) {
+    amount = roundKc(amount);
     if (!safeBankMoney(amount) || amount <= 0 || amount > bankConfig.maxDeposit || !isDepositDays(days)) throw new Error("Invalid deposit creation");
     if ((await this.deposits(player._id)).length >= bankConfig.maxDeposits) return "limit";
     const id = player.nextDepositId ?? 1;
@@ -4031,6 +4151,7 @@ var MongoCasinoStore = class extends MongoBankStore {
     return await this.notices.findOne({ _id: id, state: { $in: ["sent", "failed"] } }, { session: this.casinoSession, projection: { _id: 1 } }) !== null;
   }
   async casinoDealerIncome(vkId, amount) {
+    amount = roundKc(amount);
     if (!Number.isSafeInteger(amount) || amount < 0 || amount > game.maxAmount) throw new Error("Invalid casino income");
     const result = await this.casinoDealers.updateOne({ _id: "casino", holderId: vkId, earnedKC: { $gte: 0, $lte: game.maxAmount - amount }, $expr: { $eq: ["$earnedKC", { $trunc: "$earnedKC" }] } }, { $inc: { earnedKC: amount } }, { session: this.casinoSession });
     return result.matchedCount === 1;
@@ -4204,6 +4325,7 @@ var MongoGameDatabase = class {
     ) !== ids.length) {
       throw new Error("Concurrent counter initialization failed");
     }
+    await migrateWholeKc(this.db);
   }
   recordChat(peerId, active = true) {
     return this.chats.recordChat(peerId, active);
@@ -4293,13 +4415,14 @@ var MongoGameStore = class extends MongoCasinoStore {
     return this.updateBalance(vkId, "kc", operation, amount);
   }
   async updateBalance(vkId, currency, operation, amount) {
+    if (currency === "kc") amount = roundKc(amount);
     if (!isBalanceCurrency(currency) || !validBalanceChange(operation, amount)) {
       throw new Error("Invalid balance change");
     }
     const filter = operation === "set" ? { _id: vkId } : {
       _id: vkId,
       [currency]: { $gte: operation === "take" ? amount : 0, $lte: operation === "add" ? game.maxAmount - amount : game.maxAmount },
-      $expr: { $eq: [`$${currency}`, { $trunc: `$${currency}` }] }
+      $expr: { $and: [{ $eq: [`$${currency}`, { $trunc: `$${currency}` }] }, ...currency === "kc" ? [{ $eq: [{ $mod: ["$kc", game.kcScale] }, 0] }] : []] }
     };
     const update = operation === "set" ? { $set: { [currency]: amount } } : { $inc: { [currency]: operation === "take" ? -amount : amount } };
     const result = await this.players.updateOne(filter, update, { session: this.session });
@@ -4636,7 +4759,7 @@ function coinMultiplier(step) {
 function coinPayout(amount, step) {
   if (!safeBankMoney(amount)) throw new Error("Invalid coin amount");
   const value = BigInt(amount) * BigInt(coinMultiplier(step)) / BigInt(privateCasinoConfig.multiplierScale);
-  return value > BigInt(game.maxAmount) ? null : Number(value);
+  return value > BigInt(game.maxAmount) ? null : roundKcRatio(BigInt(amount) * BigInt(coinMultiplier(step)), BigInt(privateCasinoConfig.multiplierScale));
 }
 function coinActive(state) {
   return state.stage === "staked" || state.stage === "playing";
@@ -4688,12 +4811,12 @@ async function coinStakeInput(store, player, input) {
   if (previous.stage === "playing") return coinReply(privateCasinoTexts.cannotChange, previous);
   const parsed = parseCasinoStake(input.text ?? "");
   if (parsed === null) return coinReply(privateCasinoTexts.stakeUsage, previous);
-  const old = previous.stage === "staked" ? previous.amount : 0;
+  const old = previous.stage === "staked" ? roundKc(previous.amount) : 0;
   const available = BigInt(player.kc) + BigInt(old);
   const raw = parsed === "all" ? available : parsed === "half" ? available / 2n : BigInt(parsed);
-  if (raw < BigInt(privateCasinoConfig.coinMinimum)) return coinReply(privateCasinoTexts.stakeUsage, previous);
   if (raw > BigInt(game.maxAmount)) return coinReply(casinoTexts.limit, previous);
-  const amount = Number(raw);
+  const amount = parsed === "half" ? roundKcRatio(available, 2n) : roundKc(Number(raw));
+  if (amount < privateCasinoConfig.coinMinimum) return coinReply(privateCasinoTexts.stakeUsage, previous);
   if (coinPayout(amount, privateCasinoConfig.coinMultipliers.length) === null) return coinReply(casinoTexts.limit, previous);
   const delta = amount - old;
   if (delta !== 0 && !await store.updateBalance(player._id, "kc", delta > 0 ? "take" : "add", Math.abs(delta))) return coinReply(delta > 0 ? casinoTexts.funds : casinoTexts.limit, previous);
@@ -5108,13 +5231,14 @@ async function transfer(store, sender, receiver, currency, amount, input) {
   if (!safeBankMoney(amount) || amount <= 0) return back2(bankTexts.invalid, "bank_transfer_menu");
   if (sender._id === receiver._id) return back2(bankTexts.self, "bank_transfer_menu");
   if (sender[currency] < amount) return back2(currency === "kc" ? bankTexts.funds : bankTexts.fundsCurrency, "bank_transfer_menu");
-  const net = transferNet(amount);
+  const net = transferNet(amount, currency);
   if (!await store.transferMoney(sender, receiver, currency, amount, net)) return back2(bankTexts.limit, "bank_transfer_menu");
   await store.enqueueItemNotification(`transfer:${input.eventId}`, receiver._id, transferReceivedText(sender, net, currency), { kind: "none" });
   if (!input.isChat) await store.setBankDraft(sender._id, null);
   return { text: transferSuccessText(receiver, net, currency, input.isChat ?? false), keyboard: { kind: input.isChat ? "none" : "bank_transfer_menu" } };
 }
 async function selectDepositAmount(store, player, amount, token) {
+  amount = roundKc(amount);
   if (!safeBankMoney(amount) || amount <= 0) return back2(bankTexts.invalid, "bank_deposits");
   if (amount > bankConfig.maxDeposit) return back2(bankTexts.depositMax, "bank_deposits");
   if (amount > player.kc) return back2(bankTexts.funds, "bank_deposits");
@@ -5286,7 +5410,7 @@ async function buyDealer(store, player, now, eventId) {
       if (previous !== null) await store.enqueueItemNotification(
         `dealer:${eventId}`,
         previous._id,
-        `${mention(player)} стал новым крупье. Вы успели заработать: ${formatAmount(state.earnedKC, game.kcScale)} KC`,
+        `${mention(player)} стал новым крупье. Вы успели заработать: ${formatKc(state.earnedKC)} KC`,
         { kind: "none" }
       );
       await store.setDonateDraft(player._id, null);
@@ -5345,7 +5469,7 @@ async function donateAction(store, player, command, input, members, random) {
       return buyDealer(store, player, now, input.eventId);
     case "dealer_view": {
       const state = await store.dealer();
-      return { text: `🤑 Крупье: ${dealerMention(state.holderId === null ? null : await store.player(state.holderId))} (заработал: ${formatAmount(state.earnedKC, game.kcScale)} KC)`, keyboard: { kind: "none" } };
+      return { text: `🤑 Крупье: ${dealerMention(state.holderId === null ? null : await store.player(state.holderId))} (заработал: ${formatKc(state.earnedKC)} KC)`, keyboard: { kind: "none" } };
     }
     case "theft": {
       if (!input.isChat) throw new Error("Theft is chat-only");
@@ -5358,8 +5482,8 @@ async function donateAction(store, player, command, input, members, random) {
       if (victim === null || !Number.isSafeInteger(victim.kc) || victim.kc < 0 || victim.kc > game.maxAmount) throw new Error("Invalid theft target");
       const amount = random("amount", Math.floor(victim.kc / game.kcScale) + 1) * game.kcScale;
       if (!await store.steal(player, victim, amount, now)) return main(donateTexts.limit);
-      await store.enqueueItemNotification(`theft:${input.eventId}`, victim._id, `${mention(player)} украл у тебя ${formatAmount(amount, game.kcScale)} KC`, { kind: "none" });
-      return main(`${mention(player)} украл у игрока ${mention(victim)} ${formatAmount(amount, game.kcScale)} KC.`);
+      await store.enqueueItemNotification(`theft:${input.eventId}`, victim._id, `${mention(player)} украл у тебя ${formatKc(amount)} KC`, { kind: "none" });
+      return main(`${mention(player)} украл у игрока ${mention(victim)} ${formatKc(amount)} KC.`);
     }
     default:
       return assertNever(command);
@@ -5403,7 +5527,7 @@ function promoRewardText(currency, amount) {
   const value = formatAmount(amount, promoScale(currency));
   switch (currency) {
     case "kc":
-      return `💰 ${value} KC`;
+      return `💰 ${formatKc(amount)} KC`;
     case "euro":
       return `💶 ${value}`;
     case "bitcoin":

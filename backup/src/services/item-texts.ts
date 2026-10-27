@@ -2,7 +2,7 @@ import { itemConfig } from '../config/items.js';
 import { game } from '../config/game.js';
 import type { Player } from '../types/game.js';
 import type { CaseRewards, ItemKind, ItemOffer } from '../types/items.js';
-import { formatAmount, mention } from './texts.js';
+import { formatKc, formatAmount, mention } from './texts.js';
 
 export const itemLabels = {
   use: '✅ Использовать', sell: '💰 Продать', gift: '🎁 Подарить', custom: '📦 Свое кол-во', open: 'Открыть',
@@ -44,7 +44,7 @@ function dropText(index: number): string {
   if (drop === undefined) {
     throw new Error('Unknown case drop');
   }
-  return drop.currency === 'kc' ? `💰 ${formatAmount(drop.amount, game.kcScale)} KC`
+  return drop.currency === 'kc' ? `💰 ${formatKc(drop.amount)} KC`
     : `💶 ${formatAmount(drop.amount, game.euroScale)} евро`;
 }
 export function itemDetails(kind: ItemKind, count: number, use = false): string {
@@ -67,13 +67,13 @@ export function giftReceivedText(sender: Player, kind: ItemKind, quantity: numbe
 }
 export function offerText(seller: Player, offer: ItemOffer): string {
   return `Игрок ${mention(seller)} предлагает вам купить у него ${itemName(offer.itemKind)} x${offer.quantity} за `
-    + `${formatAmount(offer.price, game.kcScale)} KC. Через 10 минут сделка аннулируется.`;
+    + `${formatKc(offer.price)} KC. Через 10 минут сделка аннулируется.`;
 }
 export function boughtText(buyer: Player): string {
   return `${mention(buyer)}, сделка прошла успешно!`;
 }
 export function soldText(buyer: Player, offer: ItemOffer): string {
-  return `${mention(buyer)} купил у вас ${itemName(offer.itemKind)} x${offer.quantity} за ${formatAmount(offer.price, game.kcScale)} KC`;
+  return `${mention(buyer)} купил у вас ${itemName(offer.itemKind)} x${offer.quantity} за ${formatKc(offer.price)} KC`;
 }
 
 export function itemCatalogText(): string {

@@ -1,9 +1,9 @@
+import { maxWholeKc } from '../../src/services/kc-money.js';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { test } from 'node:test';
 import { MongoClient } from 'mongodb';
 import { bankConfig } from '../../src/config/bank.js';
-import { game } from '../../src/config/game.js';
 import { parseCommand } from '../../src/handlers/commands.js';
 import { MongoGameDatabase } from '../../src/repositories/mongo.js';
 import { settleBankDeposits, finishDeposit } from '../../src/services/bank-deposits.js';
@@ -63,7 +63,7 @@ test('MongoDB replica set: registration migration, savings, transfer races, pens
       const receiver = await store.player(3);
       assert.ok(sender);
       assert.ok(receiver);
-      assert.equal(await store.transferMoney(sender, receiver, 'kc', 1000, 950), true);
+      assert.equal(await store.transferMoney(sender, receiver, 'kc', 1000, 900), true);
       throw new Error('Rollback after transfer credit');
     }));
     assert.equal((await players.findOne({ _id: 2 }))?.kc, 19_000);
@@ -110,7 +110,7 @@ test('MongoDB replica set: registration migration, savings, transfer races, pens
     assert.ok(boundary.keyboard.kind === 'bank_deposit_confirm');
     const boundaryToken = boundary.keyboard.token;
     await deposits.updateOne({ _id: blocked._id }, { $set: { createdAt: pastStart, expiresAt: pastEnd, nextAttemptAt: pastEnd } });
-    await players.updateOne({ _id: 1 }, { $set: { kc: game.maxAmount } });
+    await players.updateOne({ _id: 1 }, { $set: { kc: maxWholeKc } });
     assert.equal(await settleBankDeposits(database), 0);
     assert.equal((await deposits.findOne({ _id: blocked._id }))?.state, 'active');
     await players.updateOne({ _id: 1 }, { $set: { kc: 0 } });

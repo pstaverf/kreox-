@@ -1,3 +1,4 @@
+import { roundKc, roundKcRatio } from './kc-money.js';
 import { privateCasinoConfig } from '../config/private-casino.js';
 import { casinoConfig } from '../config/casino.js';
 import { game } from '../config/game.js';
@@ -48,12 +49,12 @@ export async function coinStakeInput(store: GameStore, player: Player, input: Ga
   if (previous.stage === 'playing') return coinReply(privateCasinoTexts.cannotChange, previous);
   const parsed = parseCasinoStake(input.text ?? '');
   if (parsed === null) return coinReply(privateCasinoTexts.stakeUsage, previous);
-  const old = previous.stage === 'staked' ? previous.amount : 0;
+  const old = previous.stage === 'staked' ? roundKc(previous.amount) : 0;
   const available = BigInt(player.kc) + BigInt(old);
   const raw = parsed === 'all' ? available : parsed === 'half' ? available / 2n : BigInt(parsed);
-  if (raw < BigInt(privateCasinoConfig.coinMinimum)) return coinReply(privateCasinoTexts.stakeUsage, previous);
   if (raw > BigInt(game.maxAmount)) return coinReply(casinoTexts.limit, previous);
-  const amount = Number(raw);
+  const amount = parsed === 'half' ? roundKcRatio(available, 2n) : roundKc(Number(raw));
+  if (amount < privateCasinoConfig.coinMinimum) return coinReply(privateCasinoTexts.stakeUsage, previous);
   if (coinPayout(amount, privateCasinoConfig.coinMultipliers.length) === null) return coinReply(casinoTexts.limit, previous);
   const delta = amount - old;
   if (delta !== 0 && !await store.updateBalance(player._id, 'kc', delta > 0 ? 'take' : 'add', Math.abs(delta))) return coinReply(delta > 0 ? casinoTexts.funds : casinoTexts.limit, previous);

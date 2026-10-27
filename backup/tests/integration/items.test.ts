@@ -1,8 +1,8 @@
+import { maxWholeKc } from '../../src/services/kc-money.js';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { test } from 'node:test';
 import { MongoClient } from 'mongodb';
-import { game } from '../../src/config/game.js';
 import { MongoGameDatabase } from '../../src/repositories/mongo.js';
 import { GameService } from '../../src/services/game.js';
 import { itemDetails, itemTexts } from '../../src/services/item-texts.js';
@@ -116,7 +116,7 @@ test('MongoDB replica set: item opening, gifts, reserved purchases, expiration a
     }));
     assert.equal(await items.countDocuments({ vkId: 1 }), 1);
     assert.equal((await players.findOne({ _id: 1 }))?.kc, 160_000);
-    await players.updateOne({ _id: 1 }, { $set: { kc: game.maxAmount } });
+    await players.updateOne({ _id: 1 }, { $set: { kc: maxWholeKc } });
     assert.equal(await database.transaction(async store => {
       const player = await store.player(1);
       assert.ok(player);

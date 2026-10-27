@@ -1,3 +1,4 @@
+import { maxWholeKc, roundKcRatio } from '../src/services/kc-money.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { bankConfig } from '../src/config/bank.js';
@@ -71,13 +72,13 @@ test('bank money parsing, net fee and weekly compounding use integer arithmetic 
   assert.equal(parseBankMoney('50.25', 'euro'), 5025);
   for (const value of ['-1', '0', 'NaN', '1e6', '0x10', '99999999999999999']) assert.equal(parseBankMoney(value, 'kc'), null);
   assert.equal(transferNet(10_000), 9500);
-  assert.equal(transferNet(game.maxAmount), Number(BigInt(game.maxAmount) * 95n / 100n));
+  assert.equal(transferNet(game.maxAmount), maxWholeKc - roundKcRatio(BigInt(game.maxAmount) * 5n, 100n));
   const since = new Date('2026-10-25T00:00:00Z');
   assert.equal(settleSavings(10_000_000, since, new Date(since.getTime() + bankConfig.weekMs - 1)).balance, 10_000_000);
   assert.equal(settleSavings(10_000_000, since, new Date(since.getTime() + bankConfig.weekMs)).balance, 10_200_000);
   assert.equal(settleSavings(10_000_000, since, new Date(since.getTime() + 2 * bankConfig.weekMs)).balance, 10_404_000);
-  assert.equal(settleSavings(1, since, new Date('9999-01-01')).balance, 1);
-  assert.equal(settleSavings(game.maxAmount, since, new Date('9999-01-01')).balance, game.maxAmount);
+  assert.equal(settleSavings(1, since, new Date('9999-01-01')).balance, 0);
+  assert.equal(settleSavings(game.maxAmount, since, new Date('9999-01-01')).balance, maxWholeKc);
 });
 
 test('city, bank and casino lobby navigation do not change balances', async () => {
@@ -253,20 +254,20 @@ test('early withdrawal confirmation pays 90% of current value once, frees a slot
   db.player().kc = 10_000;
   const deposit = await create();
   db.time = new Date(deposit.createdAt.getTime() + 1.5 * bankConfig.dayMs);
-  assert.equal(earlyDepositValue(deposit, db.time), 9090);
+  assert.equal(earlyDepositValue(deposit, db.time), 9100);
   assert.equal((await send({ kind: 'bank_deposit', depositId: 1 }, 2)).text, bankTexts.unavailable);
   const quote = await send({ kind: 'bank_deposit_early', depositId: 1 });
-  assert.match(quote.text, /90.9 KC/);
+  assert.match(quote.text, /91 KC/);
   assert.ok(quote.keyboard.kind === 'bank_deposit_confirm');
   const token = quote.keyboard.token;
   const command: BankCommand = { kind: 'bank_deposit_confirm', token };
   const replies = await Promise.all(Array.from({ length: 8 }, () => send(command)));
   assert.equal(replies.filter(reply => reply.text.startsWith('✅ Вы сняли депозит')).length, 1);
-  assert.equal(db.player().kc, 9090);
+  assert.equal(db.player().kc, 9100);
   assert.equal((await send({ kind: 'bank_deposits' })).text, bankTexts.deposits);
   db.time = new Date(deposit.expiresAt);
   assert.equal(await settleBankDeposits(db), 0);
-  assert.equal(db.player().kc, 9090);
+  assert.equal(db.player().kc, 9100);
 });
 
 test('confirmation at the expiry boundary pays full yield without early penalty', async () => {
@@ -325,7 +326,7 @@ test('deposit creation and payout roll back completely on failures, including no
   assert.equal(db.player().kc, 10_400);
 });
 
-test('fractional savings income can be withdrawn without losing cents and frequent views do not restart interest', async () => {
+test('savings income rounds to whole KC and frequent views do not restart interest', async () => {
   const { db, send, text } = await fixture();
   db.player().kc = 100;
   await send({ kind: 'bank_deposit_money' });
@@ -337,9 +338,9 @@ test('fractional savings income can be withdrawn without losing cents and freque
   assert.equal(db.player().savingsSince?.getTime(), start.getTime());
   db.time = new Date(start.getTime() + bankConfig.weekMs);
   await send({ kind: 'bank_withdraw_money' });
-  assert.equal(db.player().savingsBalance, 102);
+  assert.equal(db.player().savingsBalance, 100);
   await text('1,02');
-  assert.equal(db.player().kc, 102);
+  assert.equal(db.player().kc, 100);
   assert.equal(db.player().savingsBalance, 0);
 });
 

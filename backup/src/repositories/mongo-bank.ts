@@ -1,3 +1,4 @@
+import { isWholeKc, roundKc } from '../services/kc-money.js';
 import type { ClientSession, Db } from 'mongodb';
 import { bankConfig } from '../config/bank.js';
 import { game } from '../config/game.js';
@@ -21,7 +22,7 @@ export class MongoBankStore extends MongoDonateStore {
     if (result.matchedCount !== 1) throw new Error('Missing bank actor');
   }
   async saveSavings(player: Player, balance: number, since: Date, walletDelta: number): Promise<boolean> {
-    if (!safeBankMoney(balance) || !Number.isSafeInteger(walletDelta) || !Number.isFinite(since.getTime())) throw new Error('Invalid savings change');
+    if (!isWholeKc(balance) || !Number.isSafeInteger(walletDelta) || Math.abs(walletDelta) % game.kcScale !== 0 || !Number.isFinite(since.getTime())) throw new Error('Invalid savings change');
     const result = await this.bankPlayers.updateOne({
       _id: player._id, kc: { $gte: Math.max(0, -walletDelta), $lte: game.maxAmount - Math.max(0, walletDelta) },
       savingsBalance: player.savingsBalance ?? { $exists: false },
@@ -31,7 +32,9 @@ export class MongoBankStore extends MongoDonateStore {
     return result.matchedCount === 1;
   }
   async transferMoney(sender: Player, receiver: Player, currency: BalanceCurrency, gross: number, net: number): Promise<boolean> {
-    if (!isBalanceCurrency(currency) || sender._id === receiver._id || !safeBankMoney(gross) || gross <= 0 || net !== transferNet(gross)) throw new Error('Invalid transfer');
+    if (currency === 'kc' && gross % game.kcScale !== 0) throw new Error('Fractional KC transfer');
+    if (currency === 'kc' && (!isWholeKc(sender.kc) || !isWholeKc(receiver.kc))) return false;
+    if (!isBalanceCurrency(currency) || sender._id === receiver._id || !safeBankMoney(gross) || gross <= 0 || net !== transferNet(gross, currency)) throw new Error('Invalid transfer');
     if (!safeBankMoney(sender[currency]) || !safeBankMoney(receiver[currency]) || receiver[currency] > game.maxAmount - net) return false;
     const debit = await this.bankPlayers.updateOne({ _id: sender._id, [currency]: { $gte: gross, $lte: game.maxAmount }, $expr: { $eq: [`$${currency}`, { $trunc: `$${currency}` }] } }, { $inc: { [currency]: -gross } }, { session: this.bankSession });
     if (debit.matchedCount !== 1) return false;
@@ -60,6 +63,7 @@ export class MongoBankStore extends MongoDonateStore {
     return this.bankDeposits.find({ state: 'active', nextAttemptAt: { $lte: now }, expiresAt: { $lte: now } }, { session: this.bankSession }).sort({ nextAttemptAt: 1, _id: 1 }).limit(1).next();
   }
   async createDeposit(player: Player, amount: number, days: DepositDays, now: Date): Promise<Deposit | 'funds' | 'limit'> {
+    amount = roundKc(amount);
     if (!safeBankMoney(amount) || amount <= 0 || amount > bankConfig.maxDeposit || !isDepositDays(days)) throw new Error('Invalid deposit creation');
     if ((await this.deposits(player._id)).length >= bankConfig.maxDeposits) return 'limit';
     const id = player.nextDepositId ?? 1;

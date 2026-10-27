@@ -1,7 +1,7 @@
 import type { BalanceCurrency } from '../types/admin-balance.js';
 import type { DiceGame, DiceParticipant } from '../types/dice.js';
 import { promoScale } from './promo-rules.js';
-import { formatAmount, mention } from './texts.js';
+import { formatKc, formatAmount, mention } from './texts.js';
 
 export const diceTexts = {
   empty: 'Костей нет.',
@@ -19,11 +19,12 @@ export function diceMinimumText(currency: BalanceCurrency): string {
   return currency === 'kc' ? '🎲 Ставка от 1.000 KC.' : currency === 'euro' ? '🎲 Ставка от 10 💶.' : '🎲 Ставка от 10₿.';
 }
 export function diceMoney(amount: number, currency: BalanceCurrency): string {
+  if (currency === 'kc') return `${formatKc(amount)} KC`;
   const scale = promoScale(currency);
   const whole = formatAmount(Number(BigInt(amount) / BigInt(scale)), 1);
   const fraction = String(BigInt(amount) % BigInt(scale)).padStart(String(scale).length - 1, '0').replace(/0+$/, '');
   const number = fraction.length === 0 ? whole : `${whole},${fraction}`;
-  return `${number}${currency === 'kc' ? ' KC' : currency === 'euro' ? ' 💶' : '₿'}`;
+  return `${number}${currency === 'euro' ? ' 💶' : '₿'}`;
 }
 export function diceMention(player: DiceParticipant): string { return mention({ _id: player.vkId, name: player.name }); }
 export function diceNumber(gameId: number): string { return formatAmount(gameId, 1); }

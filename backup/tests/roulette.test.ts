@@ -230,20 +230,20 @@ test('short roulette bets share balance, round extensions, caps and event dedupl
 });
 
 
-test('all-in roulette preserves exact fractional KC and formats the stake and payout with a decimal comma', async () => {
+test('all-in roulette uses whole KC for both the all-in stake and the exact payout', async () => {
   const f = await fixture(16);
-  f.db.player().kc = 180_394_712;
+  f.db.player().kc = 180_394_700;
   const reply = await f.chat('16 все');
-  assert.equal(reply.text, '✅ [id1|Игрок 1] — 1.803.947,12 KC на 16');
+  assert.equal(reply.text, '✅ [id1|Игрок 1] — 1.803.947 KC на 16');
   assert.equal(f.db.player().kc, 0);
   const bet = [...f.db.state.casino.values()].find(value => value.kind === 'bet');
   assert.ok(bet?.kind === 'bet');
-  assert.equal(bet.amount, 180_394_712);
+  assert.equal(bet.amount, 180_394_700);
   f.db.time = new Date(f.round().closesAt);
   await f.drain();
-  assert.equal(f.db.player().kc, 6_494_209_632);
+  assert.equal(f.db.player().kc, 6_494_209_200);
   const result = f.db.state.notifications.find(value => value._id.startsWith('result:'));
-  assert.ok(result?.text.includes('✅ [id1|Игрок 1] — 1.803.947,12 KC на 16\n— Приз: 64.942.096,32 KC'));
+  assert.ok(result?.text.includes('✅ [id1|Игрок 1] — 1.803.947 KC на 16\n— Приз: 64.942.092 KC'));
 });
 
 test('late all-in bets and the casino worker share a single committed close notice without debits or duplicate replies', async () => {

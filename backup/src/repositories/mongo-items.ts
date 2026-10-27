@@ -1,3 +1,4 @@
+import { roundKc } from '../services/kc-money.js';
 import type { ClientSession, Db } from 'mongodb';
 import { game } from '../config/game.js';
 import type { InventoryItem, Player } from '../types/game.js';
@@ -151,6 +152,7 @@ export class MongoItemStore extends MongoPromoStore {
     return offer;
   }
   async purchaseOffer(offer: ItemOffer, buyer: Player, seller: Player, now: Date): Promise<PurchaseResult> {
+    const price = roundKc(offer.price);
     validateOffer(offer);
     if (offer.buyerId !== buyer._id || offer.sellerId !== seller._id || offer.state !== 'pending') {
       return 'invalid';
@@ -165,29 +167,29 @@ export class MongoItemStore extends MongoPromoStore {
     if (units.length !== offer.quantity) {
       return 'items';
     }
-    if (!Number.isSafeInteger(seller.kc) || seller.kc < 0 || seller.kc > game.maxAmount - offer.price) {
+    if (!Number.isSafeInteger(seller.kc) || seller.kc < 0 || seller.kc > game.maxAmount - price) {
       return 'limit';
     }
     if (!Number.isSafeInteger(buyer.kc) || buyer.kc < 0 || buyer.kc > game.maxAmount) {
       return 'limit';
     }
-    if (buyer.kc < offer.price) {
+    if (buyer.kc < price) {
       return 'funds';
     }
     const debit = await this.itemPlayers.findOneAndUpdate({
-      _id: buyer._id, kc: { $gte: offer.price, $lte: game.maxAmount }, nextItemId: { $gte: 1, $lte: game.maxAmount - offer.quantity },
+      _id: buyer._id, kc: { $gte: price, $lte: game.maxAmount }, nextItemId: { $gte: 1, $lte: game.maxAmount - offer.quantity },
       $expr: { $eq: ['$nextItemId', { $trunc: '$nextItemId' }] }
-    }, { $inc: { kc: -offer.price, nextItemId: offer.quantity } }, {
+    }, { $inc: { kc: -price, nextItemId: offer.quantity } }, {
       session: this.itemSession, returnDocument: 'before', includeResultMetadata: false
     });
     if (debit === null) {
       return 'limit';
     }
-    const credit = await this.itemPlayers.updateOne({ _id: seller._id, kc: { $gte: 0, $lte: game.maxAmount - offer.price } }, {
-      $inc: { kc: offer.price }
+    const credit = await this.itemPlayers.updateOne({ _id: seller._id, kc: { $gte: 0, $lte: game.maxAmount - price } }, {
+      $inc: { kc: price }
     }, { session: this.itemSession });
     const completed = await this.offers.updateOne({ _id: offer._id, state: 'pending', expiresAt: { $gt: now }, $expr: { $gt: ['$expiresAt', '$$NOW'] } }, {
-      $set: { state: 'completed' }
+      $set: { state: 'completed', price }
     }, { session: this.itemSession });
     if (credit.matchedCount !== 1 || completed.matchedCount !== 1) {
       throw new Error('Purchase conflict');

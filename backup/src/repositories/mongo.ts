@@ -1,3 +1,5 @@
+import { migrateWholeKc } from './mongo-kc-migration.js';
+import { roundKc } from '../services/kc-money.js';
 import { ChatRegistryCache } from './chat-registry-cache.js';
 import { ResponseIds } from '../utils/response-ids.js';
 import { TransactionClock } from '../utils/transaction-clock.js';
@@ -108,6 +110,7 @@ export class MongoGameDatabase implements GameDatabase {
     ) !== ids.length) {
       throw new Error('Concurrent counter initialization failed');
     }
+    await migrateWholeKc(this.db);
   }
 
 
@@ -202,13 +205,14 @@ class MongoGameStore extends MongoCasinoStore implements GameStore {
   }
 
   async updateBalance(vkId: number, currency: BalanceCurrency, operation: BalanceOperation, amount: number): Promise<boolean> {
+    if (currency === 'kc') amount = roundKc(amount);
     if (!isBalanceCurrency(currency) || !validBalanceChange(operation, amount)) {
       throw new Error('Invalid balance change');
     }
     const filter = operation === 'set' ? { _id: vkId } : {
       _id: vkId,
       [currency]: { $gte: operation === 'take' ? amount : 0, $lte: operation === 'add' ? game.maxAmount - amount : game.maxAmount },
-      $expr: { $eq: [`$${currency}`, { $trunc: `$${currency}` }] }
+      $expr: { $and: [{ $eq: [`$${currency}`, { $trunc: `$${currency}` }] }, ...(currency === 'kc' ? [{ $eq: [{ $mod: ['$kc', game.kcScale] }, 0] }] : [])] }
     };
     const update = operation === 'set' ? { $set: { [currency]: amount } } : { $inc: { [currency]: operation === 'take' ? -amount : amount } };
     const result = await this.players.updateOne(filter, update, { session: this.session });

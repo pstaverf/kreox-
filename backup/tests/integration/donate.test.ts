@@ -1,9 +1,9 @@
+import { maxWholeKc } from '../../src/services/kc-money.js';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { test } from 'node:test';
 import { MongoClient } from 'mongodb';
 import { donateConfig } from '../../src/config/donate.js';
-import { game } from '../../src/config/game.js';
 import { MongoGameDatabase } from '../../src/repositories/mongo.js';
 import { GameService } from '../../src/services/game.js';
 import { donateTexts } from '../../src/services/donate-texts.js';
@@ -45,11 +45,11 @@ test('MongoDB replica set: donate purchases, theft races, global dealer cooldown
     const subscribeToken = subscribe.keyboard.token;
     await Promise.all(Array.from({ length: 8 }, () => send({ kind: 'donate_confirm', token: subscribeToken })));
     assert.equal((await players.findOne({ _id: 1 }))?.euro, 75_000);
-    await players.updateOne({ _id: 2 }, { $set: { kc: 12345 } });
+    await players.updateOne({ _id: 2 }, { $set: { kc: 12300 } });
     const thefts = await Promise.all(Array.from({ length: 8 }, () => send({ kind: 'theft' }, 1, undefined, true)));
     assert.equal(thefts.filter(reply => reply.text.includes('украл у игрока')).length, 1);
     assert.equal((await players.findOne({ _id: 1 }))?.kc, 12300);
-    assert.equal((await players.findOne({ _id: 2 }))?.kc, 45);
+    assert.equal((await players.findOne({ _id: 2 }))?.kc, 0);
     assert.equal(await db.collection<Notification>('notifications').countDocuments({ _id: /^theft:/ }), 1);
     const purchases = await Promise.all([send({ kind: 'dealer_buy' }, 1), send({ kind: 'dealer_buy' }, 2)]);
     assert.equal(purchases.filter(reply => reply.text.includes('вы успешно стали')).length, 1);
@@ -81,7 +81,7 @@ test('MongoDB replica set: donate purchases, theft races, global dealer cooldown
     }));
     assert.deepEqual(await players.findOne({ _id: 3 }), before);
     assert.equal((await dealers.findOne({ _id: 'casino' }))?.earnedKC, 100);
-    await players.updateOne({ _id: buyerId }, { $set: { kc: game.maxAmount } });
+    await players.updateOne({ _id: buyerId }, { $set: { kc: maxWholeKc } });
     assert.equal((await send({ kind: 'dealer_buy' }, 3)).text, donateTexts.limit);
     assert.equal((await players.findOne({ _id: 3 }))?.euro, before?.euro);
     const actor = await players.findOne({ _id: 1 });

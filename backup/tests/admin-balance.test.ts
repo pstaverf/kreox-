@@ -1,3 +1,4 @@
+import { maxWholeKc } from '../src/services/kc-money.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { game } from '../src/config/game.js';
@@ -95,9 +96,9 @@ test('set can use the largest whole KC amount, add refuses overflow without a pa
   assert.equal(database.player(1).kc, 9_007_199_254_740_900);
   assert.equal((await send('!add @id1 1')).text, texts.adminBalanceLimit);
   assert.equal(database.player(1).kc, 9_007_199_254_740_900);
-  database.player(1).kc = game.maxAmount - 100;
+  database.player(1).kc = maxWholeKc - 100;
   assert.equal((await send('!add @id1 1')).text, 'Done.');
-  assert.equal(database.player(1).kc, game.maxAmount);
+  assert.equal(database.player(1).kc, maxWholeKc);
   assert.equal((await send('!add @id1 0')).text, 'Done.');
 });
 

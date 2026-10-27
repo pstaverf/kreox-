@@ -1,3 +1,5 @@
+import { wholeKcNotice } from './texts.js';
+import { roundKc } from './kc-money.js';
 import { isPositiveId } from '../utils/validation.js';
 import { casinoConfig } from '../config/casino.js';
 import type { GameStore } from '../types/storage.js';
@@ -6,6 +8,8 @@ import { safeBankMoney } from './bank-rules.js';
 
 export async function addCasinoCredit(store: GameStore, key: string, vkId: number, amount: number, destination: 'wallet' | 'dealer' = 'wallet', notice = ''): Promise<void> {
   if (!isPositiveId(vkId) || !safeBankMoney(amount)) throw new Error('Invalid casino credit');
+  notice = wholeKcNotice(notice, amount);
+  amount = roundKc(amount);
   if (amount === 0) return;
   await store.casinoInsert({ _id: `credit:${key}`, kind: 'credit', version: 0, vkId, amount, destination, notice, stage: 'pending', dueAt: new Date(0) });
 }
@@ -13,9 +17,11 @@ export async function payCasinoCredit(store: GameStore, now: Date): Promise<bool
   const credit = (await store.casinoList({ kind: 'credit', dueAt: now }, 1))[0];
   if (credit === undefined) return false;
   if (credit.kind !== 'credit' || !safeBankMoney(credit.amount)) throw new Error('Invalid pending casino credit');
-  let paid = false;
-  if (credit.destination === 'dealer' && (await store.dealer()).holderId === credit.vkId) paid = await store.casinoDealerIncome(credit.vkId, credit.amount);
-  else paid = await store.updateBalance(credit.vkId, 'kc', 'add', credit.amount);
+  credit.notice = wholeKcNotice(credit.notice, credit.amount);
+  credit.amount = roundKc(credit.amount);
+  let paid = credit.amount === 0;
+  if (!paid && credit.destination === 'dealer' && (await store.dealer()).holderId === credit.vkId) paid = await store.casinoDealerIncome(credit.vkId, credit.amount);
+  else if (!paid) paid = await store.updateBalance(credit.vkId, 'kc', 'add', credit.amount);
   if (paid) {
     credit.stage = 'paid';
     if (credit.notice.length > 0) await store.enqueueItemNotification(`notice:${credit._id}`, credit.vkId, credit.notice, { kind: 'none' });

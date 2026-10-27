@@ -1,8 +1,8 @@
+import { maxWholeKc } from '../../src/services/kc-money.js';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { test } from 'node:test';
 import { MongoClient } from 'mongodb';
-import { game } from '../../src/config/game.js';
 import { parseCommand } from '../../src/handlers/commands.js';
 import { MongoGameDatabase } from '../../src/repositories/mongo.js';
 import { closeKey, roundKey } from '../../src/services/casino-rules.js';
@@ -70,14 +70,14 @@ test('MongoDB replica set: casino races, durable payouts, result delivery, elect
     await records.updateOne({ _id: resultRound._id }, { $set: { dueAt: past } });
     await settleCasino(database);
     await records.updateOne({ _id: resultRound._id }, { $set: { dueAt: past } });
-    await players.updateOne({ _id: 2 }, { $set: { kc: game.maxAmount } });
+    await players.updateOne({ _id: 2 }, { $set: { kc: maxWholeKc } });
     for (let attempt = 0; attempt < 8; attempt += 1) {
       await records.updateMany({ kind: 'round', stage: { $in: ['announcing', 'waiting'] } }, { $set: { dueAt: past } });
       await notifications.updateMany({}, { $set: { state: 'sent' } });
       await Promise.all([settleCasino(database), settleCasino(database)]);
     }
     assert.equal((await players.findOne({ _id: 1 }))?.kc, 10_700_000);
-    assert.equal((await players.findOne({ _id: 2 }))?.kc, game.maxAmount);
+    assert.equal((await players.findOne({ _id: 2 }))?.kc, maxWholeKc);
     const pending = await records.findOne({ kind: 'credit', vkId: 2, stage: 'pending' });
     assert.ok(pending?.kind === 'credit');
     assert.equal(pending.amount, 170_000);

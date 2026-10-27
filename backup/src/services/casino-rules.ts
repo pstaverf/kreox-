@@ -1,3 +1,5 @@
+import { roundKc, roundKcRatio } from './kc-money.js';
+import type { BalanceCurrency } from '../types/admin-balance.js';
 import { rouletteConfig } from '../config/roulette.js';
 import { rouletteMultiplier } from './roulette-rules.js';
 import { parseBankMoney, safeBankMoney } from './bank-rules.js';
@@ -54,14 +56,14 @@ export function selectOutcome(mode: CasinoMode, random: CasinoRandom, key: strin
 }
 export function betPayout(mode: CasinoMode, amount: number, target: number, bonus: number): number | null {
   const value = mode === 'crash' ? BigInt(amount) * BigInt(target) / BigInt(casinoConfig.crashPrecision) : mode === 'roulette' ? BigInt(amount) * BigInt(rouletteMultiplier(target)) : BigInt(amount) * BigInt(target + 1) * BigInt(bonus);
-  return value <= BigInt(game.maxAmount) ? Number(value) : null;
+  return value <= BigInt(game.maxAmount) ? roundKc(Number(value)) : null;
 }
 export function roundKey(peerId: number, mode: CasinoMode): string { return `round:${peerId}:${mode}`; }
 export function closeKey(round: CasinoRound): string { return `${round.roundId}:closed`; }
 
 export function casinoPercent(amount: number, percent: number): number {
   if (!Number.isSafeInteger(amount) || amount < 0 || amount > game.maxAmount || !Number.isSafeInteger(percent) || percent < 0 || percent > 100) throw new Error('Invalid casino percentage');
-  return Number(BigInt(amount) * BigInt(percent) / 100n);
+  return roundKcRatio(BigInt(amount) * BigInt(percent), 100n);
 }
 
 export function parseCasinoStake(text: string): CasinoStake | null {
@@ -71,15 +73,15 @@ export function parseCasinoStake(text: string): CasinoStake | null {
     default: return parseBankMoney(text, 'kc');
   }
 }
-export function resolveCasinoStake(stake: CasinoStake, wallet: number): number {
+export function resolveCasinoStake(stake: CasinoStake, wallet: number, currency: BalanceCurrency = 'kc'): number {
   if (!safeBankMoney(wallet)) throw new Error('Invalid casino wallet');
   if (typeof stake === 'number') {
     if (!safeBankMoney(stake)) throw new Error('Invalid casino stake');
-    return stake;
+    return currency === 'kc' ? roundKc(stake) : stake;
   }
   switch (stake) {
-    case 'half': return Number(BigInt(wallet) / 2n);
-    case 'all': return wallet;
+    case 'half': return currency === 'kc' ? roundKcRatio(BigInt(wallet), 2n) : Number(BigInt(wallet) / 2n);
+    case 'all': return currency === 'kc' ? roundKc(wallet) : wallet;
     default: return assertNever(stake);
   }
 }

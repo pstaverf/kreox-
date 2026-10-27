@@ -1,3 +1,4 @@
+import { roundKc } from './kc-money.js';
 import { casinoConfig } from '../config/casino.js';
 import { accountCapacity, game } from '../config/game.js';
 import type { CasinoCommand, CasinoRandom, DirectorState } from '../types/casino.js';
@@ -37,6 +38,7 @@ export async function directorAction(store: GameStore, player: Player, command: 
   if (state.dueAt <= await store.now()) return { text: casinoTexts.electionPending, keyboard: { kind: 'director_back' } };
   const old = await store.casinoGet(`bid:${state.electionId}:${player._id}`);
   if (old !== null && old.kind !== 'bid') throw new Error('Invalid director bid');
+  draft.amount = roundKc(draft.amount);
   if (!safeBankMoney(draft.amount) || draft.amount < casinoConfig.minimum) throw new Error('Invalid confirmed director bid');
   if (state.total > game.maxAmount - draft.amount || (old?.amount ?? 0) > game.maxAmount - draft.amount) return { text: casinoTexts.limit, keyboard: { kind: 'director_back' } };
   if (!await store.updateBalance(player._id, 'kc', 'take', draft.amount)) return { text: casinoTexts.funds, keyboard: { kind: 'director_back' } };

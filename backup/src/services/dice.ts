@@ -1,3 +1,5 @@
+import { wholeKcNotice } from './texts.js';
+import { roundKc } from './kc-money.js';
 import { createHash } from 'node:crypto';
 import { diceConfig } from '../config/dice.js';
 import { game } from '../config/game.js';
@@ -29,7 +31,11 @@ export async function diceButtonActive(store: GameStore, input: GameInput, comma
 }
 async function payCredit(store: GameStore, credit: DiceCredit, now: Date): Promise<boolean> {
   if (credit.stage !== 'pending' || !safeBankMoney(credit.amount) || credit.amount <= 0 || !isPositiveId(credit.vkId)) throw new Error('Invalid dice credit');
-  const paid = await store.updateBalance(credit.vkId, credit.currency, 'add', credit.amount);
+  if (credit.currency === 'kc') {
+    credit.notice = wholeKcNotice(credit.notice, credit.amount);
+    credit.amount = roundKc(credit.amount);
+  }
+  const paid = credit.amount === 0 || await store.updateBalance(credit.vkId, credit.currency, 'add', credit.amount);
   if (paid) {
     credit.stage = 'paid';
     if (credit.notice.length > 0) await store.enqueueItemNotification(`notice:${credit._id}`, credit.vkId, credit.notice, { kind: 'none' });
@@ -70,7 +76,7 @@ async function finishDice(store: GameStore, chat: DiceChat, value: DiceGame, now
   });
   const best = Math.max(...scores);
   const winners = value.players.filter((_player, index) => scores[index] === best);
-  const distribution = diceDistribution(value.amount, value.players.length, winners.length);
+  const distribution = diceDistribution(value.amount, value.players.length, winners.length, value.currency);
   for (const winner of winners) {
     const paid = await creditDice(store, `winner:${key}:${winner.vkId}`, winner.vkId, value, distribution.each, now);
     if (!paid) await store.enqueueItemNotification(`dice-waiting:${key}:${winner.vkId}`, winner.vkId, `${diceTexts.pending}\n💰 Сумма: ${diceMoney(distribution.each, value.currency)}`, { kind: 'none' });
@@ -98,8 +104,9 @@ export async function diceAction(store: GameStore, input: GameInput, player: Pla
     if (typeof amount !== 'number') {
       const current = await store.player(input.vkId);
       if (current === null) throw new Error('Missing dice balance');
-      amount = resolveCasinoStake(amount, current[command.currency]);
+      amount = resolveCasinoStake(amount, current[command.currency], command.currency);
     }
+    if (command.currency === 'kc') amount = roundKc(amount);
     if (amount < diceMinimum(command.currency)) return reply(diceMinimumText(command.currency));
     if (!validDiceStake(command.currency, amount, command.slots)) return reply(diceTexts.limit);
     if (chat === null) {

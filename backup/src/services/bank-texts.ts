@@ -4,7 +4,7 @@ import type { BalanceCurrency } from '../types/admin-balance.js';
 import type { Deposit } from '../types/bank.js';
 import type { Player } from '../types/game.js';
 import { depositValue } from './bank-rules.js';
-import { durationText, formatAmount, formatMining, mention } from './texts.js';
+import { durationText, formatKc, formatAmount, formatMining, mention } from './texts.js';
 
 export const bankLabels = {
   director: '👑 Директор', bank: '🏦 Банк', casino: '🎰 Казино', savings: '💲 Накопительный счет',
@@ -29,15 +29,15 @@ export const bankTexts = {
   stale: '⚠️ Подтверждение устарело. Начните действие заново.', cancelled: 'Действие отменено.'
 } as const;
 export function bankMoney(amount: number, currency: BalanceCurrency): string {
-  return currency === 'kc' ? `${formatAmount(amount, game.kcScale)} KC` : currency === 'euro' ? `${formatAmount(amount, game.euroScale)}💶` : `${formatMining(amount)}₿`;
+  return currency === 'kc' ? `${formatKc(amount)} KC` : currency === 'euro' ? `${formatAmount(amount, game.euroScale)}💶` : `${formatMining(amount)}₿`;
 }
-export function savingsText(amount: number): string { return `💲 Накопительный счет:\n\n💰 У вас: ${formatAmount(amount, game.kcScale)} KC`; }
+export function savingsText(amount: number): string { return `💲 Накопительный счет:\n\n💰 У вас: ${formatKc(amount)} KC`; }
 export function savingsPrompt(player: Player, savings: number, direction: 'in' | 'out'): string {
-  return direction === 'in' ? `💰 Введите количество денег, которое вы хотите положить (у вас: ${formatAmount(player.kc, game.kcScale)} KC).`
-    : `💰 Введите количество денег, которое вы хотите снять (на счету: ${formatAmount(savings, game.kcScale)} KC).`;
+  return direction === 'in' ? `💰 Введите количество денег, которое вы хотите положить (у вас: ${formatKc(player.kc)} KC).`
+    : `💰 Введите количество денег, которое вы хотите снять (на счету: ${formatKc(savings)} KC).`;
 }
 export function savingsResult(wallet: number, savings: number): string {
-  return `💱 Транзакция совершена.\n\n💰 На руках: ${formatAmount(wallet, game.kcScale)} KC\n💳 На счету: ${formatAmount(savings, game.kcScale)} KC`;
+  return `💱 Транзакция совершена.\n\n💰 На руках: ${formatKc(wallet)} KC\n💳 На счету: ${formatKc(savings)} KC`;
 }
 export function transferPrompt(player: Player, receiver: Player, currency: BalanceCurrency): string {
   const name = currency === 'kc' ? 'KC' : currency === 'euro' ? 'евро' : 'биткоинов';

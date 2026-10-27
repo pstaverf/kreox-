@@ -1,3 +1,4 @@
+import { roundKc } from './kc-money.js';
 import { bankConfig } from '../config/bank.js';
 import { game } from '../config/game.js';
 import type { BalanceCurrency } from '../types/admin-balance.js';
@@ -24,13 +25,14 @@ async function transfer(store: GameStore, sender: Player, receiver: Player, curr
   if (!safeBankMoney(amount) || amount <= 0) return back(bankTexts.invalid, 'bank_transfer_menu');
   if (sender._id === receiver._id) return back(bankTexts.self, 'bank_transfer_menu');
   if (sender[currency] < amount) return back(currency === 'kc' ? bankTexts.funds : bankTexts.fundsCurrency, 'bank_transfer_menu');
-  const net = transferNet(amount);
+  const net = transferNet(amount, currency);
   if (!await store.transferMoney(sender, receiver, currency, amount, net)) return back(bankTexts.limit, 'bank_transfer_menu');
   await store.enqueueItemNotification(`transfer:${input.eventId}`, receiver._id, transferReceivedText(sender, net, currency), { kind: 'none' });
   if (!input.isChat) await store.setBankDraft(sender._id, null);
   return { text: transferSuccessText(receiver, net, currency, input.isChat ?? false), keyboard: { kind: input.isChat ? 'none' : 'bank_transfer_menu' } };
 }
 async function selectDepositAmount(store: GameStore, player: Player, amount: number, token: string): Promise<Reply> {
+  amount = roundKc(amount);
   if (!safeBankMoney(amount) || amount <= 0) return back(bankTexts.invalid, 'bank_deposits');
   if (amount > bankConfig.maxDeposit) return back(bankTexts.depositMax, 'bank_deposits');
   if (amount > player.kc) return back(bankTexts.funds, 'bank_deposits');

@@ -1,3 +1,4 @@
+import { maxWholeKc } from '../src/services/kc-money.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { diceConfig } from '../src/config/dice.js';
@@ -129,9 +130,9 @@ test('ties at the maximum split with 3.45% fee; other players receive nothing; r
   await f.click('dice_join', 2);
   await f.click('dice_join', 3);
   assert.equal(f.db.player(1).kc, 100_000_000_000 - 100_000);
-  assert.equal(f.db.player(2).kc, 100_000_000_000 - 100_000 + 144_825);
-  assert.equal(f.db.player(3).kc, 100_000_000_000 - 100_000 + 144_825);
-  assert.equal(f.db.player(diceConfig.commissionId).kc, 10_350);
+  assert.equal(f.db.player(2).kc, 100_000_000_000 - 100_000 + 144_800);
+  assert.equal(f.db.player(3).kc, 100_000_000_000 - 100_000 + 144_800);
+  assert.equal(f.db.player(diceConfig.commissionId).kc, 10_400);
 });
 
 test('creator leaves only their own seat; rejoining and leaving cannot duplicate a refund', async () => {
@@ -160,7 +161,7 @@ test('all three currency balances are isolated and commission uses the same curr
     await f.text(command);
     await f.click('dice_join', 2);
     const amount = diceMinimum(currency);
-    const distribution = diceDistribution(amount, 2, 1);
+    const distribution = diceDistribution(amount, 2, 1, currency);
     assert.equal(f.db.player(1)[currency], 100_000_000_000 - amount);
     assert.equal(f.db.player(2)[currency], 100_000_000_000 - amount + distribution.each);
     assert.equal(f.db.player(diceConfig.commissionId)[currency], distribution.commission);
@@ -213,17 +214,17 @@ test('payload cannot move money across chats/DMs or impersonate a participant', 
 
 test('insufficient balances, full pot bounds and failed creation leave no escrow or hot empty expiry record', async () => {
   const f = await fixture();
-  f.db.player().kc = 99_999;
+  f.db.player().kc = 99_900;
   assert.equal((await f.text('кости 1000')).text, diceTexts.funds);
   assert.equal(f.chat().lastGame, 0);
   assert.ok(f.chat().dueAt > f.db.time);
-  f.db.player().kc = game.maxAmount;
+  f.db.player().kc = maxWholeKc;
   assert.equal((await f.send({ kind: 'dice_create', amount: game.maxAmount, currency: 'kc', slots: 2 })).text, diceTexts.limit);
   await f.text('кости 1000');
-  f.db.player(2).kc = 1;
+  f.db.player(2).kc = 100;
   assert.equal((await f.click('dice_join', 2)).text, diceTexts.funds);
   assert.equal(f.chat().games[0]?.players.length, 1);
-  assert.equal(f.db.player(2).kc, 1);
+  assert.equal(f.db.player(2).kc, 100);
   assert.equal(validDiceStake('kc', game.maxAmount, 5), false);
 });
 
@@ -303,18 +304,18 @@ test('missing admin does not lose commission, admin participation does not creat
 
 test('integer payout arithmetic is exact near the safe limit and money text preserves all paid atomic units', () => {
   for (const currency of ['kc', 'euro', 'bitcoin'] as const satisfies readonly BalanceCurrency[]) {
-    const amount = Math.floor(game.maxAmount / 5);
+    const amount = currency === 'kc' ? Math.floor(game.maxAmount / 5 / game.kcScale) * game.kcScale : Math.floor(game.maxAmount / 5);
     for (const winners of [1, 2, 3, 4, 5]) {
-      const value = diceDistribution(amount, 5, winners);
+      const value = diceDistribution(amount, 5, winners, currency);
       assert.equal(BigInt(value.each) * BigInt(winners) + BigInt(value.commission), BigInt(amount) * 5n);
       assert.ok(Number.isSafeInteger(value.each));
     }
-    assert.ok(diceMoney(game.maxAmount, currency).includes(','));
+    assert.equal(diceMoney(game.maxAmount, currency).includes(','), currency !== 'kc');
   }
-  assert.equal(diceMoney(100_001, 'kc'), '1.000,01 KC');
+  assert.equal(diceMoney(100_001, 'kc'), '1.000 KC');
   assert.equal(diceMoney(2_703, 'euro'), '27,03 💶');
   assert.equal(diceMoney(1_000_000_001, 'bitcoin'), '10,00000001₿');
-  assert.deepEqual(diceDistribution(2_800, 2, 2), { each: 2_703, commission: 194 });
+  assert.deepEqual(diceDistribution(2_800, 2, 2, 'euro'), { each: 2_703, commission: 194 });
   assert.throws(() => diceDistribution(game.maxAmount, 2, 1));
 });
 
@@ -357,21 +358,22 @@ test('dice relative stake aliases parse for KC, euro and bitcoin with optional p
   }
 });
 
-test('relative stakes reserve the current balance of the chosen currency, enforce minimums and round half down', async () => {
+test('relative stakes reserve the current balance of the chosen currency, enforce minimums and round only KC to whole coins', async () => {
   for (const [prefix, currency] of [['', 'kc'], ['евро ', 'euro'], ['бит ', 'bitcoin']] as const) {
     for (const alias of ['все', 'всё', 'вб', 'пол']) {
       const f = await fixture();
       const minimum = diceMinimum(currency);
-      f.db.player()[currency] = minimum * 2 + 1;
+      const extra = currency === 'kc' ? game.kcScale : 1;
+      f.db.player()[currency] = minimum * 2 + extra;
       await f.text(`кости ${prefix}${alias} 3`);
-      const amount = alias === 'пол' ? minimum : minimum * 2 + 1;
+      const amount = alias === 'пол' ? minimum + (currency === 'kc' ? game.kcScale : 0) : minimum * 2 + extra;
       assert.equal(f.chat().games[0]?.amount, amount);
-      assert.equal(f.db.player()[currency], alias === 'пол' ? minimum + 1 : 0);
+      assert.equal(f.db.player()[currency], alias === 'пол' ? minimum + (currency === 'kc' ? 0 : 1) : 0);
       for (const other of ['kc', 'euro', 'bitcoin'] as const) if (other !== currency) assert.equal(f.db.player()[other], 100_000_000_000);
       await f.click('dice_leave', 1);
-      assert.equal(f.db.player()[currency], minimum * 2 + 1);
+      assert.equal(f.db.player()[currency], minimum * 2 + extra);
     }
-    for (const [alias, balance] of [['всё', diceMinimum(currency) - 1], ['пол', diceMinimum(currency) * 2 - 1], ['вб', 0]] as const) {
+    for (const [alias, balance] of [['всё', diceMinimum(currency) - (currency === 'kc' ? game.kcScale : 1)], ['пол', diceMinimum(currency) * 2 - (currency === 'kc' ? 2 * game.kcScale : 1)], ['вб', 0]] as const) {
       const f = await fixture();
       f.db.player()[currency] = balance;
       const result = await f.text(`кости ${prefix}${alias}`);
@@ -384,19 +386,19 @@ test('relative stakes reserve the current balance of the chosen currency, enforc
 
 test('relative stakes include refunds made in the same transaction, replay once and cannot reserve the same money twice', async () => {
   const f = await fixture();
-  f.db.player().kc = 300_001;
+  f.db.player().kc = 300_100;
   await f.text('кости 1000');
   f.db.time = new Date(f.db.time.getTime() + diceConfig.lifetimeMs);
   await f.text('кости пол', 1, peer, 'half-after-expiry');
-  assert.equal(f.chat().games[0]?.amount, 150_000);
-  assert.equal(f.db.player().kc, 150_001);
+  assert.equal(f.chat().games[0]?.amount, 150_100);
+  assert.equal(f.db.player().kc, 150_000);
   await f.text('кости пол', 1, peer, 'half-after-expiry');
-  assert.equal(f.db.player().kc, 150_001);
+  assert.equal(f.db.player().kc, 150_000);
   const g = await fixture();
-  g.db.player().kc = 300_001;
+  g.db.player().kc = 300_100;
   await Promise.all([g.text('кости все'), g.text('кости вб')]);
   assert.equal(g.chat().games.length, 1);
-  assert.equal(g.chat().games[0]?.amount, 300_001);
+  assert.equal(g.chat().games[0]?.amount, 300_100);
   assert.equal(g.db.player().kc, 0);
   const h = await fixture();
   h.db.player().kc = game.maxAmount;

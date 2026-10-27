@@ -3,8 +3,7 @@ import { privateCasinoConfig } from '../config/private-casino.js';
 import { privateCasinoTexts } from '../services/private-casino-texts.js';
 import { casinoTexts } from '../services/casino-texts.js';
 import { bankLabels } from '../services/bank-texts.js';
-import { game } from '../config/game.js';
-import { formatAmount } from '../services/texts.js';
+import { formatKc } from '../services/texts.js';
 import { donateLabels } from '../services/donate-texts.js';
 import { itemLabels } from '../services/item-texts.js';
 import { Keyboard, type KeyboardBuilder } from 'vk-io';
@@ -79,8 +78,8 @@ export function buildKeyboard(spec: KeyboardSpec): KeyboardBuilder {
       ]).oneTime(false);
     case 'bank_deposit_amount':
       return Keyboard.keyboard([
-        spec.amounts.slice(0, 3).map(amount => button(formatAmount(amount, game.kcScale), { kind: 'bank_deposit_amount', amount })),
-        spec.amounts.slice(3, 5).map(amount => button(formatAmount(amount, game.kcScale), { kind: 'bank_deposit_amount', amount })),
+        spec.amounts.slice(0, 3).map(amount => button(formatKc(amount), { kind: 'bank_deposit_amount', amount })),
+        spec.amounts.slice(3, 5).map(amount => button(formatKc(amount), { kind: 'bank_deposit_amount', amount })),
         [button(bankLabels.back, { kind: 'bank_deposits' })]
       ]).oneTime(false);
     case 'bank_deposit_term':
