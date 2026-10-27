@@ -634,20 +634,20 @@ function isBalanceCurrency(value) {
   return value === "kc" || value === "euro" || value === "bitcoin";
 }
 async function adminBalanceAction(store, input, command) {
-  const reply2 = (text) => ({ text, keyboard: { kind: "none" } });
+  const reply3 = (text) => ({ text, keyboard: { kind: "none" } });
   const currency = command.currency ?? "kc";
   if (command.kind === "admin_balance_invalid" || !isBalanceCurrency(currency) || !validBalanceChange(command.operation, command.amount)) {
-    return reply2(currency === "kc" ? texts.adminBalanceUsage : texts.adminWalletUsage);
+    return reply3(currency === "kc" ? texts.adminBalanceUsage : texts.adminWalletUsage);
   }
   const targetId = command.targetId ?? input.replySenderId ?? input.vkId;
   if (!isPositiveId(targetId)) {
-    return reply2(texts.adminBalanceTarget);
+    return reply3(texts.adminBalanceTarget);
   }
   if (await store.player(targetId) === null) {
-    return reply2(texts.adminBalanceMissing);
+    return reply3(texts.adminBalanceMissing);
   }
   const changed = await store.updateBalance(targetId, currency, command.operation, command.amount);
-  return reply2(changed ? texts.adminDone : currency === "kc" ? texts.adminBalanceLimit : texts.adminWalletLimit);
+  return reply3(changed ? texts.adminDone : currency === "kc" ? texts.adminBalanceLimit : texts.adminWalletLimit);
 }
 
 // src/services/promo-rules.ts
@@ -1247,18 +1247,18 @@ async function jackpotState(store, now, random) {
 async function jackpotAction(store, player, join, input, random) {
   const now = await store.now();
   const state = await jackpotState(store, now, random);
-  const reply2 = (text) => ({ text, keyboard: { kind: "jackpot" } });
-  if (!join) return reply2(jackpotText(state.amount, state.participants));
-  if (state.dueAt <= now) return reply2(privateCasinoTexts.settling);
+  const reply3 = (text) => ({ text, keyboard: { kind: "jackpot" } });
+  if (!join) return reply3(jackpotText(state.amount, state.participants));
+  if (state.dueAt <= now) return reply3(privateCasinoTexts.settling);
   const id = `jackpot-entry:${state.roundId}:${player._id}`;
-  if (await store.casinoGet(id) !== null) return reply2(privateCasinoTexts.already);
+  if (await store.casinoGet(id) !== null) return reply3(privateCasinoTexts.already);
   const growth = random(`jackpot:join:${input.eventId}:chance`, 2) === 0 ? 0 : (privateCasinoConfig.jackpotGrowthMin + random(`jackpot:join:${input.eventId}:amount`, privateCasinoConfig.jackpotGrowthMax - privateCasinoConfig.jackpotGrowthMin + 1)) * game.kcScale;
-  if (state.amount > game.maxAmount - growth || state.participants >= accountCapacity) return reply2(casinoTexts.limit);
+  if (state.amount > game.maxAmount - growth || state.participants >= accountCapacity) return reply3(casinoTexts.limit);
   await store.casinoInsert({ _id: id, kind: "jackpot_entry", version: 0, roundId: state.roundId, vkId: player._id });
   state.amount += growth;
   state.participants += 1;
   await store.casinoSave(state, state.dueAt);
-  return reply2(privateCasinoTexts.registered);
+  return reply3(privateCasinoTexts.registered);
 }
 async function drawJackpot(store, now, random) {
   const state = await jackpotState(store, now, random);
@@ -2096,42 +2096,6 @@ var vkApiOptions = {
   apiTimeout: 1e4
 };
 
-// src/config/donate.ts
-var donateConfig = {
-  nicknameCost: 50 * game.euroScale,
-  nicknameMin: 4,
-  nicknameMax: 20,
-  subscriptionCost: 200 * game.euroScale,
-  subscriptionMs: 30 * 24 * 60 * 60 * 1e3,
-  theftCooldownMs: 60 * 60 * 1e3,
-  dealerCost: 15 * game.euroScale,
-  dealerCooldownMs: 15 * 60 * 1e3,
-  maxChatMembers: 1e4,
-  chatPageSize: 1e3,
-  timeZone: "Europe/Moscow"
-};
-
-// src/handlers/chat-members.ts
-async function loadChatMembers(vk, peerId, groupId) {
-  const ids = /* @__PURE__ */ new Set();
-  let offset = 0;
-  let total;
-  const pages = Math.ceil(donateConfig.maxChatMembers / donateConfig.chatPageSize);
-  for (let page = 0; page < pages; page += 1) {
-    const response = await vk.api.messages.getConversationMembers({ peer_id: peerId, group_id: groupId, count: donateConfig.chatPageSize, offset });
-    if (!Number.isSafeInteger(response.count) || response.count < 0 || response.count > donateConfig.maxChatMembers || total !== void 0 && response.count !== total || response.items.length > donateConfig.chatPageSize) throw new Error("Invalid chat membership response");
-    total = response.count;
-    for (const member of response.items) {
-      if (!Number.isSafeInteger(member.member_id) || member.member_id === 0) throw new Error("Invalid chat member");
-      if (isPositiveId(member.member_id)) ids.add(member.member_id);
-    }
-    offset += response.items.length;
-    if (offset >= total) return [...ids];
-    if (response.items.length === 0) throw new Error("Incomplete chat membership response");
-  }
-  throw new Error("Chat membership limit exceeded");
-}
-
 // src/services/item-rules.ts
 function isItemKind(value) {
   return value === "zhdun_case" || value === "referral_case" || value === "croupier";
@@ -2210,10 +2174,105 @@ function validateOffer(offer) {
   }
 }
 
+// src/services/giveaway-rules.ts
+function isGiveawayCommand(command) {
+  return command.kind === "force_invalid" || command.kind === "force_giveaway" || command.kind === "giveaway_claim" || command.kind === "giveaway_cancel";
+}
+function isGiveawayAdminCommand(command) {
+  return command.kind === "force_invalid" || command.kind === "force_giveaway" || command.kind === "giveaway_cancel";
+}
+function giveawayKey(peerId) {
+  return `giveaway:${peerId}`;
+}
+function giveawayClaimKey(peerId, token, vkId) {
+  return `giveaway-claim:${peerId}:${token}:${vkId}`;
+}
+function validGiveawayCount(value) {
+  return Number.isSafeInteger(value) && value >= 1 && value <= game.maxAmount;
+}
+function validGiveawayReward(reward) {
+  return reward.kind === "currency" ? isBalanceCurrency(reward.currency) && validGiveawayCount(reward.amount) : reward.kind === "item" && isItemKind(reward.itemKind) && validItemQuantity(reward.quantity);
+}
+function validGiveawayPeer(value) {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 2e9;
+}
+function validGiveawayToken(value) {
+  return typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
+}
+function validateGiveaway(state) {
+  if (!validGiveawayPeer(state.peerId) || state._id !== giveawayKey(state.peerId) || !validGiveawayToken(state.token) || !validGiveawayCount(state.count) || !Number.isSafeInteger(state.remaining) || state.remaining < 0 || state.remaining > state.count || !validGiveawayReward(state.reward) || state.stage === "active" && state.remaining === 0 || state.stage === "finished" && state.remaining !== 0 || state.stage !== "active" && state.stage !== "finished" && state.stage !== "cancelled") throw new Error("Invalid giveaway state");
+}
+
+// src/config/donate.ts
+var donateConfig = {
+  nicknameCost: 50 * game.euroScale,
+  nicknameMin: 4,
+  nicknameMax: 20,
+  subscriptionCost: 200 * game.euroScale,
+  subscriptionMs: 30 * 24 * 60 * 60 * 1e3,
+  theftCooldownMs: 60 * 60 * 1e3,
+  dealerCost: 15 * game.euroScale,
+  dealerCooldownMs: 15 * 60 * 1e3,
+  maxChatMembers: 1e4,
+  chatPageSize: 1e3,
+  timeZone: "Europe/Moscow"
+};
+
+// src/handlers/chat-members.ts
+async function loadChatMembers(vk, peerId, groupId) {
+  const ids = /* @__PURE__ */ new Set();
+  let offset = 0;
+  let total;
+  const pages = Math.ceil(donateConfig.maxChatMembers / donateConfig.chatPageSize);
+  for (let page = 0; page < pages; page += 1) {
+    const response = await vk.api.messages.getConversationMembers({ peer_id: peerId, group_id: groupId, count: donateConfig.chatPageSize, offset });
+    if (!Number.isSafeInteger(response.count) || response.count < 0 || response.count > donateConfig.maxChatMembers || total !== void 0 && response.count !== total || response.items.length > donateConfig.chatPageSize) throw new Error("Invalid chat membership response");
+    total = response.count;
+    for (const member of response.items) {
+      if (!Number.isSafeInteger(member.member_id) || member.member_id === 0) throw new Error("Invalid chat member");
+      if (isPositiveId(member.member_id)) ids.add(member.member_id);
+    }
+    offset += response.items.length;
+    if (offset >= total) return [...ids];
+    if (response.items.length === 0) throw new Error("Incomplete chat membership response");
+  }
+  throw new Error("Chat membership limit exceeded");
+}
+
 // src/handlers/messages.ts
 import { randomInt } from "node:crypto";
 import { setTimeout } from "node:timers/promises";
 import { ExecuteError as ExecuteError2 } from "vk-io";
+
+// src/handlers/giveaway.ts
+function parseForce(text) {
+  if (text === void 0 || !/^\/force(?=\s|$)/iu.test(text.trimStart())) return null;
+  const invalid = { kind: "force_invalid" };
+  if (text.length > game.maxMessageLength) return invalid;
+  const parts = text.trim().toLowerCase().split(/\s+/u);
+  if (parts[1] !== "раздача" || parts.length < 5) return invalid;
+  const countText = parts.at(-2) ?? "";
+  const amountText = parts.at(-1) ?? "";
+  const count = /^\d{1,16}$/.test(countText) ? Number(countText) : 0;
+  if (!validGiveawayCount(count)) return invalid;
+  const name = parts.slice(2, -2).join(" ");
+  const currency = name === "монеты" ? "kc" : name === "евро" ? "euro" : name === "биткоин" ? "bitcoin" : null;
+  let reward;
+  if (currency !== null) {
+    const amount = parseBankMoney(amountText, currency);
+    if (amount === null) return invalid;
+    reward = { kind: "currency", currency, amount };
+  } else {
+    const itemKind = name === "кейс реферальный" ? "referral_case" : name === "кейс ждун" ? "zhdun_case" : name === "крупье" || name === "крупьер" ? "croupier" : null;
+    if (itemKind === null || !/^\d{1,4}$/.test(amountText)) return invalid;
+    reward = { kind: "item", itemKind, quantity: Number(amountText) };
+  }
+  return validGiveawayReward(reward) ? { kind: "force_giveaway", count, reward } : invalid;
+}
+function parseGiveawayPayload(value) {
+  if (!isRecord(value) || value.command !== "giveaway_claim" && value.command !== "giveaway_cancel" || typeof value.peerId !== "number" || !validGiveawayPeer(value.peerId) || !validGiveawayToken(value.token)) return null;
+  return { kind: value.command, peerId: value.peerId, token: value.token };
+}
 
 // src/handlers/dice.ts
 function parseDiceText(text, isChat) {
@@ -2510,6 +2569,8 @@ function isRankingMetric(value) {
 
 // src/handlers/commands.ts
 function parseCommand(text, payload, isChat = false) {
+  const force = parseForce(text);
+  if (force !== null) return force;
   const mailing = parseMailing(text);
   if (mailing !== null) return mailing;
   if (text?.trim() === "/dk") {
@@ -2546,6 +2607,8 @@ function parseCommand(text, payload, isChat = false) {
       return { kind: "development" };
     }
   }
+  const giveaway = parseGiveawayPayload(value);
+  if (giveaway !== null) return giveaway;
   const dicePayload = parseDicePayload(value);
   if (dicePayload !== null) return dicePayload;
   const privateCasino = parsePrivateCasinoPayload(value);
@@ -2608,6 +2671,78 @@ function parseReferrer(value, senderId) {
   }
   const id = Number(value.slice(6));
   return Number.isSafeInteger(id) && id > 0 && id !== senderId ? id : void 0;
+}
+
+// src/services/giveaway-texts.ts
+var giveawayTexts = {
+  usage: "⚠️ Формат: /force Раздача монеты|евро|биткоин <игроков> <награда> или /force Раздача кейс реферальный|кейс ждун|крупьер <игроков> <количество 1–1000>. Награда указана для каждого игрока.",
+  collect: "Получить",
+  cancel: "Отмена",
+  instruction: "Нажмите на кнопку, чтобы забрать награду.",
+  already: "⚠️ Вы уже получали награды с этой раздачи!",
+  old: "⚠ Нельзя принимать участие в старых раздачах.",
+  ended: "⚠ Раздача закончилась.",
+  finished: "Раздача завершена!",
+  limit: "⚠️ Награда не получена: достигнут предел баланса или инвентаря. Активация не потрачена."
+};
+function giveawayAmount(reward) {
+  const scale = BigInt(promoScale(reward.currency));
+  const value = BigInt(reward.amount);
+  const whole = formatAmount(Number(value / scale), 1);
+  const fraction = String(value % scale).padStart(String(scale).length - 1, "0").replace(/0+$/, "");
+  return fraction.length === 0 ? whole : `${whole},${fraction}`;
+}
+function itemReward(reward) {
+  const item = itemConfig.catalog.find((value) => value.kind === reward.itemKind);
+  if (item === void 0) throw new Error("Invalid giveaway item");
+  return `${item.name} х${formatAmount(reward.quantity, 1)}`;
+}
+function giveawayRewardText(reward) {
+  if (reward.kind === "item") return itemReward(reward);
+  const amount = giveawayAmount(reward);
+  switch (reward.currency) {
+    case "kc":
+      return `${amount} KC`;
+    case "euro":
+      return `${amount}💶`;
+    case "bitcoin":
+      return `${amount}₿`;
+    default:
+      return assertNever(reward.currency);
+  }
+}
+function giveawayRewardLine(reward) {
+  if (reward.kind === "item") return itemReward(reward);
+  const amount = giveawayAmount(reward);
+  switch (reward.currency) {
+    case "kc":
+      return `💰 ${amount} KC`;
+    case "euro":
+      return `💶 ${amount} евро`;
+    case "bitcoin":
+      return `₿ ${amount} биткоинов`;
+    default:
+      return assertNever(reward.currency);
+  }
+}
+function giveawayStarted(state) {
+  const reward = state.reward.kind === "item" ? `Вы запустили раздачу на предмет ${giveawayRewardText(state.reward)}` : `🌟 Вы запустили раздачу на ${giveawayRewardText(state.reward)}`;
+  return `${reward} на ${formatAmount(state.count, 1)} игроков!
+
+${giveawayTexts.instruction}`;
+}
+function giveawayClaimed(state, player) {
+  const footer = state.remaining === 0 ? giveawayTexts.finished : `Осталось ${formatAmount(state.remaining, 1)} возможностей получить награды!`;
+  return `✅ ${mention(player)}, вы приняли участие в раздаче! Ваши награды:
+
+${giveawayRewardLine(state.reward)}
+
+${footer}`;
+}
+function giveawayCancelled(state) {
+  return `⭐️ Раздача отменена!
+
+${formatAmount(state.count - state.remaining, 1)} игроков успело получить ${giveawayRewardText(state.reward)}.`;
 }
 
 // src/services/donate-texts.ts
@@ -2741,6 +2876,11 @@ function buildKeyboard(spec) {
     return Keyboard.textButton({ label, payload: { command: kind, ...params } });
   };
   switch (spec.kind) {
+    case "giveaway":
+      return Keyboard.keyboard([[
+        Keyboard.textButton({ label: giveawayTexts.collect, color: Keyboard.POSITIVE_COLOR, payload: { command: "giveaway_claim", peerId: spec.peerId, token: spec.token } }),
+        Keyboard.textButton({ label: giveawayTexts.cancel, color: Keyboard.NEGATIVE_COLOR, payload: { command: "giveaway_cancel", peerId: spec.peerId, token: spec.token } })
+      ]]).inline();
     case "dice_game":
       return Keyboard.keyboard([[
         Keyboard.textButton({ label: "Играть", color: Keyboard.POSITIVE_COLOR, payload: { command: "dice_join", peerId: spec.peerId, gameId: spec.gameId } }),
@@ -2949,16 +3089,16 @@ function buildKeyboard(spec) {
 }
 
 // src/handlers/messages.ts
-async function sendReply(vk, peerId, randomId, reply2, clearKeyboard = false) {
-  if (reply2.text.length > game.maxMessageLength) {
+async function sendReply(vk, peerId, randomId, reply3, clearKeyboard = false) {
+  if (reply3.text.length > game.maxMessageLength) {
     throw new Error("Reply is too long");
   }
   const params = {
     peer_id: peerId,
     random_id: randomId,
-    message: reply2.text,
-    ...reply2.attachment === void 0 ? {} : { attachment: reply2.attachment },
-    ...reply2.keyboard.kind === "none" && !clearKeyboard ? {} : { keyboard: buildKeyboard(reply2.keyboard).toString() },
+    message: reply3.text,
+    ...reply3.attachment === void 0 ? {} : { attachment: reply3.attachment },
+    ...reply3.keyboard.kind === "none" && !clearKeyboard ? {} : { keyboard: buildKeyboard(reply3.keyboard).toString() },
     disable_mentions: true,
     dont_parse_links: true
   };
@@ -2985,11 +3125,12 @@ function createMessageHandler(vk, game2, groupId) {
       return;
     }
     const eventId = `${groupId}:${context.peerId}:${messageId}`;
-    let reply2;
+    let reply3;
     try {
       if (!context.isChat && context.text?.trim().toLowerCase() === "вор") return;
       const payload = context.messagePayload;
       const command = parseCommand(context.text, payload, context.isChat);
+      if (isGiveawayCommand(command) && (!context.isChat || isGiveawayAdminCommand(command) && !adminIds.has(context.senderId))) return;
       if ((command.kind === "mailing" || command.kind === "mailing_invalid") && !adminIds.has(context.senderId)) return;
       if (isAdminItemCommand(command) && !adminIds.has(context.senderId)) {
         return;
@@ -3005,7 +3146,7 @@ function createMessageHandler(vk, game2, groupId) {
       }
       const replySenderId = context.replyMessage?.senderId;
       const referrerId = context.isChat ? void 0 : parseReferrer(context.referralValue, context.senderId);
-      reply2 = await game2.handle({
+      reply3 = await game2.handle({
         eventId,
         vkId: context.senderId,
         peerId: context.peerId,
@@ -3033,7 +3174,7 @@ function createMessageHandler(vk, game2, groupId) {
       return;
     }
     try {
-      if (reply2.text.length > 0) await sendReply(vk, context.peerId, reply2.randomId, reply2, context.isChat);
+      if (reply3.text.length > 0) await sendReply(vk, context.peerId, reply3.randomId, reply3, context.isChat);
     } catch (error) {
       logError("vk_reply", error, { eventId, vkId: context.senderId });
     }
@@ -4085,8 +4226,8 @@ var MongoGameStore = class extends MongoCasinoStore {
     }
     return counter.value;
   }
-  async remember(input, reply2) {
-    const prepared = { ...reply2, randomId: await this.nextRandomId() };
+  async remember(input, reply3) {
+    const prepared = { ...reply3, randomId: await this.nextRandomId() };
     const result = await this.messages.insertOne(
       { _id: input.eventId, vkId: input.vkId, reply: prepared },
       { session: this.session }
@@ -4274,8 +4415,80 @@ var MongoGameStore = class extends MongoCasinoStore {
   }
 };
 
-// src/services/coin-rules.ts
+// src/services/giveaway.ts
 import { createHash as createHash2 } from "node:crypto";
+var reply2 = (text = "") => ({ text, keyboard: { kind: "none" } });
+async function currentGiveaway(store, peerId) {
+  const state = await store.casinoGet(giveawayKey(peerId));
+  if (state === null) return null;
+  if (state.kind !== "giveaway") throw new Error("Invalid giveaway record");
+  validateGiveaway(state);
+  return state;
+}
+async function giveawayClaimStatus(store, input, command) {
+  if (!input.isChat || !validGiveawayPeer(input.peerId)) return reply2();
+  if (command.peerId !== input.peerId) return reply2(giveawayTexts.old);
+  const state = await currentGiveaway(store, input.peerId);
+  if (state === null || state.token !== command.token) return reply2(giveawayTexts.old);
+  if (state.stage !== "active") return reply2(giveawayTexts.ended);
+  if (command.kind === "giveaway_claim") {
+    const claim = await store.casinoGet(giveawayClaimKey(input.peerId, command.token, input.vkId));
+    if (claim !== null) {
+      if (claim.kind !== "giveaway_claim" || claim.vkId !== input.vkId) throw new Error("Invalid giveaway claim record");
+      return reply2(giveawayTexts.already);
+    }
+  }
+  return null;
+}
+async function giveawayAdminAction(store, input, command) {
+  if (command.kind === "giveaway_claim") throw new Error("Giveaway claim requires a player");
+  if (!adminIds.has(input.vkId)) throw new Error("Administrator access is required");
+  if (!input.isChat || !validGiveawayPeer(input.peerId)) return reply2();
+  if (command.kind === "force_invalid") return reply2(giveawayTexts.usage);
+  if (command.kind === "giveaway_cancel") {
+    const denied = await giveawayClaimStatus(store, input, command);
+    if (denied !== null) return denied;
+    const state2 = await currentGiveaway(store, input.peerId);
+    if (state2 === null) throw new Error("Missing giveaway to cancel");
+    state2.stage = "cancelled";
+    await store.casinoSave(state2);
+    return reply2(giveawayCancelled(state2));
+  }
+  if (!validGiveawayCount(command.count) || !validGiveawayReward(command.reward)) return reply2(giveawayTexts.usage);
+  const previous = await currentGiveaway(store, input.peerId);
+  const state = {
+    _id: giveawayKey(input.peerId),
+    kind: "giveaway",
+    version: previous?.version ?? 0,
+    peerId: input.peerId,
+    token: createHash2("sha256").update(input.eventId).digest("hex"),
+    reward: command.reward,
+    count: command.count,
+    remaining: command.count,
+    stage: "active"
+  };
+  if (previous === null) await store.casinoInsert(state);
+  else await store.casinoSave(state);
+  return { text: giveawayStarted(state), keyboard: { kind: "giveaway", peerId: input.peerId, token: state.token } };
+}
+async function claimGiveaway(store, input, player, command) {
+  if (command.kind !== "giveaway_claim" || input.vkId !== player._id) throw new Error("Invalid giveaway claimant");
+  const denied = await giveawayClaimStatus(store, input, command);
+  if (denied !== null) return denied;
+  const state = await currentGiveaway(store, command.peerId);
+  if (state === null) throw new Error("Missing giveaway to claim");
+  const reward = state.reward;
+  const paid = reward.kind === "currency" ? await store.updateBalance(input.vkId, reward.currency, "add", reward.amount) : await store.grantItems(input.vkId, reward.itemKind, reward.quantity);
+  if (!paid) return reply2(giveawayTexts.limit);
+  await store.casinoInsert({ _id: giveawayClaimKey(command.peerId, command.token, input.vkId), kind: "giveaway_claim", version: 0, vkId: input.vkId });
+  state.remaining -= 1;
+  if (state.remaining === 0) state.stage = "finished";
+  await store.casinoSave(state);
+  return reply2(giveawayClaimed(state, player));
+}
+
+// src/services/coin-rules.ts
+import { createHash as createHash3 } from "node:crypto";
 function coinMultiplier(step) {
   const value = privateCasinoConfig.coinMultipliers[step - 1];
   if (value === void 0 || !Number.isSafeInteger(step)) throw new Error("Invalid coin step");
@@ -4293,7 +4506,7 @@ function coinKey(vkId) {
   return `coin:${vkId}`;
 }
 function coinSession(eventId) {
-  return createHash2("sha256").update(eventId).digest("hex");
+  return createHash3("sha256").update(eventId).digest("hex");
 }
 
 // src/services/coin.ts
@@ -4528,23 +4741,23 @@ async function resolveStoredTarget(store, target, resolved) {
 }
 var back = (text, kind) => ({ text, keyboard: { kind: "item_back", itemKind: kind } });
 async function adminItems(store, command) {
-  const reply2 = (text) => ({ text, keyboard: { kind: "none" } });
+  const reply3 = (text) => ({ text, keyboard: { kind: "none" } });
   if (command.kind === "admin_itemlist") {
-    return reply2(itemCatalogText());
+    return reply3(itemCatalogText());
   }
   if (command.kind === "admin_item_invalid") {
-    return reply2(itemTexts.adminUsage);
+    return reply3(itemTexts.adminUsage);
   }
   const entry = itemConfig.catalog.find((item) => item.id === command.catalogId);
   if (entry === void 0 || command.target.kind === "screen" || !validItemQuantity(command.quantity) || command.operation === "take" && command.quantity !== 1) {
-    return reply2(itemTexts.adminUsage);
+    return reply3(itemTexts.adminUsage);
   }
   const receiver = await resolveStoredTarget(store, command.target, void 0);
   if (receiver === null || receiver === "target") {
-    return reply2(itemTexts.missing);
+    return reply3(itemTexts.missing);
   }
   const success = command.operation === "give" ? await store.grantItems(receiver._id, entry.kind, command.quantity) : await store.removeItems(receiver._id, entry.kind, 1, await store.now());
-  return reply2(success ? itemTexts.done : command.operation === "take" ? itemTexts.none : itemTexts.limit);
+  return reply3(success ? itemTexts.done : command.operation === "take" ? itemTexts.none : itemTexts.limit);
 }
 async function unavailableText(store, player, kind, now) {
   return await store.hasReservedItems(player._id, kind, now) ? itemTexts.reserved : itemTexts.none;
@@ -5280,6 +5493,7 @@ var GameService = class {
     if (!isPositiveId(input.vkId) || !input.eventId || input.eventId.length > 200) {
       throw new Error("Invalid event identity");
     }
+    if (isGiveawayAdminCommand(input.command) && !adminIds.has(input.vkId)) throw new Error("Administrator access is required");
     if (input.command.kind === "delete_keyboards" && (!input.isChat || !adminIds.has(input.vkId))) {
       throw new Error("Administrator chat access is required");
     }
@@ -5321,7 +5535,7 @@ var GameService = class {
     let referralUrl = null;
     for (let attempt = 0; attempt < game.duplicateRetries; ) {
       try {
-        const reply2 = await this.database.transaction(async (store) => {
+        const reply3 = await this.database.transaction(async (store) => {
           if (!input.isChat && input.peerId === input.vkId) await store.joinMailing(input.vkId, await store.now());
           const previous = await store.processed(input.eventId);
           if (previous !== null) {
@@ -5331,23 +5545,23 @@ var GameService = class {
             return previous.reply;
           }
           rollIndex = 0;
-          const reply3 = await this.execute(store, input, name, referralUrl, resolvedTarget, roll, members, donationRandom, bankRandom, casinoRoll);
-          if (typeof reply3 === "string") {
-            return reply3;
+          const reply4 = await this.execute(store, input, name, referralUrl, resolvedTarget, roll, members, donationRandom, bankRandom, casinoRoll);
+          if (typeof reply4 === "string") {
+            return reply4;
           }
-          return store.remember(input, input.isChat && reply3.keyboard.kind !== "dice_game" ? { ...reply3, keyboard: { kind: "none" } } : reply3);
+          return store.remember(input, input.isChat && reply4.keyboard.kind !== "dice_game" && reply4.keyboard.kind !== "giveaway" ? { ...reply4, keyboard: { kind: "none" } } : reply4);
         });
-        if (typeof reply2 !== "string") {
-          return reply2;
+        if (typeof reply3 !== "string") {
+          return reply3;
         }
-        if (reply2 === "name") {
+        if (reply3 === "name") {
           name = normalizeName(await resolveName());
-        } else if (reply2 === "members") {
+        } else if (reply3 === "members") {
           if (resolveChatMembers === void 0 || !input.isChat || input.command.kind !== "theft") throw new Error("Chat members provider is unavailable");
           const ids = await resolveChatMembers();
           if (ids.length > donateConfig.maxChatMembers || ids.some((id) => !isPositiveId(id))) throw new Error("Invalid chat members");
           members = [...new Set(ids)];
-        } else if (reply2 === "target") {
+        } else if (reply3 === "target") {
           const target = input.command.kind === "bank_transfer" ? input.command.target : parsePlayerTarget(input.text ?? "");
           if (target?.kind !== "screen" || this.resolveItemTarget === void 0) {
             throw new Error("Item target provider is unavailable");
@@ -5387,6 +5601,11 @@ var GameService = class {
     if (isAdminItemCommand(input.command)) {
       return adminItems(store, input.command);
     }
+    if (isGiveawayCommand(input.command)) {
+      if (input.command.kind !== "giveaway_claim") return giveawayAdminAction(store, input, input.command);
+      const denied = await giveawayClaimStatus(store, input, input.command);
+      if (denied !== null) return denied;
+    }
     if (isDiceCommand(input.command)) {
       if (!await diceButtonActive(store, input, input.command)) return { text: "", keyboard: { kind: "none" } };
       if (input.command.kind === "dice_leave" || input.command.kind === "dice_list" || input.command.kind === "dice_invalid") return diceAction(store, input, null, input.command, casinoRoll);
@@ -5403,9 +5622,14 @@ var GameService = class {
           await store.rewardReferral(inviter, registered, referralRewardText(registered));
         }
       }
+      if (registered !== null && input.command.kind === "giveaway_claim") return claimGiveaway(store, input, registered, input.command);
       return { text: registered === null ? texts.registrationLimit : texts.welcome, keyboard: { kind: "main" } };
     }
     const command = input.command;
+    if (isGiveawayCommand(command)) {
+      if (command.kind === "giveaway_claim") return claimGiveaway(store, input, player, command);
+      return giveawayAdminAction(store, input, command);
+    }
     if (isDiceCommand(command)) return diceAction(store, input, player, command, casinoRoll);
     if (!input.isChat && player.coinOpen === true) {
       if (!input.hasPayload && command.kind === "development" && input.text !== void 0) return coinStakeInput(store, player, input);

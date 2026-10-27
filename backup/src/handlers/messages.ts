@@ -1,3 +1,4 @@
+import { isGiveawayAdminCommand, isGiveawayCommand } from '../services/giveaway-rules.js';
 import { loadChatMembers } from './chat-members.js';
 import { isAdminItemCommand } from '../services/item-rules.js';
 import { randomInt } from 'node:crypto';
@@ -55,6 +56,7 @@ export function createMessageHandler(vk: VK, game: GameService, groupId: number)
       if (!context.isChat && context.text?.trim().toLowerCase() === 'вор') return;
       const payload: unknown = context.messagePayload;
       const command = parseCommand(context.text, payload, context.isChat);
+      if (isGiveawayCommand(command) && (!context.isChat || (isGiveawayAdminCommand(command) && !adminIds.has(context.senderId)))) return;
       if ((command.kind === 'mailing' || command.kind === 'mailing_invalid') && !adminIds.has(context.senderId)) return;
       if (isAdminItemCommand(command) && !adminIds.has(context.senderId)) {
         return;

@@ -1,3 +1,5 @@
+import { claimGiveaway, giveawayAdminAction, giveawayClaimStatus } from './giveaway.js';
+import { isGiveawayCommand, isGiveawayAdminCommand } from './giveaway-rules.js';
 import { diceAction, diceButtonActive } from './dice.js';
 import { isDiceCommand } from './dice-rules.js';
 import { privateCasinoAction } from './private-casino.js';
@@ -50,6 +52,7 @@ export class GameService {
     if (!isPositiveId(input.vkId) || !input.eventId || input.eventId.length > 200) {
       throw new Error('Invalid event identity');
     }
+    if (isGiveawayAdminCommand(input.command) && !adminIds.has(input.vkId)) throw new Error('Administrator access is required');
     if (input.command.kind === 'delete_keyboards' && (!input.isChat || !adminIds.has(input.vkId))) {
       throw new Error('Administrator chat access is required');
     }
@@ -105,7 +108,7 @@ export class GameService {
           if (typeof reply === 'string') {
             return reply;
           }
-          return store.remember(input, input.isChat && reply.keyboard.kind !== 'dice_game' ? { ...reply, keyboard: { kind: 'none' } } : reply);
+          return store.remember(input, input.isChat && reply.keyboard.kind !== 'dice_game' && reply.keyboard.kind !== 'giveaway' ? { ...reply, keyboard: { kind: 'none' } } : reply);
         });
         if (typeof reply !== 'string') {
           return reply;
@@ -158,6 +161,11 @@ export class GameService {
     if (isAdminItemCommand(input.command)) {
       return adminItems(store, input.command);
     }
+    if (isGiveawayCommand(input.command)) {
+      if (input.command.kind !== 'giveaway_claim') return giveawayAdminAction(store, input, input.command);
+      const denied = await giveawayClaimStatus(store, input, input.command);
+      if (denied !== null) return denied;
+    }
     if (isDiceCommand(input.command)) {
       if (!await diceButtonActive(store, input, input.command)) return { text: '', keyboard: { kind: 'none' } };
       if (input.command.kind === 'dice_leave' || input.command.kind === 'dice_list' || input.command.kind === 'dice_invalid') return diceAction(store, input, null, input.command, casinoRoll);
@@ -174,9 +182,14 @@ export class GameService {
           await store.rewardReferral(inviter, registered, referralRewardText(registered));
         }
       }
+      if (registered !== null && input.command.kind === 'giveaway_claim') return claimGiveaway(store, input, registered, input.command);
       return { text: registered === null ? texts.registrationLimit : texts.welcome, keyboard: { kind: 'main' } };
     }
     const command = input.command;
+    if (isGiveawayCommand(command)) {
+      if (command.kind === 'giveaway_claim') return claimGiveaway(store, input, player, command);
+      return giveawayAdminAction(store, input, command);
+    }
     if (isDiceCommand(command)) return diceAction(store, input, player, command, casinoRoll);
     if (!input.isChat && player.coinOpen === true) {
       if (!input.hasPayload && command.kind === 'development' && input.text !== undefined) return coinStakeInput(store, player, input);

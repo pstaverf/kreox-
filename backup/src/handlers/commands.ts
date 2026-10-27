@@ -1,3 +1,4 @@
+import { parseForce, parseGiveawayPayload } from './giveaway.js';
 import { parseDiceText, parseDicePayload } from './dice.js';
 import { parsePrivateCasinoPayload } from './private-casino.js';
 import { parseMailing } from './mailing.js';
@@ -12,6 +13,8 @@ import { isRankingMetric } from '../services/rankings.js';
 import { isRecord } from '../utils/validation.js';
 
 export function parseCommand(text: string | undefined, payload: unknown, isChat = false): Command {
+  const force = parseForce(text);
+  if (force !== null) return force;
   const mailing = parseMailing(text);
   if (mailing !== null) return mailing;
   if (text?.trim() === '/dk') {
@@ -48,6 +51,8 @@ export function parseCommand(text: string | undefined, payload: unknown, isChat 
       return { kind: 'development' };
     }
   }
+  const giveaway = parseGiveawayPayload(value);
+  if (giveaway !== null) return giveaway;
   const dicePayload = parseDicePayload(value);
   if (dicePayload !== null) return dicePayload;
   const privateCasino = parsePrivateCasinoPayload(value);

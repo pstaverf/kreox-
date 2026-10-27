@@ -1,3 +1,4 @@
+import type { GiveawayCommand } from './giveaway.js';
 import type { DiceCommand } from './dice.js';
 import type { PrivateCasinoCommand, PrivateCasinoKeyboard } from './private-casino.js';
 import type { MailingCommand } from './mailing.js';
@@ -56,6 +57,7 @@ export interface InventoryStack {
 }
 
 export type Command =
+  | GiveawayCommand
   | DiceCommand
   | PrivateCasinoCommand
   | MailingCommand
@@ -78,6 +80,7 @@ export type Command =
   | { kind: 'ranking'; metric: RankingMetric };
 
 export type KeyboardSpec =
+  | { kind: 'giveaway'; peerId: number; token: string }
   | { kind: 'dice_game'; peerId: number; gameId: number }
   | PrivateCasinoKeyboard
   | CasinoKeyboard

@@ -1,3 +1,4 @@
+import type { GiveawayState, GiveawayClaim } from './giveaway.js';
 import type { DiceChat, DiceCredit } from './dice.js';
 import type { CoinState, JackpotState, JackpotEntry, JackpotDraw } from './private-casino.js';
 export type CasinoMode = 'crash' | 'dream' | 'roulette';
@@ -43,7 +44,7 @@ export interface CasinoCredit extends RecordBase {
 export interface CasinoChat extends RecordBase { kind: 'chat'; peerId: number; active: boolean }
 export interface CasinoPage extends RecordBase { kind: 'page'; roundId: string; index: number; text: string }
 export interface CasinoDelivery extends RecordBase { kind: 'delivery'; peerId: number; texts: string[]; index: number; stage: 'pending' | 'finished'; dueAt: Date }
-export type CasinoRecord = DiceChat | DiceCredit | CoinState | JackpotState | JackpotEntry | JackpotDraw | CasinoDelivery | CasinoRound | CasinoBet | DirectorState | DirectorBid | DirectorElection | CasinoCredit | CasinoChat | CasinoPage;
+export type CasinoRecord = GiveawayState | GiveawayClaim | DiceChat | DiceCredit | CoinState | JackpotState | JackpotEntry | JackpotDraw | CasinoDelivery | CasinoRound | CasinoBet | DirectorState | DirectorBid | DirectorElection | CasinoCredit | CasinoChat | CasinoPage;
 export type CasinoQuery =
   | { kind: 'dice_chat' | 'dice_credit'; dueAt: Date }
   | { kind: 'jackpot_entries'; roundId: string; after: string }

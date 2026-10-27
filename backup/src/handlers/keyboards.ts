@@ -1,3 +1,4 @@
+import { giveawayTexts } from '../services/giveaway-texts.js';
 import { privateCasinoConfig } from '../config/private-casino.js';
 import { privateCasinoTexts } from '../services/private-casino-texts.js';
 import { casinoTexts } from '../services/casino-texts.js';
@@ -17,6 +18,10 @@ export function buildKeyboard(spec: KeyboardSpec): KeyboardBuilder {
     return Keyboard.textButton({ label, payload: { command: kind, ...params } });
   };
   switch (spec.kind) {
+    case 'giveaway': return Keyboard.keyboard([[
+      Keyboard.textButton({ label: giveawayTexts.collect, color: Keyboard.POSITIVE_COLOR, payload: { command: 'giveaway_claim', peerId: spec.peerId, token: spec.token } }),
+      Keyboard.textButton({ label: giveawayTexts.cancel, color: Keyboard.NEGATIVE_COLOR, payload: { command: 'giveaway_cancel', peerId: spec.peerId, token: spec.token } })
+    ]]).inline();
     case 'dice_game': return Keyboard.keyboard([[
       Keyboard.textButton({ label: 'Играть', color: Keyboard.POSITIVE_COLOR, payload: { command: 'dice_join', peerId: spec.peerId, gameId: spec.gameId } }),
       Keyboard.textButton({ label: 'Отмена', color: Keyboard.NEGATIVE_COLOR, payload: { command: 'dice_leave', peerId: spec.peerId, gameId: spec.gameId } })
