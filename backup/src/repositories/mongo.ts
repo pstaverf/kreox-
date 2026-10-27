@@ -152,6 +152,8 @@ export class MongoGameDatabase implements GameDatabase {
 }
 
 class MongoGameStore extends MongoCasinoStore implements GameStore {
+  private queuedNotifications = false;
+  notificationsQueued(): boolean { return this.queuedNotifications; }
   private readonly players;
   private readonly items;
   private readonly messages;
@@ -194,8 +196,8 @@ class MongoGameStore extends MongoCasinoStore implements GameStore {
     return result.matchedCount === 1;
   }
 
-  async joinMailing(vkId: number, now: Date): Promise<void> {
-    const result = await this.mailingAudience.updateOne({ _id: vkId }, { $setOnInsert: { joinedAt: now } }, { upsert: true, session: this.session });
+  async joinMailing(vkId: number, now?: Date): Promise<void> {
+    const result = await this.mailingAudience.updateOne({ _id: vkId }, [{ $set: { joinedAt: { $ifNull: ['$joinedAt', now ?? '$$NOW'] } } }], { upsert: true, session: this.session });
     if (!result.acknowledged || result.matchedCount + result.upsertedCount !== 1) throw new Error('Mailing recipient write failed');
   }
   async createMailing(campaign: MailingCampaign): Promise<void> {
@@ -216,6 +218,7 @@ class MongoGameStore extends MongoCasinoStore implements GameStore {
     const result = await this.notifications.insertOne({ _id: id, peerId: vkId, text, randomId: await this.nextRandomId(),
       priority: 1, state: 'pending', nextAttemptAt: new Date(0), attempts: 0 }, { session: this.session });
     if (!result.acknowledged) throw new Error('Mailing notification insert failed');
+    this.queuedNotifications = true;
   }
 
   async enqueueItemNotification(id: string, peerId: number, text: string, keyboard: KeyboardSpec, roulettePhoto?: number): Promise<void> {
@@ -226,6 +229,7 @@ class MongoGameStore extends MongoCasinoStore implements GameStore {
     if (!result.acknowledged) {
       throw new Error('Item notification insert failed');
     }
+    this.queuedNotifications = true;
   }
 
   async processed(eventId: string): Promise<ProcessedMessage | null> {
@@ -428,6 +432,7 @@ class MongoGameStore extends MongoCasinoStore implements GameStore {
     if (!item.acknowledged || !notification.acknowledged) {
       throw new Error('Referral reward was not acknowledged');
     }
+    this.queuedNotifications = true;
   }
 
 }

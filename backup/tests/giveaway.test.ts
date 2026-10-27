@@ -75,11 +75,11 @@ test('launch mints on demand without admin funds, uses exact messages and leaves
 test('each player receives the entire per-player reward only once; final activation has the completion footer', async () => {
   const f = await fixture();
   await f.text('/force Раздача монеты 2 10кк');
-  assert.equal((await f.click(1)).text, '✅ [id1|Игрок 1], вы приняли участие в раздаче! Ваши награды:\n\n💰 10.000.000 KC\n\nОсталось 1 возможностей получить награды!');
+  assert.equal((await f.click(1)).text, '✅ [id1|Игрок 1], вы приняли участие в раздаче! Ваши награды:\n💰 10.000.000 KC\n\nОсталось 1 возможностей получить награды!');
   assert.equal(f.db.player(1).kc, 1_000_000_000);
   assert.equal((await f.click(1)).text, giveawayTexts.already);
   assert.equal(f.state().remaining, 1);
-  assert.equal((await f.click(2)).text, '✅ [id2|Игрок 2], вы приняли участие в раздаче! Ваши награды:\n\n💰 10.000.000 KC\n\nРаздача завершена!');
+  assert.equal((await f.click(2)).text, '✅ [id2|Игрок 2], вы приняли участие в раздаче! Ваши награды:\n💰 10.000.000 KC\n\nРаздача завершена!');
   assert.equal(f.state().remaining, 0);
   for (const vkId of [1, 2, 3]) assert.equal((await f.click(vkId)).text, giveawayTexts.ended);
   assert.equal(f.db.player(3).kc, 0);
@@ -265,4 +265,18 @@ test('currency reward formatting and arithmetic preserve every stored atomic uni
   await f.click(2);
   assert.equal(f.db.player(2).euro, game.maxAmount);
   assert.equal(f.state().remaining, game.maxAmount - 1);
+});
+
+
+test('every giveaway reward has only the requested blank line before the remaining/final footer', async () => {
+  for (const reward of ['монеты 2 1000', 'евро 2 100', 'биткоин 2 10', 'кейс реферальный 2 1']) {
+    const f = await fixture();
+    await f.text(`/force Раздача ${reward}`);
+    for (const vkId of [1, 2]) {
+      const reply = await f.click(vkId);
+      assert.equal(reply.text.includes('награды:\n\n'), false);
+      assert.equal(reply.text.split('\n\n').length, 2);
+      assert.ok(reply.text.includes(vkId === 1 ? '\n\nОсталось' : '\n\nРаздача завершена!'));
+    }
+  }
 });

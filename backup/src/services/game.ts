@@ -1,4 +1,6 @@
-import { claimGiveaway, giveawayAdminAction, giveawayClaimStatus } from './giveaway.js';
+import { logError } from '../utils/log.js';
+import type { GiveawayState } from '../types/giveaway.js';
+import { claimGiveaway, giveawayAdminAction, prepareGiveawayClaim } from './giveaway.js';
 import { isGiveawayCommand, isGiveawayAdminCommand } from './giveaway-rules.js';
 import { diceAction, diceButtonActive } from './dice.js';
 import { isDiceCommand } from './dice-rules.js';
@@ -48,7 +50,7 @@ export class GameService {
     private readonly casinoRoll: CasinoRandom = casinoRandom
   ) {}
 
-  async handle(input: GameInput, resolveName: () => Promise<string>, resolveChatMembers?: () => Promise<number[]>): Promise<PreparedReply> {
+  async handle(input: GameInput, resolveName: () => Promise<string>, resolveChatMembers?: () => Promise<number[]>, wakeNotifications?: () => void): Promise<PreparedReply> {
     if (!isPositiveId(input.vkId) || !input.eventId || input.eventId.length > 200) {
       throw new Error('Invalid event identity');
     }
@@ -94,23 +96,28 @@ export class GameService {
     let referralUrl: string | null = null;
     for (let attempt = 0; attempt < game.duplicateRetries;) {
       try {
-        const reply = await this.database.transaction(async store => {
-          if (!input.isChat && input.peerId === input.vkId) await store.joinMailing(input.vkId, await store.now());
+        const outcome = await this.database.transaction(async store => {
           const previous = await store.processed(input.eventId);
           if (previous !== null) {
             if (previous.vkId !== input.vkId) {
               throw new Error('Event sender mismatch');
             }
-            return previous.reply;
+            return { reply: previous.reply, wake: false };
           }
+          if (!input.isChat && input.peerId === input.vkId) await store.joinMailing(input.vkId);
           rollIndex = 0;
           const reply = await this.execute(store, input, name, referralUrl, resolvedTarget, roll, members, donationRandom, bankRandom, casinoRoll);
           if (typeof reply === 'string') {
-            return reply;
+            return { reply, wake: false };
           }
-          return store.remember(input, input.isChat && reply.keyboard.kind !== 'dice_game' && reply.keyboard.kind !== 'giveaway' ? { ...reply, keyboard: { kind: 'none' } } : reply);
+          const prepared = await store.remember(input, input.isChat && reply.keyboard.kind !== 'dice_game' && reply.keyboard.kind !== 'giveaway' ? { ...reply, keyboard: { kind: 'none' } } : reply);
+          return { reply: prepared, wake: store.notificationsQueued() };
         });
+        const reply = outcome.reply;
         if (typeof reply !== 'string') {
+          if (outcome.wake) {
+            try { wakeNotifications?.(); } catch (error: unknown) { logError('notification_wake', error); }
+          }
           return reply;
         }
         if (reply === 'name') {
@@ -161,10 +168,12 @@ export class GameService {
     if (isAdminItemCommand(input.command)) {
       return adminItems(store, input.command);
     }
+    let giveawayState: GiveawayState | undefined;
     if (isGiveawayCommand(input.command)) {
       if (input.command.kind !== 'giveaway_claim') return giveawayAdminAction(store, input, input.command);
-      const denied = await giveawayClaimStatus(store, input, input.command);
-      if (denied !== null) return denied;
+      const prepared = await prepareGiveawayClaim(store, input, input.command);
+      if ('text' in prepared) return prepared;
+      giveawayState = prepared;
     }
     if (isDiceCommand(input.command)) {
       if (!await diceButtonActive(store, input, input.command)) return { text: '', keyboard: { kind: 'none' } };
@@ -182,12 +191,12 @@ export class GameService {
           await store.rewardReferral(inviter, registered, referralRewardText(registered));
         }
       }
-      if (registered !== null && input.command.kind === 'giveaway_claim') return claimGiveaway(store, input, registered, input.command);
+      if (registered !== null && input.command.kind === 'giveaway_claim') return claimGiveaway(store, input, registered, input.command, giveawayState);
       return { text: registered === null ? texts.registrationLimit : texts.welcome, keyboard: { kind: 'main' } };
     }
     const command = input.command;
     if (isGiveawayCommand(command)) {
-      if (command.kind === 'giveaway_claim') return claimGiveaway(store, input, player, command);
+      if (command.kind === 'giveaway_claim') return claimGiveaway(store, input, player, command, giveawayState);
       return giveawayAdminAction(store, input, command);
     }
     if (isDiceCommand(command)) return diceAction(store, input, player, command, casinoRoll);

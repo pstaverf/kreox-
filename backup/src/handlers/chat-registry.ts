@@ -1,5 +1,5 @@
 import { casinoConfig } from '../config/casino.js';
-import type { VK } from 'vk-io';
+import type { MessageContext, VK } from 'vk-io';
 import { isRecord } from '../utils/validation.js';
 import { logError } from '../utils/log.js';
 
@@ -33,4 +33,16 @@ export function startChatRegistry(vk: VK, registry: ChatRegistry, groupId: numbe
   const timer = setInterval(tick, casinoConfig.chatSyncMs);
   timer.unref();
   return async () => { stopped = true; clearInterval(timer); await running; };
+}
+
+export async function handleRegisteredMessage(context: MessageContext, groupId: number, registry: ChatRegistry, handle: (context: MessageContext) => Promise<void>): Promise<void> {
+  const [handled] = await Promise.allSettled([
+    handle(context),
+    context.isChat ? registry.recordChat(context.peerId, !(context.eventType === 'chat_kick_user' && context.eventMemberId === -groupId))
+      .catch((error: unknown) => { logError('chat_registry', error); }) : Promise.resolve()
+  ]);
+  if (handled.status === 'rejected') {
+    const error: unknown = handled.reason;
+    throw error;
+  }
 }

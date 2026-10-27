@@ -36,6 +36,18 @@ test('MongoDB replica set: private history migration, mailing races, atomic page
     const service = new GameService(database);
     await service.handle({ eventId: '123:2:2', vkId: 2, peerId: 2, command: { kind: 'profile' } }, async () => 'Игрок');
     assert.equal(await audience.countDocuments({}), 2);
+    const joined = await audience.findOne({ _id: 2 });
+    assert.ok(joined?.joinedAt instanceof Date);
+    await database.transaction(store => store.joinMailing(2));
+    assert.deepEqual(await audience.findOne({ _id: 2 }), joined);
+    const beforeServerTime = await database.transaction(store => store.now());
+    await database.transaction(store => store.joinMailing(999));
+    const afterServerTime = await database.transaction(store => store.now());
+    const serverJoined = await audience.findOne({ _id: 999 });
+    assert.ok(serverJoined?.joinedAt instanceof Date);
+    assert.ok(serverJoined.joinedAt >= beforeServerTime && serverJoined.joinedAt <= afterServerTime);
+    await audience.deleteOne({ _id: 999 });
+
     const input = { eventId: 'campaign', vkId: 888801846, isChat: true, command: parseCommand('/mailing Новости\nТекст', undefined, true) };
     const responses = await Promise.all(Array.from({ length: 8 }, () => service.handle(input, async () => 'Игрок')));
     assert.ok(responses.every(response => response.randomId === responses[0]?.randomId));

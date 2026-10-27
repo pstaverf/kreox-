@@ -251,3 +251,34 @@ test('a blocked mailing recipient does not prevent delivery to the next recipien
   await stop();
   assert.deepEqual(states, ['failed', 'sent']);
 });
+
+test('an immediate wake during an in-flight empty lease is retained instead of waiting for the interval', async context => {
+  context.mock.timers.enable({ apis: ['setInterval'] });
+  const vk = new VK({ token: 'test-token' });
+  const firstLease = Promise.withResolvers<Notification | null>();
+  const sent = Promise.withResolvers<void>();
+  let reads = 0;
+  let available = false;
+  const queue: NotificationQueue = {
+    async leaseNotification(leaseId) {
+      reads += 1;
+      if (reads === 1) return firstLease.promise;
+      if (!available) return null;
+      available = false;
+      return { _id: 'wake-during-lease', peerId: 1, randomId: 777, text: 'Награда', state: 'pending', attempts: 1, nextAttemptAt: new Date(0), leaseId };
+    },
+    async finishNotification(_id, _leaseId, state) { assert.equal(state, 'sent'); sent.resolve(); }
+  };
+  const api = mock.method(vk.api, 'callWithRequest', async (request: APIRequest) => { assert.equal(request.method, 'messages.send'); return 1; });
+  context.after(() => api.mock.restore());
+  const stop = startNotifications(queue, vk);
+  context.after(stop);
+  assert.equal(reads, 1);
+  available = true;
+  for (let index = 0; index < 10; index += 1) stop.wake();
+  firstLease.resolve(null);
+  await sent.promise;
+  await stop();
+  assert.equal(api.mock.callCount(), 1);
+  assert.ok(reads <= 3);
+});

@@ -55,7 +55,7 @@ export function giveawayStarted(state: GiveawayState): string {
 }
 export function giveawayClaimed(state: GiveawayState, player: Player): string {
   const footer = state.remaining === 0 ? giveawayTexts.finished : `Осталось ${formatAmount(state.remaining, 1)} возможностей получить награды!`;
-  return `✅ ${mention(player)}, вы приняли участие в раздаче! Ваши награды:\n\n${giveawayRewardLine(state.reward)}\n\n${footer}`;
+  return `✅ ${mention(player)}, вы приняли участие в раздаче! Ваши награды:\n${giveawayRewardLine(state.reward)}\n\n${footer}`;
 }
 export function giveawayCancelled(state: GiveawayState): string {
   return `⭐️ Раздача отменена!\n\n${formatAmount(state.count - state.remaining, 1)} игроков успело получить ${giveawayRewardText(state.reward)}.`;

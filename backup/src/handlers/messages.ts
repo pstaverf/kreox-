@@ -40,7 +40,7 @@ export async function sendReply(vk: VK, peerId: number, randomId: number, reply:
   }
 }
 
-export function createMessageHandler(vk: VK, game: GameService, groupId: number): (context: MessageContext) => Promise<void> {
+export function createMessageHandler(vk: VK, game: GameService, groupId: number, wakeNotifications?: () => void): (context: MessageContext) => Promise<void> {
   return async context => {
     if (context.isOutbox || context.isEvent || !isPositiveId(context.senderId)) {
       return;
@@ -89,7 +89,7 @@ export function createMessageHandler(vk: VK, game: GameService, groupId: number)
           throw new Error('VK user is unavailable');
         }
         return user.first_name;
-      }, () => loadChatMembers(vk, context.peerId, groupId));
+      }, () => loadChatMembers(vk, context.peerId, groupId), wakeNotifications);
     } catch (error: unknown) {
       logError('message_processing', error, { eventId, vkId: context.senderId });
       try {

@@ -73,6 +73,8 @@ export class MemoryDatabase implements GameDatabase {
 }
 
 class MemoryStore implements GameStore {
+  private queuedNotifications = false;
+  notificationsQueued(): boolean { return this.queuedNotifications; }
   constructor(private readonly state: State, private readonly database: MemoryDatabase) {}
 
   async setDirectorDraft(vkId: number, draft: DirectorDraft | null): Promise<void> {
@@ -386,7 +388,7 @@ class MemoryStore implements GameStore {
     this.deleteUnits(units);
     return 'ok';
   }
-  async joinMailing(vkId: number, now: Date): Promise<void> {
+  async joinMailing(vkId: number, now = this.database.time): Promise<void> {
     if (!this.state.mailingAudience.has(vkId)) this.state.mailingAudience.set(vkId, new Date(now));
   }
   async createMailing(campaign: MailingCampaign): Promise<void> {
@@ -409,6 +411,7 @@ class MemoryStore implements GameStore {
     if (this.state.notifications.some(notification => notification._id === id)) throw new Error('Duplicate mailing notification');
     this.state.notifications.push({ _id: id, peerId: vkId, text, randomId: ++this.state.responses, priority: 1,
       state: 'pending', nextAttemptAt: new Date(0), attempts: 0 });
+    this.queuedNotifications = true;
   }
   async enqueueItemNotification(id: string, peerId: number, text: string, keyboard: KeyboardSpec, roulettePhoto?: number): Promise<void> {
     if (roulettePhoto !== undefined && (!Number.isSafeInteger(roulettePhoto) || roulettePhoto < 0 || roulettePhoto >= rouletteConfig.numbers)) throw new Error('Invalid roulette photo');
@@ -417,6 +420,7 @@ class MemoryStore implements GameStore {
     }
     this.state.notifications.push({ _id: id, peerId, text, keyboard, ...(roulettePhoto === undefined ? {} : { roulettePhoto }), randomId: ++this.state.responses,
       state: 'pending', nextAttemptAt: new Date(0), attempts: 0 });
+    this.queuedNotifications = true;
   }
 
   async setPromoDraft(vkId: number, draft: PromoDraft | null): Promise<void> {
@@ -626,6 +630,7 @@ class MemoryStore implements GameStore {
       _id: `referral:${newcomer._id}`, peerId: inviter._id, text, randomId: ++this.state.responses,
       state: 'pending', nextAttemptAt: new Date(0), attempts: 0
     });
+    this.queuedNotifications = true;
   }
 
 }

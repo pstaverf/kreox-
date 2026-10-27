@@ -9,6 +9,7 @@ import { sendReply } from './messages.js';
 export function startNotifications(queue: NotificationQueue, vk: VK, resolveRoulettePhoto?: RoulettePhotoResolver): (() => Promise<void>) & { wake: () => void } {
   let running: Promise<void> | undefined;
   let stopped = false;
+  let wakeRequested = false;
   const flush = async (): Promise<void> => {
     try {
       for (let count = 0; count < 20 && !stopped; count += 1) {
@@ -41,7 +42,8 @@ export function startNotifications(queue: NotificationQueue, vk: VK, resolveRoul
     if (running !== undefined || stopped) {
       return;
     }
-    running = flush().finally(() => { running = undefined; });
+    wakeRequested = false;
+    running = flush().finally(() => { running = undefined; if (wakeRequested) tick(); });
   };
   const timer = setInterval(tick, game.notificationIntervalMs);
   timer.unref();
@@ -50,5 +52,5 @@ export function startNotifications(queue: NotificationQueue, vk: VK, resolveRoul
     stopped = true;
     clearInterval(timer);
     await running;
-  }, { wake: tick });
+  }, { wake: () => { if (stopped) return; wakeRequested = true; tick(); } });
 }

@@ -14,7 +14,7 @@ async function currentGiveaway(store: GameStore, peerId: number): Promise<Giveaw
   validateGiveaway(state);
   return state;
 }
-export async function giveawayClaimStatus(store: GameStore, input: GameInput, command: Extract<GiveawayCommand, { kind: 'giveaway_claim' | 'giveaway_cancel' }>): Promise<Reply | null> {
+export async function prepareGiveawayClaim(store: GameStore, input: GameInput, command: Extract<GiveawayCommand, { kind: 'giveaway_claim' | 'giveaway_cancel' }>): Promise<Reply | GiveawayState> {
   if (!input.isChat || !validGiveawayPeer(input.peerId)) return reply();
   if (command.peerId !== input.peerId) return reply(giveawayTexts.old);
   const state = await currentGiveaway(store, input.peerId);
@@ -27,7 +27,7 @@ export async function giveawayClaimStatus(store: GameStore, input: GameInput, co
       return reply(giveawayTexts.already);
     }
   }
-  return null;
+  return state;
 }
 export async function giveawayAdminAction(store: GameStore, input: GameInput, command: GiveawayCommand): Promise<Reply> {
   if (command.kind === 'giveaway_claim') throw new Error('Giveaway claim requires a player');
@@ -35,10 +35,8 @@ export async function giveawayAdminAction(store: GameStore, input: GameInput, co
   if (!input.isChat || !validGiveawayPeer(input.peerId)) return reply();
   if (command.kind === 'force_invalid') return reply(giveawayTexts.usage);
   if (command.kind === 'giveaway_cancel') {
-    const denied = await giveawayClaimStatus(store, input, command);
-    if (denied !== null) return denied;
-    const state = await currentGiveaway(store, input.peerId);
-    if (state === null) throw new Error('Missing giveaway to cancel');
+    const state = await prepareGiveawayClaim(store, input, command);
+    if ('text' in state) return state;
     state.stage = 'cancelled';
     await store.casinoSave(state);
     return reply(giveawayCancelled(state));
@@ -51,12 +49,14 @@ export async function giveawayAdminAction(store: GameStore, input: GameInput, co
   else await store.casinoSave(state);
   return { text: giveawayStarted(state), keyboard: { kind: 'giveaway', peerId: input.peerId, token: state.token } };
 }
-export async function claimGiveaway(store: GameStore, input: GameInput, player: Player, command: Extract<GiveawayCommand, { kind: 'giveaway_claim' | 'giveaway_cancel' }>): Promise<Reply> {
+export async function claimGiveaway(store: GameStore, input: GameInput, player: Player, command: Extract<GiveawayCommand, { kind: 'giveaway_claim' | 'giveaway_cancel' }>, prepared?: GiveawayState): Promise<Reply> {
   if (command.kind !== 'giveaway_claim' || input.vkId !== player._id) throw new Error('Invalid giveaway claimant');
-  const denied = await giveawayClaimStatus(store, input, command);
-  if (denied !== null) return denied;
-  const state = await currentGiveaway(store, command.peerId);
-  if (state === null) throw new Error('Missing giveaway to claim');
+  const state = prepared ?? await prepareGiveawayClaim(store, input, command);
+  if ('text' in state) return state;
+  validateGiveaway(state);
+  if (!input.isChat || !validGiveawayPeer(input.peerId)) return reply();
+  if (state.peerId !== input.peerId || command.peerId !== input.peerId || state.token !== command.token) return reply(giveawayTexts.old);
+  if (state.stage !== 'active') return reply(giveawayTexts.ended);
   const reward = state.reward;
   const paid = reward.kind === 'currency' ? await store.updateBalance(input.vkId, reward.currency, 'add', reward.amount)
     : await store.grantItems(input.vkId, reward.itemKind, reward.quantity);

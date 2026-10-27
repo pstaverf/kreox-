@@ -5,7 +5,7 @@ import { startRoulettePhotoWorker } from './handlers/roulette-photo-worker.js';
 import { MongoMessagePhotos } from './repositories/mongo-message-photos.js';
 import { createRoulettePhotoResolver } from './handlers/roulette-photos.js';
 import { startCasinoWorker } from './handlers/casino-worker.js';
-import { startChatRegistry, syncChatRegistry } from './handlers/chat-registry.js';
+import { startChatRegistry, syncChatRegistry, handleRegisteredMessage } from './handlers/chat-registry.js';
 import { startBankWorker } from './handlers/bank-worker.js';
 import { createItemTargetResolver } from './handlers/item-targets.js';
 import { MongoClient } from 'mongodb';
@@ -73,13 +73,13 @@ async function main(): Promise<void> {
     await database.initialize();
     await syncChatRegistry(vk, database, env.vkGroupId).catch((error: unknown) => { logError('chat_registry', error); });
     const service = new GameService(database, createReferralLinkResolver(vk, env.vkGroupId), createItemTargetResolver(vk));
-    const handle = createMessageHandler(vk, service, env.vkGroupId);
     const resolvePhoto = createRoulettePhotoResolver(vk, new MongoMessagePhotos(client.db(env.mongoDb)), env.vkGroupId);
     const notifications = startNotifications(database, vk, resolvePhoto);
+    const handle = createMessageHandler(vk, service, env.vkGroupId, notifications.wake);
     stopPhotos = startRoulettePhotoWorker(database, resolvePhoto);
     stopNotifications = notifications;
     stopMailing = startMailingWorker(database, notifications.wake);
-    stopBank = startBankWorker(database);
+    stopBank = startBankWorker(database, notifications.wake);
     stopCasino = startCasinoWorker(database, notifications.wake);
     stopDice = startDiceWorker(database, notifications.wake);
     stopJackpot = startJackpotWorker(database, notifications.wake);
@@ -88,10 +88,7 @@ async function main(): Promise<void> {
       if (stopping !== undefined) {
         return;
       }
-      const task = (async () => {
-        if (context.isChat) await database.recordChat(context.peerId, !(context.eventType === 'chat_kick_user' && context.eventMemberId === -env.vkGroupId));
-        await handle(context);
-      })();
+      const task = handleRegisteredMessage(context, env.vkGroupId, database, handle);
       pending.add(task);
       try {
         await task;

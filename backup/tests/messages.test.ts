@@ -1,3 +1,4 @@
+import { handleRegisteredMessage } from '../src/handlers/chat-registry.js';
 import assert from 'node:assert/strict';
 import { mock, test } from 'node:test';
 import { APIError, MessageContext, UpdateSource, VK, type APIRequest } from 'vk-io';
@@ -16,6 +17,7 @@ function message(vk: VK, options: {
   payload?: string;
   ref?: string;
   replySenderId?: number;
+  kickMemberId?: number;
 } = {}): MessageContext {
   return new MessageContext({
     api: vk.api, upload: vk.upload, source: UpdateSource.WEBHOOK, updateType: 'message_new', groupId: 123,
@@ -26,6 +28,7 @@ function message(vk: VK, options: {
         peer_id: options.peerId ?? 1, from_id: options.senderId ?? 1,
         text: options.text ?? labels.profile, date: 1_792_713_600,
         random_id: 0, attachments: [], important: false,
+        ...(options.kickMemberId === undefined ? {} : { action: { type: 'chat_kick_user', member_id: options.kickMemberId } }),
         ...(options.payload === undefined ? {} : { payload: options.payload }),
         ...(options.ref === undefined ? {} : { ref: options.ref }),
         ...(options.replySenderId === undefined ? {} : { reply_message: {
@@ -706,4 +709,57 @@ test('VK giveaway flow enforces real sender permissions, keeps inline buttons an
   assert.match(String(sent.at(-1)?.message), /Вы уже получали награды/u);
   await handle(message(vk, { peerId, senderId: 888801846, text: 'Отмена', payload: cancel.action.payload, messageId: 207 }));
   assert.equal(sent.at(-1)?.message, '⭐️ Раздача отменена!\n\n1 игроков успело получить 100💶.');
+});
+
+
+test('chat registry writes run alongside the reply and shutdown still waits for their completion', async () => {
+  const vk = new VK({ token: 'test-token' });
+  const registryDone = Promise.withResolvers<void>();
+  let answered = false;
+  let settled = false;
+  const recorded: [number, boolean][] = [];
+  const task = handleRegisteredMessage(message(vk, { peerId: 2_000_000_001 }), 123, {
+    recordChat: async (peerId, active = true) => { recorded.push([peerId, active]); await registryDone.promise; }
+  }, async () => { answered = true; });
+  void task.then(() => { settled = true; });
+  await new Promise<void>(resolve => setImmediate(resolve));
+  assert.equal(answered, true);
+  assert.equal(settled, false);
+  assert.deepEqual(recorded, [[2_000_000_001, true]]);
+  registryDone.resolve();
+  await task;
+  assert.equal(settled, true);
+});
+
+test('registry failure does not block a reply or leak details, while handler failures remain awaited', async context => {
+  const vk = new VK({ token: 'test-token' });
+  const logs: string[] = [];
+  const logger = mock.method(console, 'error', (value: unknown) => { logs.push(String(value)); });
+  context.after(() => logger.mock.restore());
+  let replies = 0;
+  await handleRegisteredMessage(message(vk, { peerId: 2_000_000_001 }), 123, {
+    recordChat: async () => { throw new Error('private-registry-secret'); }
+  }, async () => { replies += 1; });
+  assert.equal(replies, 1);
+  assert.ok(logs.some(line => line.includes('chat_registry')));
+  assert.ok(logs.every(line => !line.includes('private-registry-secret')));
+  const release = Promise.withResolvers<void>();
+  let recorded = false;
+  const task = handleRegisteredMessage(message(vk, { peerId: 2_000_000_001 }), 123, {
+    recordChat: async () => { await release.promise; recorded = true; }
+  }, async () => { throw new Error('Handler failed'); });
+  const checked = assert.rejects(task, /Handler failed/);
+  release.resolve();
+  await checked;
+  assert.equal(recorded, true);
+});
+
+
+test('concurrent chat registration still records a kicked community as inactive and skips DMs', async () => {
+  const vk = new VK({ token: 'test-token' });
+  const recorded: [number, boolean][] = [];
+  const registry = { recordChat: async (peerId: number, active = true) => { recorded.push([peerId, active]); } };
+  await handleRegisteredMessage(message(vk, { peerId: 2_000_000_001, kickMemberId: -123 }), 123, registry, async () => {});
+  await handleRegisteredMessage(message(vk), 123, registry, async () => {});
+  assert.deepEqual(recorded, [[2_000_000_001, false]]);
 });
