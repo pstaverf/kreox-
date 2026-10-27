@@ -26,7 +26,7 @@ import { isAdminItemCommand, isItemCommand, parsePlayerTarget } from './item-rul
 import { adminItems, itemAction, itemText, itemView } from './items.js';
 import { itemTexts } from './item-texts.js';
 import { adminBalanceAction } from './admin-balance.js';
-import { adminIds } from '../config/admin.js';
+import { adminIds, keyboardResetAdminId } from '../config/admin.js';
 import { game } from '../config/game.js';
 import type { GameInput, PreparedReply, Reply } from '../types/game.js';
 import { DuplicateWriteError, type GameDatabase, type GameStore } from '../types/storage.js';
@@ -55,7 +55,7 @@ export class GameService {
       throw new Error('Invalid event identity');
     }
     if (isGiveawayAdminCommand(input.command) && !adminIds.has(input.vkId)) throw new Error('Administrator access is required');
-    if (input.command.kind === 'delete_keyboards' && (!input.isChat || !adminIds.has(input.vkId))) {
+    if (input.command.kind === 'delete_keyboards' && (!input.isChat || input.vkId !== keyboardResetAdminId)) {
       throw new Error('Administrator chat access is required');
     }
     if ((input.command.kind === 'admin_balance' || input.command.kind === 'admin_balance_invalid') && !adminIds.has(input.vkId)) {

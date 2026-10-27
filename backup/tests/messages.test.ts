@@ -192,6 +192,7 @@ test('/dk clears the chat keyboard only for the configured admin and does not re
   const count = sent.length;
   await handle(message(vk, { peerId: 2_000_000_001, senderId: 1, messageId: 2, text: '/dk', payload: '{"vkId":888801846}' }));
   await handle(message(vk, { peerId: 888801846, senderId: 888801846, text: '/dk' }));
+  await handle(message(vk, { peerId: 2_000_000_001, senderId: 312631501, messageId: 4, text: '/dk' }));
   await handle(message(vk, { peerId: 2_000_000_001, senderId: 1, messageId: 3, text: 'обычный текст', payload: '{"command":"delete_keyboards","vkId":888801846}' }));
   assert.equal(sent.length, count);
   assert.equal(database.state.messages.size, 1);
@@ -205,6 +206,7 @@ test('/dk permissions are enforced by the service too, even for a previously pro
   assert.equal((await service.handle(input, resolveName)).text, 'Done.');
   await assert.rejects(service.handle({ ...input, isChat: false }, resolveName));
   await assert.rejects(service.handle({ ...input, vkId: 1 }, resolveName));
+  await assert.rejects(service.handle({ ...input, vkId: 312631501 }, resolveName));
   assert.equal(database.state.players.size, 0);
   assert.equal(database.state.messages.size, 1);
 });

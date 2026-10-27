@@ -4,7 +4,7 @@ import { isAdminItemCommand } from '../services/item-rules.js';
 import { randomInt } from 'node:crypto';
 import { setTimeout } from 'node:timers/promises';
 import { ExecuteError, type MessageContext, type VK } from 'vk-io';
-import { adminIds } from '../config/admin.js';
+import { adminIds, keyboardResetAdminId } from '../config/admin.js';
 import type { GameService } from '../services/game.js';
 import { texts } from '../services/texts.js';
 import { logError } from '../utils/log.js';
@@ -64,7 +64,7 @@ export function createMessageHandler(vk: VK, game: GameService, groupId: number,
       if ((command.kind === 'admin_balance' || command.kind === 'admin_balance_invalid') && !adminIds.has(context.senderId)) {
         return;
       }
-      if (command.kind === 'delete_keyboards' && (!context.isChat || !adminIds.has(context.senderId))) {
+      if (command.kind === 'delete_keyboards' && (!context.isChat || context.senderId !== keyboardResetAdminId)) {
         return;
       }
       if (context.isChat && command.kind === 'development') {

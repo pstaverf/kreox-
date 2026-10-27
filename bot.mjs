@@ -1352,7 +1352,8 @@ function startJackpotWorker(database, wakeNotifications) {
 var mailingConfig = { maxTextLength: game.maxMessageLength, batchSize: 20, intervalMs: 1e3, migrationPageSize: 100 };
 
 // src/config/admin.ts
-var adminIds = /* @__PURE__ */ new Set([888801846]);
+var keyboardResetAdminId = 888801846;
+var adminIds = /* @__PURE__ */ new Set([keyboardResetAdminId, 312631501]);
 
 // src/services/mailing-texts.ts
 var mailingTexts = {
@@ -3152,7 +3153,7 @@ function createMessageHandler(vk, game2, groupId, wakeNotifications) {
       if ((command.kind === "admin_balance" || command.kind === "admin_balance_invalid") && !adminIds.has(context.senderId)) {
         return;
       }
-      if (command.kind === "delete_keyboards" && (!context.isChat || !adminIds.has(context.senderId))) {
+      if (command.kind === "delete_keyboards" && (!context.isChat || context.senderId !== keyboardResetAdminId)) {
         return;
       }
       if (context.isChat && command.kind === "development") {
@@ -5627,7 +5628,7 @@ var GameService = class {
       throw new Error("Invalid event identity");
     }
     if (isGiveawayAdminCommand(input.command) && !adminIds.has(input.vkId)) throw new Error("Administrator access is required");
-    if (input.command.kind === "delete_keyboards" && (!input.isChat || !adminIds.has(input.vkId))) {
+    if (input.command.kind === "delete_keyboards" && (!input.isChat || input.vkId !== keyboardResetAdminId)) {
       throw new Error("Administrator chat access is required");
     }
     if ((input.command.kind === "admin_balance" || input.command.kind === "admin_balance_invalid") && !adminIds.has(input.vkId)) {
