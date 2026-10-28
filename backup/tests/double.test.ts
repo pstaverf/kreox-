@@ -6,7 +6,7 @@ import { parseCommand } from '../src/handlers/commands.js';
 import { GameService } from '../src/services/game.js';
 import { selectOutcome, roundKey, closeKey, betPayout } from '../src/services/casino-rules.js';
 import { settleCasino } from '../src/services/casino-worker.js';
-import { betMaximum, betMinimum, casinoTexts, roundClosed } from '../src/services/casino-texts.js';
+import { betMaximum, betMinimum, casinoTexts, roundClosed, historyText } from '../src/services/casino-texts.js';
 import type { CasinoMode, CasinoRound } from '../src/types/casino.js';
 import type { Notification } from '../src/types/game.js';
 import { MemoryDatabase } from './memory.js';
@@ -159,4 +159,54 @@ test('failed receipts roll back stake/round/director changes and mixed lines inc
   assert.equal((await f.send('дабл 5 1000\nрулетка 2 1000')).text, '✅ [id1|Игрок 1] — 1.000 KC на x5 (дабл)\n💰 Недостаточно средств.');
   assert.equal(casinoTexts.funds, '💰 Недостаточно средств.');
   assert.equal(roundClosed('double').includes('\n\n'), false);
+});
+
+
+test('double history command is chat-only and preserves the other three log commands', () => {
+  for (const text of ['лог дабл', '  ЛОГ ДАБЛ  ']) assert.deepEqual(parseCommand(text, undefined, true), { kind: 'casino_log', mode: 'double' });
+  for (const [text, mode] of [['лог краш', 'crash'], ['лог дрим', 'dream'], ['лог рулетка', 'roulette']]) {
+    assert.deepEqual(parseCommand(text, undefined, true), { kind: 'casino_log', mode });
+  }
+  for (const text of ['лог дабл', 'лог дабл лишнее']) assert.equal(parseCommand(text, undefined).kind, 'development');
+  assert.equal(parseCommand('лог дабл лишнее', undefined, true).kind, 'development');
+});
+
+test('double log renders the exact compact multiplier list, limits it to twenty and keeps newest last', () => {
+  const results = [5, 2, 2, 2, 50, 3, 3, 3, 3, 2, 3, 2, 3, 50, 2, 2, 3, 50, 3, 2];
+  const history = results.map(result => ({ result, bonus: 1 }));
+  const expected = `Последние 20 выпавших множителей\n\n${results.map(result => `x${result}`).join('\n')}`;
+  assert.equal(historyText('double', history), expected);
+  assert.equal(historyText('double', [{ result: 50, bonus: 1 }, ...history]), expected);
+  assert.equal(historyText('double', []).split('\n\n').length, 2);
+  assert.equal(historyText('double', []), 'Последние 20 выпавших множителей\n\nПока нет завершённых раундов.');
+  assert.equal(history.length, 20);
+});
+
+test('double log reads persisted completed rounds without changing money or timers and appends a new result at the bottom', async () => {
+  const f = await fixture();
+  assert.equal((await f.send('лог дабл')).text, 'Последние 20 выпавших множителей\n\nПока нет завершённых раундов.');
+  assert.match((await f.send('дабл 5 1000')).text, /^✅/u);
+  const results = [5, 2, 2, 2, 50, 3, 3, 3, 3, 2, 3, 2, 3, 50, 2, 2, 3, 50, 3, 2];
+  f.round().history = results.map(result => ({ result, bonus: 1 }));
+  const before = structuredClone(f.round());
+  const balance = f.db.player().kc;
+  const read = await f.send('лог дабл', 1, 'double-log');
+  assert.equal(read.text, historyText('double', before.history));
+  assert.deepEqual(read.keyboard, { kind: 'none' });
+  assert.deepEqual(f.round(), before);
+  assert.equal(f.db.player().kc, balance);
+  assert.equal((await f.send('лог дабл', 1, 'double-log')).randomId, read.randomId);
+  assert.equal((await f.send('лог дабл', 2)).text, read.text);
+  assert.equal((await f.send('лог дабл', 1, 'other-double-log', 2_000_000_002)).text, historyText('double', []));
+  assert.equal((await f.send('лог дрим')).text, historyText('dream', []));
+  f.db.time = new Date(before.closesAt);
+  await f.drain();
+  assert.deepEqual(f.round().history, [...before.history.slice(1), { result: 5, bonus: 1 }]);
+  const logged = await f.send('лог дабл');
+  assert.equal(logged.text, historyText('double', f.round().history));
+  assert.equal(logged.text.split('\n').length, 22);
+  assert.ok(logged.text.endsWith('x2\nx5'));
+  const restarted = new GameService(f.db);
+  const reply = await restarted.handle({ eventId: 'restarted-double-log', vkId: 1, peerId: 2_000_000_001, isChat: true, command: parseCommand('лог дабл', undefined, true) }, async () => 'Игрок');
+  assert.equal(reply.text, logged.text);
 });

@@ -1,3 +1,4 @@
+import { casinoConfig } from '../config/casino.js';
 import { rouletteHistory, rouletteOutcome, rouletteTargetText } from './roulette-texts.js';
 import type { CasinoBet, CasinoMode, CasinoRound, DirectorState } from '../types/casino.js';
 import type { Player } from '../types/game.js';
@@ -58,6 +59,8 @@ export function winningBet(bet: CasinoBet, mode: CasinoMode, payout: number): st
 export function roundFooter(round: CasinoRound): string {
   return `${round.winners === 0 ? '\n\n❌ Все ставки проиграли!' : ''}${round.losses > 0 ? `\n\n💰 Проиграно: ${kc(round.losses)}` : ''}`;
 }
+const historyLabels: Record<CasinoMode, string> = { crash: 'коэффициентов', roulette: 'чисел', dream: 'секторов', double: 'множителей' };
 export function historyText(mode: CasinoMode, history: CasinoRound['history']): string {
-  return `Последние 20 выпавших ${mode === 'crash' ? 'коэффициентов' : mode === 'roulette' ? 'чисел' : 'секторов'}${history.length === 0 ? '\n\nПока нет завершённых раундов.' : `\n\n${history.map(item => mode === 'roulette' ? rouletteHistory(item.result) : outcome({ ...item, mode })).join('\n')}`}`;
+  const entries = history.slice(-casinoConfig.historySize);
+  return `Последние ${casinoConfig.historySize} выпавших ${historyLabels[mode]}\n\n${entries.length === 0 ? 'Пока нет завершённых раундов.' : entries.map(item => mode === 'roulette' ? rouletteHistory(item.result) : outcome({ ...item, mode })).join('\n')}`;
 }

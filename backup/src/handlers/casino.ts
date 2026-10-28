@@ -58,8 +58,13 @@ export function parseCasinoText(text: string | undefined, isChat: boolean): Casi
   if (!isChat || text === undefined) return null;
   if (text.length > game.maxMessageLength) return null;
   const normalized = text.trim().toLowerCase();
-  if (normalized === 'директор') return { kind: 'director_view' };
-  if (normalized === 'лог краш' || normalized === 'лог дрим' || normalized === 'лог рулетка') return { kind: 'casino_log', mode: normalized === 'лог краш' ? 'crash' : normalized === 'лог рулетка' ? 'roulette' : 'dream' };
+  switch (normalized) {
+    case 'директор': return { kind: 'director_view' };
+    case 'лог краш': return { kind: 'casino_log', mode: 'crash' };
+    case 'лог дрим': return { kind: 'casino_log', mode: 'dream' };
+    case 'лог рулетка': return { kind: 'casino_log', mode: 'roulette' };
+    case 'лог дабл': return { kind: 'casino_log', mode: 'double' };
+  }
   const lines = text.split(/\r?\n/u).filter(line => line.trim().length > 0);
   if (lines.length === 0 || !lines.some(line => /^(краш|дрим|рулетка|дабл)(?=\s|$)/iu.test(line.trim()) || isRouletteShorthand(line))) return null;
   return { kind: 'casino_bets', lines: lines.map(parseLine) };
