@@ -1578,7 +1578,7 @@ function winningBet(bet, mode, payout) {
 — Приз: ${kc(payout)}`;
 }
 function roundFooter(round) {
-  return `${round.winners === 0 ? "\n\n❌ Все ставки проиграли!" : ""}${round.losses > 0 || round.mode === "double" ? `
+  return `${round.winners === 0 ? "\n\n❌ Все ставки проиграли!" : ""}${round.losses > 0 ? `
 
 💰 Проиграно: ${kc(round.losses)}` : ""}`;
 }
@@ -1931,6 +1931,30 @@ var MongoMessagePhotos = class {
   }
 };
 
+// src/services/casino-winnings.ts
+async function settleWinningGroup(store, round, selected) {
+  const pending = await store.casinoList({ kind: "bet", roundId: round.roundId, vkId: selected.vkId, settled: false }, casinoConfig.maxBets);
+  const group = [];
+  let amount = 0n;
+  let totalPayout = 0n;
+  for (const bet of pending) {
+    if (bet.kind !== "bet" || bet.roundId !== round.roundId || bet.vkId !== selected.vkId || !safeBankMoney(bet.amount) || bet.amount <= 0) throw new Error("Invalid casino winning group");
+    if (bet.target !== selected.target) continue;
+    const payout = betPayout(round.mode, bet.amount, bet.target, round.bonus);
+    if (payout === null) throw new Error("Casino payout exceeded reserved bound");
+    amount += BigInt(bet.amount);
+    totalPayout += BigInt(payout);
+    group.push({ bet, payout });
+  }
+  if (!group.some((value) => value.bet._id === selected._id) || amount > BigInt(game.maxAmount) || totalPayout > BigInt(game.maxAmount)) throw new Error("Invalid casino group total");
+  for (const value of group) {
+    await addCasinoCredit(store, value.bet._id, value.bet.vkId, value.payout);
+    value.bet.settled = true;
+    await store.casinoSave(value.bet);
+  }
+  return { amount: Number(amount), payout: Number(totalPayout), count: group.length };
+}
+
 // src/services/casino-round.ts
 async function closeCasinoRound(store, round, now) {
   if (round.stage !== "open" || round.closesAt > now) throw new Error("Premature casino close");
@@ -2048,7 +2072,7 @@ async function savePage(store, round) {
 }
 async function appendResult(store, round, text) {
   if (round.buffer.length + text.length > game.maxMessageLength) await savePage(store, round);
-  round.buffer += text;
+  round.buffer += round.buffer.length === 0 ? text.replace(/^\n+/u, "") : text;
 }
 async function progressRound(store, now) {
   const round = (await store.casinoList({ kind: "round", dueAt: now }, 1))[0];
@@ -2081,19 +2105,15 @@ async function progressRound(store, now) {
         if (bet.kind !== "bet") throw new Error("Invalid round bet");
         const wins = round.mode === "crash" ? round.result >= bet.target : round.mode === "roulette" ? rouletteWins(bet.target, round.result) : round.result === bet.target;
         if (wins) {
-          const payout = betPayout(round.mode, bet.amount, bet.target, round.bonus);
-          if (payout === null) throw new Error("Casino payout exceeded reserved bound");
-          await addCasinoCredit(store, bet._id, bet.vkId, payout);
-          round.winners += 1;
-          await appendResult(store, round, `
-
-${winningBet(bet, round.mode, payout)}`);
+          const group = await settleWinningGroup(store, round, bet);
+          await appendResult(store, round, `${round.winners === 0 ? "\n\n" : "\n"}${winningBet({ ...bet, amount: group.amount }, round.mode, group.payout)}`);
+          round.winners += group.count;
         } else {
           round.losses += bet.amount;
           if (round.dealerId !== null) await addCasinoCredit(store, `dealer:${bet._id}`, round.dealerId, casinoPercent(bet.amount, casinoConfig.dealerPercent), "dealer");
+          bet.settled = true;
+          await store.casinoSave(bet);
         }
-        bet.settled = true;
-        await store.casinoSave(bet);
       }
       round.dueAt = now;
       break;
@@ -5533,7 +5553,14 @@ async function acceptBet(store, player, line, input, index, random) {
   if (director.dueAt <= now) return casinoTexts.electionPending;
   const active = existing !== null && existing.stage !== "finished";
   const roundId = active ? existing.roundId : `game:${input.eventId}:${index}`;
-  if ((await store.casinoList({ kind: "bet", roundId, vkId: player._id }, casinoConfig.maxBets)).length >= casinoConfig.maxBets) return betLimit(line.mode);
+  const previousBets = await store.casinoList({ kind: "bet", roundId, vkId: player._id }, casinoConfig.maxBets);
+  let committed = 0n;
+  for (const bet of previousBets) {
+    if (bet.kind !== "bet" || !safeBankMoney(bet.amount)) throw new Error("Invalid previous casino stake");
+    committed += BigInt(bet.amount);
+  }
+  if (committed + BigInt(amount) > BigInt(casinoConfig.maximum)) return betMaximum(line.mode);
+  if (previousBets.length >= casinoConfig.maxBets) return betLimit(line.mode);
   const liability = betPayout(line.mode, amount, line.target, line.mode === "dream" ? 7 : 1);
   if (liability === null) return casinoTexts.limit;
   const fee = casinoPercent(amount, casinoConfig.directorPercent);

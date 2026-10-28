@@ -1,3 +1,4 @@
+import { settleWinningGroup } from './casino-winnings.js';
 import { doublePhotos } from '../config/double.js';
 import { closeCasinoRound } from './casino-round.js';
 import { rouletteWins } from './roulette-rules.js';
@@ -7,7 +8,7 @@ import { game } from '../config/game.js';
 import type { CasinoRandom, CasinoRound } from '../types/casino.js';
 import type { GameDatabase, GameStore } from '../types/storage.js';
 import { addCasinoCredit, payCasinoCredit } from './casino-credits.js';
-import { cachedCasinoRandom, casinoRandom, betPayout, casinoPercent, closeKey } from './casino-rules.js';
+import { cachedCasinoRandom, casinoRandom, casinoPercent, closeKey } from './casino-rules.js';
 import { casinoTexts, electionRefund, roundFooter, roundHeading, winningBet } from './casino-texts.js';
 import { startDueElection } from './director.js';
 
@@ -20,7 +21,7 @@ async function savePage(store: GameStore, round: CasinoRound): Promise<void> {
 }
 async function appendResult(store: GameStore, round: CasinoRound, text: string): Promise<void> {
   if (round.buffer.length + text.length > game.maxMessageLength) await savePage(store, round);
-  round.buffer += text;
+  round.buffer += round.buffer.length === 0 ? text.replace(/^\n+/u, '') : text;
 }
 async function progressRound(store: GameStore, now: Date): Promise<boolean> {
   const round = (await store.casinoList({ kind: 'round', dueAt: now }, 1))[0];
@@ -53,17 +54,15 @@ async function progressRound(store: GameStore, now: Date): Promise<boolean> {
         if (bet.kind !== 'bet') throw new Error('Invalid round bet');
         const wins = round.mode === 'crash' ? round.result >= bet.target : round.mode === 'roulette' ? rouletteWins(bet.target, round.result) : round.result === bet.target;
         if (wins) {
-          const payout = betPayout(round.mode, bet.amount, bet.target, round.bonus);
-          if (payout === null) throw new Error('Casino payout exceeded reserved bound');
-          await addCasinoCredit(store, bet._id, bet.vkId, payout);
-          round.winners += 1;
-          await appendResult(store, round, `\n\n${winningBet(bet, round.mode, payout)}`);
+          const group = await settleWinningGroup(store, round, bet);
+          await appendResult(store, round, `${round.winners === 0 ? '\n\n' : '\n'}${winningBet({ ...bet, amount: group.amount }, round.mode, group.payout)}`);
+          round.winners += group.count;
         } else {
           round.losses += bet.amount;
           if (round.dealerId !== null) await addCasinoCredit(store, `dealer:${bet._id}`, round.dealerId, casinoPercent(bet.amount, casinoConfig.dealerPercent), 'dealer');
+          bet.settled = true;
+          await store.casinoSave(bet);
         }
-        bet.settled = true;
-        await store.casinoSave(bet);
       }
       round.dueAt = now;
       break;

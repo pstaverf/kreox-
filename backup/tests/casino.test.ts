@@ -340,13 +340,13 @@ test('full winnings are paged without losing bets, receipts are bounded and logs
   const f = await fixture(() => 484_999_999, 6);
   for (let id = 1; id <= 6; id += 1) {
     f.db.player(id).name = '😀'.repeat(20);
-    await f.chat(Array.from({ length: 10 }, () => 'краш 1.7 1000').join('\n'), id);
+    await f.chat(Array.from({ length: 10 }, (_, index) => `краш 1.${String(index + 1).padStart(2, '0')} 1000`).join('\n'), id);
   }
   f.advance(39_500);
   await f.drain();
   const pages = f.db.state.notifications.filter(notice => notice._id.startsWith('result:'));
   assert.ok(pages.length > 1);
-  assert.ok(pages.every(page => page.text.length <= game.maxMessageLength));
+  assert.ok(pages.every(page => page.text.length <= game.maxMessageLength && !page.text.startsWith('\n')));
   assert.equal(pages.map(page => page.text).join('').split('— Приз:').length - 1, 60);
   const long = await f.chat(Array.from({ length: 150 }, () => 'краш').join('\n'));
   assert.equal(long.text, '');

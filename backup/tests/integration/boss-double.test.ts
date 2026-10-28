@@ -139,5 +139,10 @@ test('MongoDB replica set: double stake replay/races, ten-bet cap, delivery-gate
     const round = await records.findOne({ _id: id });
     assert.ok(round?.kind === 'round');
     assert.equal(round.winners, 10);
+    const result = await notices.findOne({ _id: `result:${round.roundId}:0` });
+    assert.ok(result);
+    assert.equal((result.text.match(/— Приз:/gu) ?? []).length, 1);
+    assert.match(result.text, /— 10\.000 KC на 5\n— Приз: 50\.000 KC/u);
+    assert.equal(result.text.includes('Проиграно:'), false);
   } finally { try { await db.dropDatabase(); } finally { await client.close(); } }
 });

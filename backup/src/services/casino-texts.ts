@@ -56,7 +56,7 @@ export function winningBet(bet: CasinoBet, mode: CasinoMode, payout: number): st
   return `✅ [id${bet.vkId}|${bet.name}] — ${kc(bet.amount)} на ${mode === 'crash' ? coefficient(bet.target) : mode === 'roulette' ? rouletteTargetText(bet.target) : bet.target}\n— Приз: ${kc(payout)}`;
 }
 export function roundFooter(round: CasinoRound): string {
-  return `${round.winners === 0 ? '\n\n❌ Все ставки проиграли!' : ''}${round.losses > 0 || round.mode === 'double' ? `\n\n💰 Проиграно: ${kc(round.losses)}` : ''}`;
+  return `${round.winners === 0 ? '\n\n❌ Все ставки проиграли!' : ''}${round.losses > 0 ? `\n\n💰 Проиграно: ${kc(round.losses)}` : ''}`;
 }
 export function historyText(mode: CasinoMode, history: CasinoRound['history']): string {
   return `Последние 20 выпавших ${mode === 'crash' ? 'коэффициентов' : mode === 'roulette' ? 'чисел' : 'секторов'}${history.length === 0 ? '\n\nПока нет завершённых раундов.' : `\n\n${history.map(item => mode === 'roulette' ? rouletteHistory(item.result) : outcome({ ...item, mode })).join('\n')}`}`;
