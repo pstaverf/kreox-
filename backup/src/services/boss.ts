@@ -102,7 +102,7 @@ export async function bossAction(store: GameStore, player: Player, command: Boss
       if (board.emojis[command.slot] !== '⚔️') return fightReply(bossTexts.miss, fighter);
       const power = bossPower(fighter.level);
       const damage = Math.min(run.health, power <= 50 ? power : random(`${input.eventId}:damage`, power) + 1);
-      const drop = random(`${input.eventId}:drop`, 10) === 0;
+      const drop = random(`${input.eventId}:drop`, 4) === 0;
       const itemKind = bossCaseKind(run.color, run.name);
       if (drop && !await store.grantItems(player._id, itemKind, 1)) return fightReply(itemTexts.limit, fighter);
       run.health -= damage;

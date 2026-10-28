@@ -16,7 +16,7 @@ import type { CasinoRandom } from '../src/types/casino.js';
 import type { Command, PreparedReply } from '../src/types/game.js';
 import { MemoryDatabase } from './memory.js';
 
-async function fixture(random: CasinoRandom = (purpose, maximum) => purpose.endsWith(':drop') ? 9 : maximum - 1) {
+async function fixture(random: CasinoRandom = (_purpose, maximum) => maximum - 1) {
   const db = new MemoryDatabase();
   const service = new GameService(db, undefined, undefined, undefined, undefined, undefined, random);
   let next = 0;
@@ -175,7 +175,7 @@ test('misses keep the identical board; a hit moves the sword, old and other-play
 });
 
 test('above 50 damage is uniform 1..power, the top six values are critical, and the killing hit is capped by remaining HP', async () => {
-  const f = await fixture((purpose, maximum) => purpose.endsWith(':drop') ? 9 : maximum - 1);
+  const f = await fixture((_purpose, maximum) => maximum - 1);
   await f.summon('100');
   await f.send({ kind: 'boss_gym' });
   f.fighter().level = 23;
@@ -318,4 +318,27 @@ test('empty boss rankings have only the requested heading blank and long boss ca
       assert.ok(Buffer.byteLength(action.payload, 'utf8') <= 255);
     }
   }
+});
+
+
+test('boss-case drop has exactly one winning outcome out of four for each successful hit', async () => {
+  let awarded = 0;
+  for (let roll = 0; roll < 4; roll += 1) {
+    let dropRolls = 0;
+    const f = await fixture((purpose, maximum) => {
+      if (purpose.endsWith(':drop')) {
+        assert.equal(maximum, 4);
+        dropRolls += 1;
+        return roll;
+      }
+      return 0;
+    });
+    await f.summon();
+    const board = await f.send({ kind: 'boss_fight' });
+    await f.attack(board);
+    assert.equal(dropRolls, 1);
+    assert.equal(f.db.state.items.length, roll === 0 ? 1 : 0);
+    awarded += f.db.state.items.length;
+  }
+  assert.equal(awarded, 1);
 });
