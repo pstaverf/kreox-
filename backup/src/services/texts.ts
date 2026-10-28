@@ -1,6 +1,6 @@
+import { itemName } from './item-names.js';
 import { roundKc } from './kc-money.js';
 import { bankConfig } from '../config/bank.js';
-import { itemConfig } from '../config/items.js';
 import { game } from '../config/game.js';
 import type { InventoryStack, MiningFarm, Player, Ranking, RankingMetric, Reward } from '../types/game.js';
 
@@ -128,9 +128,7 @@ export function inventoryText(items: readonly InventoryStack[]): string {
   return `${texts.inventoryTitle}\n\n${items.length === 0
     ? texts.emptyInventory
     : items.map(item => {
-      const entry = itemConfig.catalog.find(entry => entry.kind === item.kind);
-      if (entry === undefined) throw new Error('Unknown inventory kind');
-      return `🆔 ${item.itemId} — ${entry.name} (${item.quantity} шт.)`;
+      return `🆔 ${item.itemId} — ${itemName(item.kind)} (${item.quantity} шт.)`;
     }).join('\n')}`;
 }
 

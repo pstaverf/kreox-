@@ -1,6 +1,6 @@
 import type { InventoryItem, KeyboardSpec, Player } from './game.js';
 
-export type ItemKind = 'zhdun_case' | 'referral_case' | 'croupier';
+export type ItemKind = 'zhdun_case' | 'referral_case' | 'croupier' | 'aristocrat_case' | `boss_case:${string}`;
 export type PlayerTarget = { kind: 'number'; id: number } | { kind: 'vk'; id: number } | { kind: 'screen'; name: string };
 export type AdminItemCommand =
   | { kind: 'admin_itemlist' }
@@ -29,7 +29,7 @@ export interface ItemOffer {
   expiresAt: Date;
   state: 'pending' | 'completed' | 'expired';
 }
-export interface CaseRewards { kc: number; euro: number; counts: number[] }
+export interface CaseRewards { bitcoin?: number; aristocrat?: number; kc: number; euro: number; counts: number[] }
 export type ItemResult = 'ok' | 'items' | 'limit';
 export type PurchaseResult = ItemResult | 'funds' | 'expired' | 'invalid';
 export type ItemKeyboard =
@@ -49,5 +49,5 @@ export interface ItemStore {
   reserveOffer(offer: ItemOffer, now: Date): Promise<boolean>;
   itemOffer(id: string): Promise<ItemOffer | null>;
   purchaseOffer(offer: ItemOffer, buyer: Player, seller: Player, now: Date): Promise<PurchaseResult>;
-  enqueueItemNotification(id: string, peerId: number, text: string, keyboard: KeyboardSpec, roulettePhoto?: number): Promise<void>;
+  enqueueItemNotification(id: string, peerId: number, text: string, keyboard: KeyboardSpec, roulettePhoto?: number, media?: { photoUrl?: string; bossSummon?: string }): Promise<void>;
 }

@@ -1,4 +1,4 @@
-import type { RoulettePhotoResolver } from '../types/message-photos.js';
+import type { MessagePhotoResolver, RoulettePhotoResolver } from '../types/message-photos.js';
 import { randomUUID } from 'node:crypto';
 import { APIError, type VK } from 'vk-io';
 import { game } from '../config/game.js';
@@ -6,7 +6,7 @@ import type { NotificationQueue } from '../types/storage.js';
 import { logError } from '../utils/log.js';
 import { sendReply } from './messages.js';
 
-export function startNotifications(queue: NotificationQueue, vk: VK, resolveRoulettePhoto?: RoulettePhotoResolver): (() => Promise<void>) & { wake: () => void } {
+export function startNotifications(queue: NotificationQueue, vk: VK, resolveRoulettePhoto?: RoulettePhotoResolver, resolvePhoto?: MessagePhotoResolver, bossAllowed?: (vkId: number, runId: string) => Promise<boolean>): (() => Promise<void>) & { wake: () => void } {
   let running: Promise<void> | undefined;
   let stopped = false;
   let wakeRequested = false;
@@ -21,8 +21,9 @@ export function startNotifications(queue: NotificationQueue, vk: VK, resolveRoul
         let state: 'sent' | 'failed' | 'pending' = 'sent';
         let delay = 0;
         try {
-          const attachment = notification.roulettePhoto === undefined || resolveRoulettePhoto === undefined ? null : await resolveRoulettePhoto(notification.peerId, notification.roulettePhoto);
-          await sendReply(vk, notification.peerId, notification.randomId, {
+          const allowed = notification.bossSummon === undefined || (bossAllowed !== undefined && await bossAllowed(notification.peerId, notification.bossSummon));
+          const attachment = notification.photoUrl !== undefined && resolvePhoto !== undefined ? await resolvePhoto(notification.peerId, notification.photoUrl) : notification.roulettePhoto === undefined || resolveRoulettePhoto === undefined ? null : await resolveRoulettePhoto(notification.peerId, notification.roulettePhoto);
+          if (allowed) await sendReply(vk, notification.peerId, notification.randomId, {
             text: notification.text, keyboard: notification.keyboard ?? { kind: 'none' }, ...(attachment === null ? {} : { attachment })
           });
         } catch (error: unknown) {

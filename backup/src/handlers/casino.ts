@@ -1,9 +1,10 @@
+import { doubleConfig } from '../config/double.js';
 import { parseRouletteTarget } from '../services/roulette-rules.js';
 import { game } from '../config/game.js';
 import type { CasinoCommand, CasinoLine, CasinoMode } from '../types/casino.js';
 import { casinoConfig } from '../config/casino.js';
 import { parseCasinoStake } from '../services/casino-rules.js';
-import { betMinimum, casinoTexts } from '../services/casino-texts.js';
+import { betMinimum, betMaximum, casinoTexts } from '../services/casino-texts.js';
 import { isRecord } from '../utils/validation.js';
 
 function isRouletteShorthand(text: string): boolean {
@@ -12,16 +13,31 @@ function isRouletteShorthand(text: string): boolean {
   const stake = parseCasinoStake(parts[1]);
   return stake !== null && (typeof stake !== 'number' || stake >= casinoConfig.minimum);
 }
+function oversizedStake(text: string): boolean {
+  if (text.length > 64) return false;
+  const match = /^(\d{1,16}|\d{1,3}(?:\.\d{3}){1,5})(?:,(\d{1,2}))?([kк]{1,2})?$/iu.exec(text);
+  if (match?.[1] === undefined) return false;
+  const value = (BigInt(match[1].replaceAll('.', '')) * BigInt(game.kcScale) + BigInt((match[2] ?? '').padEnd(2, '0'))) * 1000n ** BigInt(match[3]?.length ?? 0);
+  return value > BigInt(casinoConfig.maximum);
+}
 function parseLine(text: string): CasinoLine {
   const line = isRouletteShorthand(text) ? `рулетка ${text.trim()}` : text.trim();
-  const parts = /^(краш|дрим|рулетка)\s+(\S+)\s+(\S+)$/iu.exec(line);
-  const mode: CasinoMode = /^краш(?=\s|$)/iu.test(line) ? 'crash' : /^рулетка(?=\s|$)/iu.test(line) ? 'roulette' : 'dream';
-  const usage = mode === 'crash' ? casinoTexts.crashUsage : mode === 'roulette' ? casinoTexts.rouletteUsage : casinoTexts.dreamUsage;
+  const parts = /^(краш|дрим|рулетка|дабл)\s+(\S+)\s+(\S+)$/iu.exec(line);
+  const mode: CasinoMode = /^краш(?=\s|$)/iu.test(line) ? 'crash' : /^рулетка(?=\s|$)/iu.test(line) ? 'roulette' : /^дабл(?=\s|$)/iu.test(line) ? 'double' : 'dream';
+  const usage = mode === 'crash' ? casinoTexts.crashUsage : mode === 'roulette' ? casinoTexts.rouletteUsage : mode === 'double' ? casinoTexts.doubleUsage : casinoTexts.dreamUsage;
   if (parts?.[2] === undefined || parts[3] === undefined) return { error: usage };
   const amount = parseCasinoStake(parts[3]);
+  const amountError = amount === null && oversizedStake(parts[3]) ? betMaximum(mode) : usage;
+  if (mode === 'double') {
+    const target = Number(parts[2]);
+    if (!/^\d+$/.test(parts[2]) || !doubleConfig.sectors.some(sector => sector === target)) return { error: usage };
+    if (amount === null) return { error: amountError };
+    return { mode, amount, target };
+  }
   if (mode === 'roulette') {
     const target = parseRouletteTarget(parts[2]);
-    if (target === null || amount === null) return { error: usage };
+    if (target === null) return { error: usage };
+    if (amount === null) return { error: amountError };
     return typeof amount === 'number' && amount < casinoConfig.minimum ? { error: betMinimum(mode) } : { mode, amount, target };
   }
   if (mode === 'crash') {
@@ -29,12 +45,13 @@ function parseLine(text: string): CasinoLine {
     const [whole = '', fraction = ''] = parts[2].replace(',', '.').split('.');
     const target = Number(whole) * 100 + Number(fraction.padEnd(2, '0'));
     if (target <= 100 || target > casinoConfig.maxCrash) return { error: casinoTexts.crashRange };
-    if (amount === null) return { error: casinoTexts.crashUsage };
+    if (amount === null) return { error: amountError };
     if (typeof amount === 'number' && amount < casinoConfig.minimum) return { error: betMinimum(mode) };
     return { mode, amount, target };
   }
   const target = Number(parts[2]);
-  if (!/^\d+$/.test(parts[2]) || !casinoConfig.sectors.some(sector => sector === target) || amount === null) return { error: casinoTexts.dreamUsage };
+  if (!/^\d+$/.test(parts[2]) || !casinoConfig.sectors.some(sector => sector === target)) return { error: casinoTexts.dreamUsage };
+  if (amount === null) return { error: amountError };
   return typeof amount === 'number' && amount < casinoConfig.minimum ? { error: betMinimum(mode) } : { mode, amount, target };
 }
 export function parseCasinoText(text: string | undefined, isChat: boolean): CasinoCommand | null {
@@ -44,7 +61,7 @@ export function parseCasinoText(text: string | undefined, isChat: boolean): Casi
   if (normalized === 'директор') return { kind: 'director_view' };
   if (normalized === 'лог краш' || normalized === 'лог дрим' || normalized === 'лог рулетка') return { kind: 'casino_log', mode: normalized === 'лог краш' ? 'crash' : normalized === 'лог рулетка' ? 'roulette' : 'dream' };
   const lines = text.split(/\r?\n/u).filter(line => line.trim().length > 0);
-  if (lines.length === 0 || !lines.some(line => /^(краш|дрим|рулетка)(?=\s|$)/iu.test(line.trim()) || isRouletteShorthand(line))) return null;
+  if (lines.length === 0 || !lines.some(line => /^(краш|дрим|рулетка|дабл)(?=\s|$)/iu.test(line.trim()) || isRouletteShorthand(line))) return null;
   return { kind: 'casino_bets', lines: lines.map(parseLine) };
 }
 export function parseDirectorPayload(value: unknown): CasinoCommand | null {

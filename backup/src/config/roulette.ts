@@ -26,6 +26,7 @@ export const rouletteConfig = {
   ],
   photoPrefetchIntervalMs: 2000,
   photoPrefetchConcurrency: 2,
+  maxPendingPhotoLoads: 128,
   photoTimeoutMs: 30_000,
   maxPhotoBytes: 10 * 1024 * 1024
 } as const;

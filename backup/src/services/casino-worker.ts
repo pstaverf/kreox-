@@ -1,3 +1,4 @@
+import { doublePhotos } from '../config/double.js';
 import { closeCasinoRound } from './casino-round.js';
 import { rouletteWins } from './roulette-rules.js';
 import { DuplicateWriteError } from '../types/storage.js';
@@ -74,7 +75,8 @@ async function progressRound(store: GameStore, now: Date): Promise<boolean> {
         else {
           const page = await store.casinoGet(`page:${round.roundId}:${round.nextPage}`);
           if (page?.kind !== 'page') throw new Error('Missing result page');
-          await store.enqueueItemNotification(`result:${round.roundId}:${round.nextPage}`, round.peerId, page.text, { kind: 'none' }, round.mode === 'roulette' && round.nextPage === 0 ? round.result : undefined);
+          const photoUrl = round.mode === 'double' && round.nextPage === 0 ? doublePhotos[round.result] : undefined;
+          await store.enqueueItemNotification(`result:${round.roundId}:${round.nextPage}`, round.peerId, page.text, { kind: 'none' }, round.mode === 'roulette' && round.nextPage === 0 ? round.result : undefined, photoUrl === undefined ? undefined : { photoUrl });
           round.nextPage += 1;
         }
       }

@@ -4,7 +4,9 @@ export const itemConfig = {
   catalog: [
     { id: 1, kind: 'zhdun_case', name: '💼 Кейс «Ждун»' },
     { id: 2, kind: 'referral_case', name: '👬 Кейс «Реферальный»' },
-    { id: 3, kind: 'croupier', name: '🤴 Крупьер' }
+    { id: 3, kind: 'croupier', name: '🤴 Крупьер' },
+    { id: 4, kind: 'boss_case:💙:Ахиллес', name: '💙 Босс-кейс (Ахиллес)' },
+    { id: 5, kind: 'aristocrat_case', name: '🏛️ Кейс «Аристократ»' }
   ],
   drops: [
     { currency: 'kc', amount: 150_000, weight: 30 },

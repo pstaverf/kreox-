@@ -1,3 +1,4 @@
+import { parseBossText, parseBossPayload } from './boss.js';
 import { parseForce, parseGiveawayPayload } from './giveaway.js';
 import { parseDiceText, parseDicePayload } from './dice.js';
 import { parsePrivateCasinoPayload } from './private-casino.js';
@@ -13,6 +14,8 @@ import { isRankingMetric } from '../services/rankings.js';
 import { isRecord } from '../utils/validation.js';
 
 export function parseCommand(text: string | undefined, payload: unknown, isChat = false): Command {
+  const boss = parseBossText(text);
+  if (boss !== null) return boss;
   const force = parseForce(text);
   if (force !== null) return force;
   const mailing = parseMailing(text);
@@ -51,6 +54,8 @@ export function parseCommand(text: string | undefined, payload: unknown, isChat 
       return { kind: 'development' };
     }
   }
+  const bossPayload = parseBossPayload(value);
+  if (bossPayload !== null) return bossPayload;
   const giveaway = parseGiveawayPayload(value);
   if (giveaway !== null) return giveaway;
   const dicePayload = parseDicePayload(value);
@@ -66,6 +71,7 @@ export function parseCommand(text: string | undefined, payload: unknown, isChat 
     return itemCommand;
   }
   if (isRecord(value)) {
+    if (value.command === 'help') return { kind: 'help' };
     if ((value.command === 'donate_confirm' || value.command === 'donate_cancel') && typeof value.token === 'string' && value.token.length > 0 && value.token.length <= 200) return { kind: value.command, token: value.token };
     if (value.command === 'donate' || value.command === 'donate_nick' || value.command === 'donate_thief' || value.command === 'donate_dealer') return { kind: value.command };
     if (value.command === 'item' && typeof value.itemId === 'number' && Number.isSafeInteger(value.itemId) && value.itemId > 0) {

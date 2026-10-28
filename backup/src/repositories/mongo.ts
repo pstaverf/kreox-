@@ -1,3 +1,4 @@
+import type { BossPlayer, BossRun } from '../types/boss.js';
 import { migrateWholeKc } from './mongo-kc-migration.js';
 import { roundKc } from '../services/kc-money.js';
 import { ChatRegistryCache } from './chat-registry-cache.js';
@@ -11,7 +12,7 @@ import { rouletteConfig } from '../config/roulette.js';
 import type { BalanceCurrency, BalanceOperation } from '../types/admin-balance.js';
 import { isBalanceCurrency, validBalanceChange } from '../services/admin-balance.js';
 import { randomInt } from 'node:crypto';
-import { MongoCasinoStore } from './mongo-casino.js';
+import { MongoBossStore } from './mongo-boss.js';
 import type { CasinoRecord } from '../types/casino.js';
 import type { Deposit } from '../types/bank.js';
 import type { DealerState } from '../types/donate.js';
@@ -43,6 +44,14 @@ export class MongoGameDatabase implements GameDatabase {
     this.db = client.db(database);
   }
 
+  async bossNotificationsAllowed(vkId: number, runId: string): Promise<boolean> {
+    const [subscriber, run] = await Promise.all([
+      this.db.collection<BossPlayer>('casino_records').findOne({ _id: `boss-player:${vkId}`, kind: 'boss_player', subscribed: true }, { projection: { _id: 1 } }),
+      this.db.collection<BossRun>('casino_records').findOne({ _id: runId, kind: 'boss_run', health: { $gt: 0 } }, { projection: { _id: 1 } })
+    ]);
+    return subscriber !== null && run !== null;
+  }
+
   async initialize(): Promise<void> {
     const hello: unknown = await this.db.command({ hello: 1 });
     if (!isRecord(hello) || (typeof hello.setName !== 'string' && hello.msg !== 'isdbgrid')) {
@@ -59,7 +68,9 @@ export class MongoGameDatabase implements GameDatabase {
       { key: { kind: 1, roundId: 1, vkId: 1, _id: 1 } },
       { key: { kind: 1, electionId: 1, settled: 1, _id: 1 } },
       { key: { kind: 1, active: 1, _id: 1 } },
-      { key: { kind: 1, mode: 1, stage: 1, _id: 1 } }
+      { key: { kind: 1, mode: 1, stage: 1, _id: 1 } },
+      { key: { kind: 1, runId: 1, damage: -1, accountId: 1 } },
+      { key: { kind: 1, subscribed: 1, vkId: 1 } }
     ]);
     await this.db.collection<Deposit>('deposits').createIndex({ vkId: 1, state: 1, depositId: 1 });
     await this.db.collection<Deposit>('deposits').createIndex({ vkId: 1, depositId: 1 }, { unique: true });
@@ -172,7 +183,7 @@ export class MongoGameDatabase implements GameDatabase {
   }
 }
 
-class MongoGameStore extends MongoCasinoStore implements GameStore {
+class MongoGameStore extends MongoBossStore implements GameStore {
   private queuedNotifications = false;
   private readonly clock = new TransactionClock(() => this.readTime());
   notificationsQueued(): boolean { return this.queuedNotifications; }
@@ -244,10 +255,10 @@ class MongoGameStore extends MongoCasinoStore implements GameStore {
     this.queuedNotifications = true;
   }
 
-  async enqueueItemNotification(id: string, peerId: number, text: string, keyboard: KeyboardSpec, roulettePhoto?: number): Promise<void> {
+  async enqueueItemNotification(id: string, peerId: number, text: string, keyboard: KeyboardSpec, roulettePhoto?: number, media?: { photoUrl?: string; bossSummon?: string }): Promise<void> {
     if (roulettePhoto !== undefined && (!Number.isSafeInteger(roulettePhoto) || roulettePhoto < 0 || roulettePhoto >= rouletteConfig.numbers)) throw new Error('Invalid roulette photo');
     const result = await this.notifications.insertOne({
-      _id: id, peerId, text, keyboard, ...(roulettePhoto === undefined ? {} : { roulettePhoto }), randomId: await this.nextRandomId(), state: 'pending', nextAttemptAt: new Date(0), attempts: 0
+      _id: id, peerId, text, keyboard, ...(roulettePhoto === undefined ? {} : { roulettePhoto }), ...media, randomId: await this.nextRandomId(), state: 'pending', nextAttemptAt: new Date(0), attempts: 0
     }, { session: this.session });
     if (!result.acknowledged) {
       throw new Error('Item notification insert failed');

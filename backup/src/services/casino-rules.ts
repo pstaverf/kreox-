@@ -1,3 +1,4 @@
+import { doubleConfig } from '../config/double.js';
 import { roundKc, roundKcRatio } from './kc-money.js';
 import type { BalanceCurrency } from '../types/admin-balance.js';
 import { rouletteConfig } from '../config/roulette.js';
@@ -37,6 +38,18 @@ export function cachedCasinoRandom(random: CasinoRandom): CasinoRandom {
   };
 }
 export function selectOutcome(mode: CasinoMode, random: CasinoRandom, key: string): { result: number; bonus: number } {
+  if (mode === 'double') {
+    let ticket = random(`${key}:double`, doubleConfig.tickets);
+    for (const [index, weight] of doubleConfig.weights.entries()) {
+      if (ticket < weight) {
+        const result = doubleConfig.sectors[index];
+        if (result === undefined) throw new Error('Invalid double sector');
+        return { result, bonus: 1 };
+      }
+      ticket -= weight;
+    }
+    throw new Error('Invalid double ticket');
+  }
   if (mode === 'roulette') return { result: random(`${key}:roulette`, rouletteConfig.numbers), bonus: 1 };
   if (mode === 'crash') {
     const roll = random(`${key}:crash`, casinoConfig.crashRandomSize) + 1;
@@ -55,7 +68,7 @@ export function selectOutcome(mode: CasinoMode, random: CasinoRandom, key: strin
   throw new Error('Invalid dream ticket');
 }
 export function betPayout(mode: CasinoMode, amount: number, target: number, bonus: number): number | null {
-  const value = mode === 'crash' ? BigInt(amount) * BigInt(target) / BigInt(casinoConfig.crashPrecision) : mode === 'roulette' ? BigInt(amount) * BigInt(rouletteMultiplier(target)) : BigInt(amount) * BigInt(target + 1) * BigInt(bonus);
+  const value = mode === 'crash' ? BigInt(amount) * BigInt(target) / BigInt(casinoConfig.crashPrecision) : mode === 'roulette' ? BigInt(amount) * BigInt(rouletteMultiplier(target)) : mode === 'double' ? BigInt(amount) * BigInt(target) : BigInt(amount) * BigInt(target + 1) * BigInt(bonus);
   return value <= BigInt(game.maxAmount) ? roundKc(Number(value)) : null;
 }
 export function roundKey(peerId: number, mode: CasinoMode): string { return `round:${peerId}:${mode}`; }

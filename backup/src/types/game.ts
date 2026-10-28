@@ -1,3 +1,4 @@
+import type { BossCommand, BossKeyboard } from './boss.js';
 import type { GiveawayCommand } from './giveaway.js';
 import type { DiceCommand } from './dice.js';
 import type { PrivateCasinoCommand, PrivateCasinoKeyboard } from './private-casino.js';
@@ -57,6 +58,8 @@ export interface InventoryStack {
 }
 
 export type Command =
+  | BossCommand
+  | { kind: 'help' }
   | GiveawayCommand
   | DiceCommand
   | PrivateCasinoCommand
@@ -80,6 +83,8 @@ export type Command =
   | { kind: 'ranking'; metric: RankingMetric };
 
 export type KeyboardSpec =
+  | BossKeyboard
+  | { kind: 'help' }
   | { kind: 'giveaway'; peerId: number; token: string }
   | { kind: 'dice_game'; peerId: number; gameId: number }
   | PrivateCasinoKeyboard
@@ -99,6 +104,7 @@ export type KeyboardSpec =
   | { kind: 'inventory'; itemIds: number[]; page: number; hasNext: boolean };
 
 export interface Reply {
+  photoUrl?: string;
   attachment?: string;
   text: string;
   keyboard: KeyboardSpec;
@@ -165,6 +171,8 @@ export interface Ranking {
 }
 
 export interface Notification {
+  photoUrl?: string;
+  bossSummon?: string;
   priority?: 1;
   roulettePhoto?: number;
   _id: string;

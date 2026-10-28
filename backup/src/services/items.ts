@@ -57,13 +57,13 @@ async function open(store: GameStore, player: Player, kind: ItemKind, quantity: 
   if (await store.itemCount(player._id, kind, now) < quantity) {
     return back(await unavailableText(store, player, kind, now), kind);
   }
-  const rewards = caseRewards(quantity, roll);
+  const rewards = caseRewards(quantity, roll, kind);
   const result = await store.openItems(player, kind, quantity, rewards, now);
   if (result !== 'ok') {
     return back(result === 'items' ? await unavailableText(store, player, kind, now) : itemTexts.limit, kind);
   }
   await store.setItemDraft(player._id, null);
-  return { text: caseResultText(player, rewards), keyboard: { kind: 'item_use', itemKind: kind } };
+  return { text: caseResultText(player, rewards, kind), keyboard: { kind: 'item_use', itemKind: kind } };
 }
 export async function itemAction(store: GameStore, player: Player, command: ItemCommand, input: GameInput, roll: () => number): Promise<Reply> {
   switch (command.kind) {

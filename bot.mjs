@@ -1,19 +1,45 @@
-// src/config/dice.ts
-var diceConfig = {
-  minPlayers: 2,
-  maxPlayers: 5,
-  maxGames: 5,
-  lifetimeMs: 30 * 60 * 1e3,
-  workerMs: 2e3,
-  retryMs: 5e3,
-  batchSize: 20,
-  sides: 12,
-  commissionId: 888801846,
-  feeScale: 1e4,
-  winnerFee: 100,
-  tieFee: 345,
-  minimum: { kc: 1e3, euro: 10, bitcoin: 10 }
+// src/config/boss.ts
+var bossConfig = {
+  baseUpgrade: 5e3,
+  upgradeGrowth: 1e3,
+  damagePerLevel: 3,
+  maxNameBytes: 96,
+  broadcastBatch: 20,
+  workerMs: 500,
+  emojis: ["♻️", "💉", "🪡", "👑", "🍗", "✏️", "🎲", "🔮", "⚡️", "🩷", "🧩", "💎", "🪄", "🍀", "🦋", "🎯", "🧸", "🍒", "🌙", "🔥", "🦀", "🎈", "🪙", "💊"]
 };
+
+// src/types/storage.ts
+var DuplicateWriteError = class extends Error {
+  constructor() {
+    super("Concurrent unique write");
+    this.name = "DuplicateWriteError";
+  }
+};
+
+// src/config/items.ts
+var itemConfig = {
+  maxBatch: 1e3,
+  offerDurationMs: 10 * 60 * 1e3,
+  catalog: [
+    { id: 1, kind: "zhdun_case", name: "💼 Кейс «Ждун»" },
+    { id: 2, kind: "referral_case", name: "👬 Кейс «Реферальный»" },
+    { id: 3, kind: "croupier", name: "🤴 Крупьер" },
+    { id: 4, kind: "boss_case:💙:Ахиллес", name: "💙 Босс-кейс (Ахиллес)" },
+    { id: 5, kind: "aristocrat_case", name: "🏛️ Кейс «Аристократ»" }
+  ],
+  drops: [
+    { currency: "kc", amount: 15e4, weight: 30 },
+    { currency: "kc", amount: 25e4, weight: 30 },
+    { currency: "kc", amount: 15e5, weight: 30 },
+    { currency: "euro", amount: 100, weight: 5 },
+    { currency: "euro", amount: 200, weight: 3 },
+    { currency: "euro", amount: 500, weight: 2 }
+  ]
+};
+
+// src/services/boss-rules.ts
+import { createHash } from "node:crypto";
 
 // src/config/game.ts
 var game = {
@@ -86,6 +112,74 @@ var game = {
 };
 var accountCapacity = game.sequentialAccounts + game.randomAccountMax - game.randomAccountMin + 1;
 
+// src/services/boss-rules.ts
+function isBossCommand(command) {
+  return command.kind.startsWith("boss");
+}
+function trustedPhotoUrl(value) {
+  try {
+    const url = new URL(value);
+    return value.length <= 1e3 && url.protocol === "https:" && url.hostname === "cdn.kleymorf.xyz" && !url.username && !url.password && !url.port && !url.hash;
+  } catch {
+    return false;
+  }
+}
+function validBossName(name) {
+  return name.trim() === name && name.length > 0 && Buffer.byteLength(JSON.stringify(name), "utf8") <= bossConfig.maxNameBytes + 2 && !/[\r\n\[\]|<>]/u.test(name);
+}
+function validBossColor(color) {
+  return color.length <= 16 && new RegExp("\\p{Extended_Pictographic}", "u").test(color) && !/[^\p{Extended_Pictographic}\p{Emoji_Modifier}\uFE0F\u200D]/u.test(color);
+}
+function bossToken(eventId) {
+  return createHash("sha256").update(eventId).digest("hex").slice(0, 32);
+}
+function bossPower(level) {
+  const value = 1n + BigInt(level) * BigInt(bossConfig.damagePerLevel);
+  if (!Number.isSafeInteger(level) || level < 0 || value > BigInt(game.maxAmount)) throw new Error("Invalid boss damage level");
+  return Number(value);
+}
+function upgradeCost(level, quantity) {
+  if (!Number.isSafeInteger(level) || level < 0 || ![1, 10, 100, 1e3].includes(quantity)) throw new Error("Invalid boss upgrade");
+  const count = BigInt(quantity);
+  const next = BigInt(level) + count;
+  if (1n + next * 3n > BigInt(game.maxAmount)) return null;
+  const cost = count * (2n * BigInt(bossConfig.baseUpgrade) + BigInt(bossConfig.upgradeGrowth) * (2n * BigInt(level) + count - 1n)) / 2n * BigInt(game.kcScale);
+  return cost > BigInt(game.maxAmount) ? null : Number(cost);
+}
+function bossBoard(random, key, previous = -1) {
+  const pool = [...bossConfig.emojis];
+  for (let index = pool.length - 1; index > 0; index -= 1) {
+    const target = random(`${key}:emoji:${index}`, index + 1);
+    const left = pool[index];
+    const right = pool[target];
+    if (left === void 0 || right === void 0) throw new Error("Invalid boss board random");
+    pool[index] = right;
+    pool[target] = left;
+  }
+  const board = pool.slice(0, 16);
+  let sword = random(`${key}:sword`, previous < 0 ? 16 : 15);
+  if (previous >= 0 && sword >= previous) sword += 1;
+  board[sword] = "⚔️";
+  if (board.length !== 16 || board.filter((value) => value === "⚔️").length !== 1) throw new Error("Invalid boss board");
+  return board;
+}
+function bossCaseKind(color, name) {
+  return `boss_case:${color}:${name}`;
+}
+function bossCaseDetails(kind) {
+  const match = /^boss_case:([^:]+):(.+)$/u.exec(kind);
+  return match?.[1] !== void 0 && match[2] !== void 0 && validBossColor(match[1]) && validBossName(match[2]) ? { color: match[1], name: match[2] } : null;
+}
+
+// src/services/item-names.ts
+function itemName(kind) {
+  const boss = bossCaseDetails(kind);
+  if (boss !== null) return `${boss.color} Босс-кейс (${boss.name})`;
+  const entry = itemConfig.catalog.find((item) => item.kind === kind);
+  if (entry === void 0) throw new Error("Unknown item kind");
+  return entry.name;
+}
+
 // src/services/kc-money.ts
 var maxWholeKc = Number(BigInt(game.maxAmount) / BigInt(game.kcScale) * BigInt(game.kcScale));
 function roundKcRatio(numerator, denominator = 1n) {
@@ -121,25 +215,6 @@ var bankConfig = {
   pensionHigh: [5e3, 7e3, 1e4, 12e3, 15e3, 2e4, 25e3],
   depositPercents: [5, 10, 20, 50, 100],
   timeZone: "Europe/Moscow"
-};
-
-// src/config/items.ts
-var itemConfig = {
-  maxBatch: 1e3,
-  offerDurationMs: 10 * 60 * 1e3,
-  catalog: [
-    { id: 1, kind: "zhdun_case", name: "💼 Кейс «Ждун»" },
-    { id: 2, kind: "referral_case", name: "👬 Кейс «Реферальный»" },
-    { id: 3, kind: "croupier", name: "🤴 Крупьер" }
-  ],
-  drops: [
-    { currency: "kc", amount: 15e4, weight: 30 },
-    { currency: "kc", amount: 25e4, weight: 30 },
-    { currency: "kc", amount: 15e5, weight: 30 },
-    { currency: "euro", amount: 100, weight: 5 },
-    { currency: "euro", amount: 200, weight: 3 },
-    { currency: "euro", amount: 500, weight: 2 }
-  ]
 };
 
 // src/services/texts.ts
@@ -262,9 +337,7 @@ function inventoryText(items) {
   return `${texts.inventoryTitle}
 
 ${items.length === 0 ? texts.emptyInventory : items.map((item) => {
-    const entry = itemConfig.catalog.find((entry2) => entry2.kind === item.kind);
-    if (entry === void 0) throw new Error("Unknown inventory kind");
-    return `🆔 ${item.itemId} — ${entry.name} (${item.quantity} шт.)`;
+    return `🆔 ${item.itemId} — ${itemName(item.kind)} (${item.quantity} шт.)`;
   }).join("\n")}`;
 }
 function formatMining(amount) {
@@ -351,16 +424,129 @@ function miningWithdrawalText(amount) {
   return `✅ Вы сняли ${formatMining(amount)}₿.`;
 }
 
-// src/services/dice.ts
-import { createHash } from "node:crypto";
-
-// src/types/storage.ts
-var DuplicateWriteError = class extends Error {
-  constructor() {
-    super("Concurrent unique write");
-    this.name = "DuplicateWriteError";
-  }
+// src/services/boss-texts.ts
+var bossTexts = {
+  usage: "⛔️ Использование: !cboss <health> «<name>» <color> [photo]",
+  alive: "🎩 Босс уже призван. Сначала победите его.",
+  subscribed: "🔔 Вы успешно подписались на уведомления.",
+  unsubscribed: "🔕 Вы успешно отписались от уведомлений.",
+  fight: "⚔️ Нажимайте на мечи, чтобы атаковать босса!",
+  miss: "😶 Вы промахнулись...",
+  funds: "💰 Недостаточно средств.",
+  limit: "⚠️ Достигнут безопасный предел прокачки.",
+  help: "🆘 Помощь:"
 };
+function bossAbsent(player) {
+  return `🎩 ${mention(player)}, босс ещё не призван.
+🔔 Следи за уведомлениями!`;
+}
+function bossSummoned(run) {
+  return `🎩 Босс «${run.name}» со здоровьем ${formatAmount(run.initialHealth, 1)} успешно призван!`;
+}
+function bossAnnouncement(run) {
+  return `🎩 Босс «${run.name}» был призван.
+⚔️ Скорее начинай атаковать его чтобы выбить награду!`;
+}
+function bossMenu(run, damage) {
+  return `${run.color} Босс: ${run.name}
+
+❤ Здоровье: ${formatAmount(run.health, 1)}/${formatAmount(run.initialHealth, 1)}
+⚔ Урон: ${formatAmount(damage, 1)}`;
+}
+function gymText(power) {
+  return `📋 Ваши параметры:
+
+🗡 Урон: ${formatAmount(power, 1)} ед.
+
+🛡 Что вы хотите прокачать?`;
+}
+function upgradeText(power, cost, balance, success) {
+  return `${success ? `🗡 Урон прокачан! Теперь ваш урон: ${formatAmount(power, 1)}. Хотите прокачать дальше?` : "🗡 Вы хотите повысить урон на 3 ед.?"}
+💰 Это обойдется вам в ${formatKc(cost)} KC ${success ? "(за х1)." : "(прокачки х10, х100 и х1000 выйдут дороже из-за роста)."}
+💸 Баланс: ${formatKc(balance)} KC`;
+}
+function bossHit(damage, critical, reward, dead) {
+  const first = `🗡 Вы нанесли боссу ${formatAmount(damage, 1)} ед. урона${critical ? "... это КРИТИЧЕСКИЙ удар!" : "."}`;
+  const next = reward === null ? dead ? "🎩 Босс повержен!" : "⚔️ Продолжайте атаковать босса: с него может что-то выпасть..." : `🤩 Ваша атака заставила босса выронить награду:
+${reward}`;
+  return `${first}
+
+${next}${dead && reward !== null ? "\n🎩 Босс повержен!" : ""}`;
+}
+function bossLeaders(ranking, player, damage) {
+  const lines = ranking.leaders.map((leader, index) => `${rankEmoji(index + 1)} [id${leader._id}|${leader.name}] — ${formatAmount(leader.score, 1)} урона`);
+  return `🏆 Лучшие игроки по урону:
+
+${lines.length === 0 ? "" : `${lines.join("\n")}
+`}—————————————————
+➡${rankEmoji(ranking.place)} ${mention(player)} — ${formatAmount(damage, 1)} урона`;
+}
+
+// src/services/boss-broadcast.ts
+async function broadcastBoss(database) {
+  try {
+    return await database.transaction(async (store) => {
+      const now = await store.now();
+      const job = (await store.casinoList({ kind: "boss_broadcast", dueAt: now }, 1))[0];
+      if (job === void 0) return 0;
+      if (job.kind !== "boss_broadcast") throw new Error("Invalid boss broadcast");
+      const run = await store.casinoGet(job.runId);
+      if (run?.kind !== "boss_run") throw new Error("Missing broadcast boss");
+      const subscribers = run.health === 0 ? [] : await store.casinoList({ kind: "boss_subscribers", after: job.after, before: run.createdAt }, bossConfig.broadcastBatch);
+      for (const subscriber of subscribers) {
+        if (subscriber.kind !== "boss_player") throw new Error("Invalid boss subscriber");
+        await store.enqueueItemNotification(`boss-summon:${run._id}:${subscriber.vkId}`, subscriber.vkId, bossAnnouncement(run), { kind: "boss_notice" }, void 0, { bossSummon: run._id });
+        job.after = subscriber.vkId;
+      }
+      if (subscribers.length < bossConfig.broadcastBatch) job.stage = "finished";
+      job.dueAt = now;
+      await store.casinoSave(job);
+      return subscribers.length;
+    });
+  } catch (error) {
+    if (!(error instanceof DuplicateWriteError)) throw error;
+    return 0;
+  }
+}
+
+// src/utils/log.ts
+import { APIError } from "vk-io";
+import { MongoServerError } from "mongodb";
+function logError(scope, error, context = {}) {
+  console.error(JSON.stringify({
+    scope,
+    type: error instanceof Error ? error.name : "UnknownError",
+    code: error instanceof APIError || error instanceof MongoServerError ? error.code : void 0,
+    ...context
+  }));
+}
+
+// src/handlers/boss-worker.ts
+function startBossWorker(database, wakeNotifications) {
+  let running;
+  let stopped = false;
+  const tick = () => {
+    if (stopped || running !== void 0) return;
+    running = broadcastBoss(database).then((count) => {
+      if (count > 0) wakeNotifications();
+    }).catch((error) => {
+      logError("boss_worker", error);
+    }).finally(() => {
+      running = void 0;
+    });
+  };
+  const timer = setInterval(tick, bossConfig.workerMs);
+  timer.unref();
+  tick();
+  return async () => {
+    stopped = true;
+    clearInterval(timer);
+    await running;
+  };
+}
+
+// src/handlers/roulette-photo-errors.ts
+import { APIError as APIError2, ExecuteError } from "vk-io";
 
 // src/utils/validation.ts
 function isRecord(value) {
@@ -373,70 +559,16 @@ function assertNever(value) {
   throw new Error(`Unexpected variant: ${String(value)}`);
 }
 
-// src/services/bank-rules.ts
-function isBankCommand(command) {
-  return command.kind === "city" || command.kind === "bank" || command.kind.startsWith("bank_");
-}
-function isDepositDays(value) {
-  return value === 3 || value === 10;
-}
-function safeBankMoney(value) {
-  return Number.isSafeInteger(value) && value >= 0 && value <= game.maxAmount;
-}
-function bankDays(registeredAt, now) {
-  return Math.max(0, Math.floor((now.getTime() - registeredAt.getTime()) / bankConfig.dayMs));
-}
-function transferNet(gross, currency = "kc") {
-  if (!safeBankMoney(gross) || gross <= 0) throw new Error("Invalid transfer amount");
-  return currency === "kc" ? roundKc(gross) - roundKcRatio(BigInt(gross) * BigInt(bankConfig.transferPercent), 100n) : Number(BigInt(gross) * BigInt(100 - bankConfig.transferPercent) / 100n);
-}
-function parseBankMoney(text, currency) {
-  const value = text.trim();
-  if (value.length > 64) return null;
-  if (currency === "kc") {
-    const match2 = /^(\d{1,16}|\d{1,3}(?:\.\d{3}){1,5})(?:,(\d{1,2}))?([kк]{1,2})?$/i.exec(value);
-    if (match2?.[1] === void 0) return null;
-    const result2 = (BigInt(match2[1].replaceAll(".", "")) * BigInt(game.kcScale) + BigInt((match2[2] ?? "").padEnd(2, "0"))) * 1000n ** BigInt(match2[3]?.length ?? 0);
-    if (result2 <= 0n || result2 > BigInt(game.maxAmount)) return null;
-    const rounded = roundKc(Number(result2));
-    return rounded > 0 ? rounded : null;
-  }
-  const match = /^(\d{1,16})(?:[.,](\d{1,3}))?([kк]{1,2})?$/i.exec(value);
-  if (match?.[1] === void 0) return null;
-  const fraction = match[2] ?? "";
-  if (fraction.length > (currency === "euro" ? 2 : 3)) return null;
-  const scale = currency === "euro" ? game.euroScale : game.bitcoinScale;
-  const result = (BigInt(match[1]) * BigInt(scale) + BigInt(fraction.padEnd(String(scale).length - 1, "0"))) * 1000n ** BigInt(match[3]?.length ?? 0);
-  return result > 0n && result <= BigInt(game.maxAmount) ? Number(result) : null;
-}
-function settleSavings(balance, since, now) {
-  if (!safeBankMoney(balance) || !Number.isFinite(since.getTime()) || !Number.isFinite(now.getTime())) throw new Error("Invalid savings state");
-  const weeks = Math.max(0, Math.floor((now.getTime() - since.getTime()) / bankConfig.weekMs));
-  let value = BigInt(roundKc(balance));
-  for (let week = 0; week < weeks; week += 1) {
-    const next = BigInt(roundKcRatio(value * BigInt(100 + bankConfig.savingsPercent), 100n));
-    if (next === value) break;
-    if (next >= BigInt(game.maxAmount)) {
-      value = BigInt(roundKc(game.maxAmount));
-      break;
-    }
-    value = next;
-  }
-  return { balance: Number(value), since: new Date(since.getTime() + weeks * bankConfig.weekMs) };
-}
-function depositValue(deposit, now) {
-  if (!isDepositDays(deposit.days) || !safeBankMoney(deposit.amount) || deposit.amount <= 0 || deposit.amount > bankConfig.maxDeposit || !Number.isFinite(deposit.createdAt.getTime()) || deposit.expiresAt.getTime() - deposit.createdAt.getTime() !== deposit.days * bankConfig.dayMs) throw new Error("Invalid deposit");
-  const duration = deposit.days * bankConfig.dayMs;
-  const elapsed = Math.min(duration, Math.max(0, now.getTime() - deposit.createdAt.getTime()));
-  return roundKcRatio(BigInt(deposit.amount) * (100n * BigInt(duration) + BigInt(bankConfig.depositRates[deposit.days]) * BigInt(elapsed)), 100n * BigInt(duration));
-}
-function earlyDepositValue(deposit, now) {
-  const value = depositValue(deposit, now);
-  return value - roundKcRatio(BigInt(value) * BigInt(bankConfig.earlyPenaltyPercent), 100n);
-}
-function depositButtons(wallet) {
-  if (!safeBankMoney(wallet)) throw new Error("Invalid wallet");
-  return bankConfig.depositPercents.map((percent) => roundKcRatio(BigInt(wallet) * BigInt(percent), 100n));
+// src/handlers/roulette-photo-errors.ts
+var methods = ["photos.getMessagesUploadServer", "photos.saveMessagesPhoto"];
+function roulettePhotoErrorContext(error) {
+  if (!(error instanceof APIError2)) return {};
+  const params = error.params;
+  const parameter = Array.isArray(params) ? params.find((entry) => isRecord(entry) && entry.key === "method") : void 0;
+  const requested = error instanceof ExecuteError ? error.method : isRecord(parameter) ? parameter.value : void 0;
+  const method = methods.find((value) => value === requested) ?? "unknown";
+  const parameterHint = error.code === 100 ? /\b(peer_id|photo|server|hash)\b/i.exec(error.message)?.[1]?.toLowerCase() : void 0;
+  return { method, ...parameterHint === void 0 ? {} : { parameterHint } };
 }
 
 // src/config/roulette.ts
@@ -467,6 +599,7 @@ var rouletteConfig = {
   ],
   photoPrefetchIntervalMs: 2e3,
   photoPrefetchConcurrency: 2,
+  maxPendingPhotoLoads: 128,
   photoTimeoutMs: 3e4,
   maxPhotoBytes: 10 * 1024 * 1024
 };
@@ -539,6 +672,272 @@ function rouletteWins(target, result) {
   return group.numbers.includes(result);
 }
 
+// src/handlers/roulette-photos.ts
+function isMessagePhotoAttachment(value) {
+  return /^photo-?\d+_\d+(?:_[A-Za-z0-9_-]+)?$/.test(value);
+}
+async function downloadRoulettePhoto(url, fetcher = fetch) {
+  if (!roulettePhotos.includes(url)) throw new Error("Unconfigured roulette photo URL");
+  const response = await fetcher(url, { signal: AbortSignal.timeout(rouletteConfig.photoTimeoutMs), redirect: "error" });
+  const length = response.headers.get("content-length");
+  if (!response.ok || response.body === null || length !== null && (!/^\d+$/.test(length) || Number(length) > rouletteConfig.maxPhotoBytes)) {
+    await response.body?.cancel();
+    throw new Error("Invalid roulette photo response");
+  }
+  const reader = response.body.getReader();
+  const chunks = [];
+  let size = 0;
+  try {
+    for (; ; ) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      size += chunk.value.byteLength;
+      if (size > rouletteConfig.maxPhotoBytes) {
+        await reader.cancel();
+        throw new Error("Roulette photo is too large");
+      }
+      chunks.push(chunk.value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const buffer = Buffer.concat(chunks, size);
+  if (buffer.length < 4 || buffer[0] !== 255 || buffer[1] !== 216 || buffer[2] !== 255) throw new Error("Roulette photo is not JPEG");
+  return buffer;
+}
+function createRoulettePhotoResolver(vk, cache, groupId, download = downloadRoulettePhoto) {
+  if (!isPositiveId(groupId)) throw new Error("Invalid photo community");
+  const pending = /* @__PURE__ */ new Map();
+  const resolve = async (peerId, result) => {
+    if (!isPositiveId(peerId) || !validRouletteNumber(result)) throw new Error("Invalid roulette photo identity");
+    const url = roulettePhotos[result];
+    if (url === void 0) throw new Error("Missing roulette photo URL");
+    const key = `${groupId}:${peerId}:${url}`;
+    let stage = "cache_read";
+    let photoBytes;
+    let startedAt = Date.now();
+    try {
+      const cached = await cache.messagePhoto(key);
+      if (cached !== null && isMessagePhotoAttachment(cached)) return cached;
+      stage = "download";
+      startedAt = Date.now();
+      const value = await download(url);
+      photoBytes = value.byteLength;
+      stage = "vk_upload";
+      startedAt = Date.now();
+      const photo = await vk.upload.messagePhoto({ peer_id: peerId, source: { values: [{ value, filename: `roulette-${result}.jpg`, contentType: "image/jpeg" }], timeout: rouletteConfig.photoTimeoutMs } });
+      const attachment = photo.toString();
+      if (!isMessagePhotoAttachment(attachment)) throw new Error("Invalid uploaded photo attachment");
+      await cache.saveMessagePhoto(key, attachment).catch((error) => {
+        logError("roulette_photo_cache", error, { number: result });
+      });
+      return attachment;
+    } catch (error) {
+      logError("roulette_photo_upload", error, {
+        number: result,
+        stage,
+        elapsedMs: Math.max(0, Date.now() - startedAt),
+        timeoutMs: rouletteConfig.photoTimeoutMs,
+        ...photoBytes === void 0 ? {} : { photoBytes },
+        ...stage === "vk_upload" ? roulettePhotoErrorContext(error) : {}
+      });
+      return null;
+    }
+  };
+  return async (peerId, result) => {
+    const key = `${peerId}:${result}`;
+    const existing = pending.get(key);
+    if (existing !== void 0) return existing;
+    const task = resolve(peerId, result).finally(() => {
+      pending.delete(key);
+    });
+    pending.set(key, task);
+    return task;
+  };
+}
+
+// src/handlers/message-photos.ts
+function isJpeg(value) {
+  return value.length >= 4 && value[0] === 255 && value[1] === 216 && value[2] === 255;
+}
+async function downloadMessagePhoto(url, fetcher = fetch) {
+  if (!trustedPhotoUrl(url)) throw new Error("Unconfigured message photo URL");
+  const response = await fetcher(url, { signal: AbortSignal.timeout(rouletteConfig.photoTimeoutMs), redirect: "error" });
+  const length = response.headers.get("content-length");
+  if (!response.ok || response.body === null || length !== null && (!/^\d+$/.test(length) || Number(length) > rouletteConfig.maxPhotoBytes)) {
+    await response.body?.cancel();
+    throw new Error("Invalid message photo response");
+  }
+  const reader = response.body.getReader();
+  const chunks = [];
+  let size = 0;
+  try {
+    for (; ; ) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      size += chunk.value.byteLength;
+      if (size > rouletteConfig.maxPhotoBytes) {
+        await reader.cancel();
+        throw new Error("Message photo is too large");
+      }
+      chunks.push(chunk.value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const buffer = Buffer.concat(chunks, size);
+  if (!isJpeg(buffer) && !(buffer.length >= 8 && buffer.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])))) throw new Error("Message photo is not JPEG or PNG");
+  return buffer;
+}
+function createMessagePhotoResolver(vk, cache, groupId, download = downloadMessagePhoto) {
+  if (!isPositiveId(groupId)) throw new Error("Invalid photo community");
+  const pending = /* @__PURE__ */ new Map();
+  const resolve = async (peerId, url) => {
+    if (!isPositiveId(peerId) || !trustedPhotoUrl(url)) throw new Error("Invalid message photo identity");
+    const key = `${groupId}:${peerId}:${url}`;
+    let stage = "cache_read";
+    let photoBytes;
+    let startedAt = Date.now();
+    try {
+      const cached = await cache.messagePhoto(key);
+      if (cached !== null && isMessagePhotoAttachment(cached)) return cached;
+      stage = "download";
+      startedAt = Date.now();
+      const value = await download(url);
+      photoBytes = value.byteLength;
+      stage = "vk_upload";
+      startedAt = Date.now();
+      const photo = await vk.upload.messagePhoto({ peer_id: peerId, source: { values: [{ value, filename: isJpeg(value) ? "image.jpg" : "image.png", contentType: isJpeg(value) ? "image/jpeg" : "image/png" }], timeout: rouletteConfig.photoTimeoutMs } });
+      const attachment = photo.toString();
+      if (!isMessagePhotoAttachment(attachment)) throw new Error("Invalid uploaded photo attachment");
+      await cache.saveMessagePhoto(key, attachment).catch((error) => {
+        logError("message_photo_cache", error, { source: "message" });
+      });
+      return attachment;
+    } catch (error) {
+      logError("message_photo_upload", error, {
+        source: "message",
+        stage,
+        elapsedMs: Math.max(0, Date.now() - startedAt),
+        timeoutMs: rouletteConfig.photoTimeoutMs,
+        ...photoBytes === void 0 ? {} : { photoBytes },
+        ...stage === "vk_upload" ? roulettePhotoErrorContext(error) : {}
+      });
+      return null;
+    }
+  };
+  return async (peerId, url) => {
+    const key = `${peerId}:${url}`;
+    const existing = pending.get(key);
+    if (existing !== void 0) return existing;
+    if (pending.size >= rouletteConfig.maxPendingPhotoLoads) return null;
+    const task = resolve(peerId, url).finally(() => {
+      pending.delete(key);
+    });
+    pending.set(key, task);
+    return task;
+  };
+}
+
+// src/config/dice.ts
+var diceConfig = {
+  minPlayers: 2,
+  maxPlayers: 5,
+  maxGames: 5,
+  lifetimeMs: 30 * 60 * 1e3,
+  workerMs: 2e3,
+  retryMs: 5e3,
+  batchSize: 20,
+  sides: 12,
+  commissionId: 888801846,
+  feeScale: 1e4,
+  winnerFee: 100,
+  tieFee: 345,
+  minimum: { kc: 1e3, euro: 10, bitcoin: 10 }
+};
+
+// src/services/dice.ts
+import { createHash as createHash2 } from "node:crypto";
+
+// src/services/bank-rules.ts
+function isBankCommand(command) {
+  return command.kind === "city" || command.kind === "bank" || command.kind.startsWith("bank_");
+}
+function isDepositDays(value) {
+  return value === 3 || value === 10;
+}
+function safeBankMoney(value) {
+  return Number.isSafeInteger(value) && value >= 0 && value <= game.maxAmount;
+}
+function bankDays(registeredAt, now) {
+  return Math.max(0, Math.floor((now.getTime() - registeredAt.getTime()) / bankConfig.dayMs));
+}
+function transferNet(gross, currency = "kc") {
+  if (!safeBankMoney(gross) || gross <= 0) throw new Error("Invalid transfer amount");
+  return currency === "kc" ? roundKc(gross) - roundKcRatio(BigInt(gross) * BigInt(bankConfig.transferPercent), 100n) : Number(BigInt(gross) * BigInt(100 - bankConfig.transferPercent) / 100n);
+}
+function parseBankMoney(text, currency) {
+  const value = text.trim();
+  if (value.length > 64) return null;
+  if (currency === "kc") {
+    const match2 = /^(\d{1,16}|\d{1,3}(?:\.\d{3}){1,5})(?:,(\d{1,2}))?([kк]{1,2})?$/i.exec(value);
+    if (match2?.[1] === void 0) return null;
+    const result2 = (BigInt(match2[1].replaceAll(".", "")) * BigInt(game.kcScale) + BigInt((match2[2] ?? "").padEnd(2, "0"))) * 1000n ** BigInt(match2[3]?.length ?? 0);
+    if (result2 <= 0n || result2 > BigInt(game.maxAmount)) return null;
+    const rounded = roundKc(Number(result2));
+    return rounded > 0 ? rounded : null;
+  }
+  const match = /^(\d{1,16})(?:[.,](\d{1,3}))?([kк]{1,2})?$/i.exec(value);
+  if (match?.[1] === void 0) return null;
+  const fraction = match[2] ?? "";
+  if (fraction.length > (currency === "euro" ? 2 : 3)) return null;
+  const scale = currency === "euro" ? game.euroScale : game.bitcoinScale;
+  const result = (BigInt(match[1]) * BigInt(scale) + BigInt(fraction.padEnd(String(scale).length - 1, "0"))) * 1000n ** BigInt(match[3]?.length ?? 0);
+  return result > 0n && result <= BigInt(game.maxAmount) ? Number(result) : null;
+}
+function settleSavings(balance, since, now) {
+  if (!safeBankMoney(balance) || !Number.isFinite(since.getTime()) || !Number.isFinite(now.getTime())) throw new Error("Invalid savings state");
+  const weeks = Math.max(0, Math.floor((now.getTime() - since.getTime()) / bankConfig.weekMs));
+  let value = BigInt(roundKc(balance));
+  for (let week = 0; week < weeks; week += 1) {
+    const next = BigInt(roundKcRatio(value * BigInt(100 + bankConfig.savingsPercent), 100n));
+    if (next === value) break;
+    if (next >= BigInt(game.maxAmount)) {
+      value = BigInt(roundKc(game.maxAmount));
+      break;
+    }
+    value = next;
+  }
+  return { balance: Number(value), since: new Date(since.getTime() + weeks * bankConfig.weekMs) };
+}
+function depositValue(deposit, now) {
+  if (!isDepositDays(deposit.days) || !safeBankMoney(deposit.amount) || deposit.amount <= 0 || deposit.amount > bankConfig.maxDeposit || !Number.isFinite(deposit.createdAt.getTime()) || deposit.expiresAt.getTime() - deposit.createdAt.getTime() !== deposit.days * bankConfig.dayMs) throw new Error("Invalid deposit");
+  const duration = deposit.days * bankConfig.dayMs;
+  const elapsed = Math.min(duration, Math.max(0, now.getTime() - deposit.createdAt.getTime()));
+  return roundKcRatio(BigInt(deposit.amount) * (100n * BigInt(duration) + BigInt(bankConfig.depositRates[deposit.days]) * BigInt(elapsed)), 100n * BigInt(duration));
+}
+function earlyDepositValue(deposit, now) {
+  const value = depositValue(deposit, now);
+  return value - roundKcRatio(BigInt(value) * BigInt(bankConfig.earlyPenaltyPercent), 100n);
+}
+function depositButtons(wallet) {
+  if (!safeBankMoney(wallet)) throw new Error("Invalid wallet");
+  return bankConfig.depositPercents.map((percent) => roundKcRatio(BigInt(wallet) * BigInt(percent), 100n));
+}
+
+// src/config/double.ts
+var doubleConfig = {
+  sectors: [2, 3, 5, 50],
+  weights: [75, 50, 30, 3],
+  tickets: 158
+};
+var doublePhotos = {
+  2: "https://cdn.kleymorf.xyz/other/44d46b1b5a35_photo_1a853eff.jpg",
+  3: "https://cdn.kleymorf.xyz/other/2cd21bbf0cf5_photo_a6d3c003.jpg",
+  5: "https://cdn.kleymorf.xyz/other/1f9ca1794e5c_photo_df4151a7.jpg",
+  50: "https://cdn.kleymorf.xyz/other/b3e5a564df44_photo_1ab97527.jpg"
+};
+
 // src/services/casino-rules.ts
 import { randomBytes } from "node:crypto";
 
@@ -546,6 +945,7 @@ import { randomBytes } from "node:crypto";
 var casinoConfig = {
   minimum: 1e3 * game.kcScale,
   maxBets: 10,
+  maximum: 1e6 * game.kcScale,
   acceptanceMs: 1e4,
   extensionMs: 500,
   resultsMs: 5e3,
@@ -598,6 +998,18 @@ function cachedCasinoRandom(random) {
   };
 }
 function selectOutcome(mode, random, key) {
+  if (mode === "double") {
+    let ticket2 = random(`${key}:double`, doubleConfig.tickets);
+    for (const [index, weight] of doubleConfig.weights.entries()) {
+      if (ticket2 < weight) {
+        const result = doubleConfig.sectors[index];
+        if (result === void 0) throw new Error("Invalid double sector");
+        return { result, bonus: 1 };
+      }
+      ticket2 -= weight;
+    }
+    throw new Error("Invalid double ticket");
+  }
   if (mode === "roulette") return { result: random(`${key}:roulette`, rouletteConfig.numbers), bonus: 1 };
   if (mode === "crash") {
     const roll = random(`${key}:crash`, casinoConfig.crashRandomSize) + 1;
@@ -616,7 +1028,7 @@ function selectOutcome(mode, random, key) {
   throw new Error("Invalid dream ticket");
 }
 function betPayout(mode, amount, target, bonus) {
-  const value = mode === "crash" ? BigInt(amount) * BigInt(target) / BigInt(casinoConfig.crashPrecision) : mode === "roulette" ? BigInt(amount) * BigInt(rouletteMultiplier(target)) : BigInt(amount) * BigInt(target + 1) * BigInt(bonus);
+  const value = mode === "crash" ? BigInt(amount) * BigInt(target) / BigInt(casinoConfig.crashPrecision) : mode === "roulette" ? BigInt(amount) * BigInt(rouletteMultiplier(target)) : mode === "double" ? BigInt(amount) * BigInt(target) : BigInt(amount) * BigInt(target + 1) * BigInt(bonus);
   return value <= BigInt(game.maxAmount) ? roundKc(Number(value)) : null;
 }
 function roundKey(peerId, mode) {
@@ -957,7 +1369,7 @@ async function diceAction(store, input, player, command, random) {
       amount,
       slots: command.slots,
       expiresAt: new Date(now.getTime() + diceConfig.lifetimeMs),
-      players: [{ vkId: player._id, name: player.name, entryId: createHash("sha256").update(input.eventId).digest("hex") }]
+      players: [{ vkId: player._id, name: player.name, entryId: createHash2("sha256").update(input.eventId).digest("hex") }]
     };
     chat.games.push(value2);
     await saveChat(store, chat, value2.expiresAt);
@@ -978,7 +1390,7 @@ ${diceTexts.pending}`);
   if (existing !== void 0) return reply(diceTexts.alreadyPlaying);
   if (player === null) throw new Error("Missing dice participant");
   if (!await store.updateBalance(input.vkId, value.currency, "take", value.amount)) return reply(diceTexts.funds);
-  value.players.push({ vkId: input.vkId, name: player.name, entryId: createHash("sha256").update(input.eventId).digest("hex") });
+  value.players.push({ vkId: input.vkId, name: player.name, entryId: createHash2("sha256").update(input.eventId).digest("hex") });
   if (value.players.length === value.slots) {
     await finishDice(store, chat, value, now, random);
     return reply();
@@ -1011,18 +1423,6 @@ async function settleDice(database) {
     }
   }
   return count;
-}
-
-// src/utils/log.ts
-import { APIError } from "vk-io";
-import { MongoServerError } from "mongodb";
-function logError(scope, error, context = {}) {
-  console.error(JSON.stringify({
-    scope,
-    type: error instanceof Error ? error.name : "UnknownError",
-    code: error instanceof APIError || error instanceof MongoServerError ? error.code : void 0,
-    ...context
-  }));
 }
 
 // src/handlers/dice-worker.ts
@@ -1091,12 +1491,13 @@ var casinoTexts = {
   directorMinimum: "⚠ Ставку необходимо поднять минимум на 1.000 KC.",
   stale: "⚠️ Подтверждение устарело. Начните действие заново.",
   electionPending: "⏳ Подводим итоги выборов. Повторите действие после объявления результатов.",
-  funds: "⚠ Недостаточно KC!",
+  funds: "💰 Недостаточно средств.",
   limit: "⚠️ Достигнут безопасный предел суммы. Ставка не принята.",
   private: "⚠️ Игры доступны только в беседах.",
   crashRange: "⛔️ Показатель должен быть больше х1, но не больше х5000!",
   crashUsage: "⛔️ Использование: краш <коэффициент> <ставка>",
   rouletteUsage: "⛔️ Использование: рулетка <число или диапазон> <ставка>",
+  doubleUsage: "⛔️ Использование: дабл <сектор> <ставка>",
   dreamUsage: "⛔️ Использование: дрим <сектор> <ставка>",
   winner: "👑 Поздравляем с победой на выборах! В течение этого дня вы будете получать 1% со всех ставок в играх казино в беседах.",
   creditWaiting: "⏳ Выплата сохранена. Достигнут предел баланса; выплата будет повторена автоматически."
@@ -1105,7 +1506,7 @@ function kc(value) {
   return `${formatKc(value)} KC`;
 }
 function modeName(mode) {
-  return mode === "crash" ? "Краш" : mode === "roulette" ? "Рулетка" : "Дрим";
+  return mode === "crash" ? "Краш" : mode === "roulette" ? "Рулетка" : mode === "double" ? "Дабл" : "Дрим";
 }
 function coefficient(value) {
   return (value / 100).toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
@@ -1141,20 +1542,27 @@ function electionRefund(amount) {
 function betMinimum(mode) {
   return `💰 Минимальная ставка в режиме «${modeName(mode)}» — 1.000 KC.`;
 }
+function betMaximum(mode) {
+  return `💰 Максимальная ставка в режиме «${modeName(mode)}» — 1.000.000 KC`;
+}
 function betLimit(mode) {
   return `💰 Не более 10 ставок в режиме «${modeName(mode)}».`;
 }
 function betAccepted(player, mode, amount, target) {
-  return `✅ ${mention(player)} — ${kc(amount)} на ${mode === "crash" ? `x${coefficient(target)}` : mode === "roulette" ? rouletteTargetText(target) : `сектор ${target}`}`;
+  return `✅ ${mention(player)} — ${kc(amount)} на ${mode === "crash" ? `x${coefficient(target)}` : mode === "roulette" ? rouletteTargetText(target) : mode === "double" ? `x${target} (дабл)` : `сектор ${target}`}`;
 }
 function roundClosed(mode) {
   return `🎰 Приём ставок для игры "${modeName(mode)}" закрыт.
-🕒 Итоги раунда через 5 секунд…`;
+🕒 Итоги раунда через 5 секунд${mode === "double" ? "..." : "…"}`;
 }
 function outcome(round) {
+  if (round.mode === "double") return `x${round.result}`;
   return round.mode === "roulette" ? rouletteOutcome(round.result) : round.mode === "crash" ? `x${coefficient(round.result)}` : `${round.bonus === 1 ? "" : `множитель х${round.bonus} - `}сектор №${round.result} - [x${(round.result + 1) * round.bonus}]`;
 }
 function roundHeading(round) {
+  if (round.mode === "double") return `↔️ Итоги игры "Дабл":
+
+💸 Выпал множитель x${round.result}`;
   if (round.mode === "roulette") return `🎰 Итоги игры "Рулетка":
 
 🎡 Выпало — ${rouletteOutcome(round.result)}`;
@@ -1169,7 +1577,7 @@ function winningBet(bet, mode, payout) {
 — Приз: ${kc(payout)}`;
 }
 function roundFooter(round) {
-  return `${round.winners === 0 ? "\n\n❌ Все ставки проиграли!" : ""}${round.losses > 0 ? `
+  return `${round.winners === 0 ? "\n\n❌ Все ставки проиграли!" : ""}${round.losses > 0 || round.mode === "double" ? `
 
 💰 Проиграно: ${kc(round.losses)}` : ""}`;
 }
@@ -1456,7 +1864,7 @@ function startMailingWorker(database, wakeNotifications) {
 }
 
 // src/handlers/roulette-photo-worker.ts
-function startRoulettePhotoWorker(database, resolvePhoto) {
+function startRoulettePhotoWorker(database, resolvePhoto, resolveMessagePhoto) {
   const pending = /* @__PURE__ */ new Map();
   let after = "";
   let stopped = false;
@@ -1464,17 +1872,19 @@ function startRoulettePhotoWorker(database, resolvePhoto) {
   const scan = async () => {
     const capacity = rouletteConfig.photoPrefetchConcurrency - pending.size;
     if (capacity === 0) return;
-    const rounds = await database.transaction((store) => store.casinoList({ kind: "roulette_photo", after }, capacity));
+    const rounds = await database.transaction((store) => store.casinoList({ kind: resolveMessagePhoto === void 0 ? "roulette_photo" : "casino_photo", after }, capacity));
     if (stopped) return;
     if (rounds.length === 0) {
       after = "";
       return;
     }
     for (const round of rounds) {
-      if (round.kind !== "round" || round.mode !== "roulette") throw new Error("Invalid photo preparation round");
+      if (round.kind !== "round" || round.mode !== "roulette" && round.mode !== "double") throw new Error("Invalid photo preparation round");
       after = round._id;
       if (pending.has(round.roundId)) continue;
-      const task = resolvePhoto(round.peerId, round.result).then(() => void 0).catch((error) => {
+      const url = doublePhotos[round.result];
+      const work = round.mode === "roulette" ? resolvePhoto(round.peerId, round.result) : resolveMessagePhoto !== void 0 && url !== void 0 ? resolveMessagePhoto(round.peerId, url) : Promise.resolve(null);
+      const task = work.then(() => void 0).catch((error) => {
         logError("roulette_photo_prefetch", error);
       }).finally(() => {
         pending.delete(round.roundId);
@@ -1519,103 +1929,6 @@ var MongoMessagePhotos = class {
     if (!result.acknowledged || result.matchedCount + result.upsertedCount !== 1) throw new Error("Photo cache write failed");
   }
 };
-
-// src/handlers/roulette-photo-errors.ts
-import { APIError as APIError2, ExecuteError } from "vk-io";
-var methods = ["photos.getMessagesUploadServer", "photos.saveMessagesPhoto"];
-function roulettePhotoErrorContext(error) {
-  if (!(error instanceof APIError2)) return {};
-  const params = error.params;
-  const parameter = Array.isArray(params) ? params.find((entry) => isRecord(entry) && entry.key === "method") : void 0;
-  const requested = error instanceof ExecuteError ? error.method : isRecord(parameter) ? parameter.value : void 0;
-  const method = methods.find((value) => value === requested) ?? "unknown";
-  const parameterHint = error.code === 100 ? /\b(peer_id|photo|server|hash)\b/i.exec(error.message)?.[1]?.toLowerCase() : void 0;
-  return { method, ...parameterHint === void 0 ? {} : { parameterHint } };
-}
-
-// src/handlers/roulette-photos.ts
-function isMessagePhotoAttachment(value) {
-  return /^photo-?\d+_\d+(?:_[A-Za-z0-9_-]+)?$/.test(value);
-}
-async function downloadRoulettePhoto(url, fetcher = fetch) {
-  if (!roulettePhotos.includes(url)) throw new Error("Unconfigured roulette photo URL");
-  const response = await fetcher(url, { signal: AbortSignal.timeout(rouletteConfig.photoTimeoutMs), redirect: "error" });
-  const length = response.headers.get("content-length");
-  if (!response.ok || response.body === null || length !== null && (!/^\d+$/.test(length) || Number(length) > rouletteConfig.maxPhotoBytes)) {
-    await response.body?.cancel();
-    throw new Error("Invalid roulette photo response");
-  }
-  const reader = response.body.getReader();
-  const chunks = [];
-  let size = 0;
-  try {
-    for (; ; ) {
-      const chunk = await reader.read();
-      if (chunk.done) break;
-      size += chunk.value.byteLength;
-      if (size > rouletteConfig.maxPhotoBytes) {
-        await reader.cancel();
-        throw new Error("Roulette photo is too large");
-      }
-      chunks.push(chunk.value);
-    }
-  } finally {
-    reader.releaseLock();
-  }
-  const buffer = Buffer.concat(chunks, size);
-  if (buffer.length < 4 || buffer[0] !== 255 || buffer[1] !== 216 || buffer[2] !== 255) throw new Error("Roulette photo is not JPEG");
-  return buffer;
-}
-function createRoulettePhotoResolver(vk, cache, groupId, download = downloadRoulettePhoto) {
-  if (!isPositiveId(groupId)) throw new Error("Invalid photo community");
-  const pending = /* @__PURE__ */ new Map();
-  const resolve = async (peerId, result) => {
-    if (!isPositiveId(peerId) || !validRouletteNumber(result)) throw new Error("Invalid roulette photo identity");
-    const url = roulettePhotos[result];
-    if (url === void 0) throw new Error("Missing roulette photo URL");
-    const key = `${groupId}:${peerId}:${url}`;
-    let stage = "cache_read";
-    let photoBytes;
-    let startedAt = Date.now();
-    try {
-      const cached = await cache.messagePhoto(key);
-      if (cached !== null && isMessagePhotoAttachment(cached)) return cached;
-      stage = "download";
-      startedAt = Date.now();
-      const value = await download(url);
-      photoBytes = value.byteLength;
-      stage = "vk_upload";
-      startedAt = Date.now();
-      const photo = await vk.upload.messagePhoto({ peer_id: peerId, source: { values: [{ value, filename: `roulette-${result}.jpg`, contentType: "image/jpeg" }], timeout: rouletteConfig.photoTimeoutMs } });
-      const attachment = photo.toString();
-      if (!isMessagePhotoAttachment(attachment)) throw new Error("Invalid uploaded photo attachment");
-      await cache.saveMessagePhoto(key, attachment).catch((error) => {
-        logError("roulette_photo_cache", error, { number: result });
-      });
-      return attachment;
-    } catch (error) {
-      logError("roulette_photo_upload", error, {
-        number: result,
-        stage,
-        elapsedMs: Math.max(0, Date.now() - startedAt),
-        timeoutMs: rouletteConfig.photoTimeoutMs,
-        ...photoBytes === void 0 ? {} : { photoBytes },
-        ...stage === "vk_upload" ? roulettePhotoErrorContext(error) : {}
-      });
-      return null;
-    }
-  };
-  return async (peerId, result) => {
-    const key = `${peerId}:${result}`;
-    const existing = pending.get(key);
-    if (existing !== void 0) return existing;
-    const task = resolve(peerId, result).finally(() => {
-      pending.delete(key);
-    });
-    pending.set(key, task);
-    return task;
-  };
-}
 
 // src/services/casino-round.ts
 async function closeCasinoRound(store, round, now) {
@@ -1791,7 +2104,8 @@ ${winningBet(bet, round.mode, payout)}`);
         else {
           const page = await store.casinoGet(`page:${round.roundId}:${round.nextPage}`);
           if (page?.kind !== "page") throw new Error("Missing result page");
-          await store.enqueueItemNotification(`result:${round.roundId}:${round.nextPage}`, round.peerId, page.text, { kind: "none" }, round.mode === "roulette" && round.nextPage === 0 ? round.result : void 0);
+          const photoUrl = round.mode === "double" && round.nextPage === 0 ? doublePhotos[round.result] : void 0;
+          await store.enqueueItemNotification(`result:${round.roundId}:${round.nextPage}`, round.peerId, page.text, { kind: "none" }, round.mode === "roulette" && round.nextPage === 0 ? round.result : void 0, photoUrl === void 0 ? void 0 : { photoUrl });
           round.nextPage += 1;
         }
       }
@@ -2162,9 +2476,29 @@ var vkApiOptions = {
   apiTimeout: 1e4
 };
 
+// src/services/case-drops.ts
+function money(currency, values, weight) {
+  const scale = currency === "kc" ? game.kcScale : currency === "euro" ? game.euroScale : game.bitcoinScale;
+  return values.map((amount) => ({ currency, amount: amount * scale, weight }));
+}
+function caseDrops(kind) {
+  if (kind.startsWith("boss_case:")) return [
+    ...money("kc", [250, 500, 1e3, 1500, 2e3], 140),
+    ...money("euro", [1, 2, 3, 4, 5], 18),
+    ...money("bitcoin", [5, 10, 15, 20], 50),
+    { itemKind: "aristocrat_case", weight: 10 }
+  ];
+  if (kind === "aristocrat_case") return [
+    ...money("kc", [25e3, 5e4, 1e5, 15e4, 2e5], 140),
+    ...money("euro", [10, 20, 30, 40, 50], 20),
+    ...money("bitcoin", [50, 100, 150, 200], 50)
+  ];
+  return itemConfig.drops;
+}
+
 // src/services/item-rules.ts
 function isItemKind(value) {
-  return value === "zhdun_case" || value === "referral_case" || value === "croupier";
+  return value === "zhdun_case" || value === "referral_case" || value === "croupier" || value === "aristocrat_case" || typeof value === "string" && bossCaseDetails(value) !== null;
 }
 function isAdminItemCommand(command) {
   return command.kind === "admin_item" || command.kind === "admin_itemlist" || command.kind === "admin_item_invalid";
@@ -2212,21 +2546,29 @@ function parseItemPrice(text) {
   const amount = BigInt(whole) * 1000n ** BigInt(suffix) * BigInt(game.kcScale);
   return amount <= BigInt(game.maxAmount) ? Number(amount) : null;
 }
-function caseRewards(quantity, roll) {
+function caseRewards(quantity, roll, kind = "zhdun_case") {
   if (!validItemQuantity(quantity)) {
     throw new Error("Invalid case quantity");
   }
-  const result = { kc: 0, euro: 0, counts: itemConfig.drops.map(() => 0) };
+  const drops = caseDrops(kind);
+  const modern = kind === "aristocrat_case" || kind.startsWith("boss_case:");
+  const result = { kc: 0, euro: 0, counts: drops.map(() => 0) };
   for (let i = 0; i < quantity; i += 1) {
-    const value = roll();
+    let value = roll();
     if (!Number.isSafeInteger(value) || value < 0 || value >= 100) {
       throw new Error("Invalid case roll");
     }
+    if (modern) {
+      const second = roll();
+      if (!Number.isSafeInteger(second) || second < 0 || second >= 100) throw new Error("Invalid case roll");
+      value = value * 10 + Math.floor(second / 10);
+    }
     let edge = 0;
-    for (const [index, drop] of itemConfig.drops.entries()) {
+    for (const [index, drop] of drops.entries()) {
       edge += drop.weight;
       if (value < edge) {
-        result[drop.currency] += drop.amount;
+        if ("currency" in drop) result[drop.currency] = (result[drop.currency] ?? 0) + drop.amount;
+        else result.aristocrat = (result.aristocrat ?? 0) + 1;
         result.counts[index] = (result.counts[index] ?? 0) + 1;
         break;
       }
@@ -2309,6 +2651,39 @@ async function loadChatMembers(vk, peerId, groupId) {
 import { randomInt } from "node:crypto";
 import { setTimeout } from "node:timers/promises";
 import { ExecuteError as ExecuteError2 } from "vk-io";
+
+// src/handlers/boss.ts
+function parseBossText(text) {
+  if (text === void 0 || !/^!cboss(?=\s|$)/iu.test(text.trim())) return null;
+  if (text.length > game.maxMessageLength) return { kind: "boss_invalid" };
+  const value = text.trim().replace(/([^\s])(https:\/\/)/gu, "$1 $2");
+  const match = /^!cboss\s+(\d{1,16})([kк]{1,2})?\s+(?:«([^»\r\n]+)»|"([^"\r\n]+)"|(\S+))\s+(\S+)(?:\s+(\S+))?$/iu.exec(value);
+  if (match?.[1] === void 0 || match[6] === void 0) return { kind: "boss_invalid" };
+  const health = BigInt(match[1]) * 1000n ** BigInt(match[2]?.length ?? 0);
+  const name = match[3] ?? match[4] ?? match[5] ?? "";
+  const color = match[6];
+  const photo = match[7] ?? null;
+  if (health <= 0n || health > BigInt(game.maxAmount) || !validBossName(name) || !validBossColor(color) || photo !== null && !trustedPhotoUrl(photo)) return { kind: "boss_invalid" };
+  return { kind: "boss_create", health: Number(health), name, color, photo };
+}
+function parseBossPayload(value) {
+  if (!isRecord(value)) return null;
+  switch (value.command) {
+    case "boss":
+    case "boss_subscribe":
+    case "boss_leaders":
+    case "boss_gym":
+    case "boss_damage":
+    case "boss_fight":
+      return { kind: value.command };
+    case "boss_attack":
+      return typeof value.token === "string" && /^[a-f0-9]{32}$/u.test(value.token) && Number.isInteger(value.slot) && typeof value.slot === "number" && value.slot >= 0 && value.slot < 16 ? { kind: "boss_attack", token: value.token, slot: value.slot } : null;
+    case "boss_upgrade":
+      return typeof value.token === "string" && /^[a-f0-9]{32}$/u.test(value.token) && typeof value.quantity === "number" && [1, 10, 100, 1e3].includes(value.quantity) ? { kind: "boss_upgrade", token: value.token, quantity: value.quantity } : null;
+    default:
+      return null;
+  }
+}
 
 // src/handlers/giveaway.ts
 function parseForce(text) {
@@ -2393,16 +2768,31 @@ function isRouletteShorthand(text) {
   const stake = parseCasinoStake(parts[1]);
   return stake !== null && (typeof stake !== "number" || stake >= casinoConfig.minimum);
 }
+function oversizedStake(text) {
+  if (text.length > 64) return false;
+  const match = /^(\d{1,16}|\d{1,3}(?:\.\d{3}){1,5})(?:,(\d{1,2}))?([kк]{1,2})?$/iu.exec(text);
+  if (match?.[1] === void 0) return false;
+  const value = (BigInt(match[1].replaceAll(".", "")) * BigInt(game.kcScale) + BigInt((match[2] ?? "").padEnd(2, "0"))) * 1000n ** BigInt(match[3]?.length ?? 0);
+  return value > BigInt(casinoConfig.maximum);
+}
 function parseLine(text) {
   const line = isRouletteShorthand(text) ? `рулетка ${text.trim()}` : text.trim();
-  const parts = /^(краш|дрим|рулетка)\s+(\S+)\s+(\S+)$/iu.exec(line);
-  const mode = /^краш(?=\s|$)/iu.test(line) ? "crash" : /^рулетка(?=\s|$)/iu.test(line) ? "roulette" : "dream";
-  const usage = mode === "crash" ? casinoTexts.crashUsage : mode === "roulette" ? casinoTexts.rouletteUsage : casinoTexts.dreamUsage;
+  const parts = /^(краш|дрим|рулетка|дабл)\s+(\S+)\s+(\S+)$/iu.exec(line);
+  const mode = /^краш(?=\s|$)/iu.test(line) ? "crash" : /^рулетка(?=\s|$)/iu.test(line) ? "roulette" : /^дабл(?=\s|$)/iu.test(line) ? "double" : "dream";
+  const usage = mode === "crash" ? casinoTexts.crashUsage : mode === "roulette" ? casinoTexts.rouletteUsage : mode === "double" ? casinoTexts.doubleUsage : casinoTexts.dreamUsage;
   if (parts?.[2] === void 0 || parts[3] === void 0) return { error: usage };
   const amount = parseCasinoStake(parts[3]);
+  const amountError = amount === null && oversizedStake(parts[3]) ? betMaximum(mode) : usage;
+  if (mode === "double") {
+    const target2 = Number(parts[2]);
+    if (!/^\d+$/.test(parts[2]) || !doubleConfig.sectors.some((sector) => sector === target2)) return { error: usage };
+    if (amount === null) return { error: amountError };
+    return { mode, amount, target: target2 };
+  }
   if (mode === "roulette") {
     const target2 = parseRouletteTarget(parts[2]);
-    if (target2 === null || amount === null) return { error: usage };
+    if (target2 === null) return { error: usage };
+    if (amount === null) return { error: amountError };
     return typeof amount === "number" && amount < casinoConfig.minimum ? { error: betMinimum(mode) } : { mode, amount, target: target2 };
   }
   if (mode === "crash") {
@@ -2410,12 +2800,13 @@ function parseLine(text) {
     const [whole = "", fraction = ""] = parts[2].replace(",", ".").split(".");
     const target2 = Number(whole) * 100 + Number(fraction.padEnd(2, "0"));
     if (target2 <= 100 || target2 > casinoConfig.maxCrash) return { error: casinoTexts.crashRange };
-    if (amount === null) return { error: casinoTexts.crashUsage };
+    if (amount === null) return { error: amountError };
     if (typeof amount === "number" && amount < casinoConfig.minimum) return { error: betMinimum(mode) };
     return { mode, amount, target: target2 };
   }
   const target = Number(parts[2]);
-  if (!/^\d+$/.test(parts[2]) || !casinoConfig.sectors.some((sector) => sector === target) || amount === null) return { error: casinoTexts.dreamUsage };
+  if (!/^\d+$/.test(parts[2]) || !casinoConfig.sectors.some((sector) => sector === target)) return { error: casinoTexts.dreamUsage };
+  if (amount === null) return { error: amountError };
   return typeof amount === "number" && amount < casinoConfig.minimum ? { error: betMinimum(mode) } : { mode, amount, target };
 }
 function parseCasinoText(text, isChat) {
@@ -2425,7 +2816,7 @@ function parseCasinoText(text, isChat) {
   if (normalized === "директор") return { kind: "director_view" };
   if (normalized === "лог краш" || normalized === "лог дрим" || normalized === "лог рулетка") return { kind: "casino_log", mode: normalized === "лог краш" ? "crash" : normalized === "лог рулетка" ? "roulette" : "dream" };
   const lines = text.split(/\r?\n/u).filter((line) => line.trim().length > 0);
-  if (lines.length === 0 || !lines.some((line) => /^(краш|дрим|рулетка)(?=\s|$)/iu.test(line.trim()) || isRouletteShorthand(line))) return null;
+  if (lines.length === 0 || !lines.some((line) => /^(краш|дрим|рулетка|дабл)(?=\s|$)/iu.test(line.trim()) || isRouletteShorthand(line))) return null;
   return { kind: "casino_bets", lines: lines.map(parseLine) };
 }
 function parseDirectorPayload(value) {
@@ -2637,6 +3028,8 @@ function isRankingMetric(value) {
 
 // src/handlers/commands.ts
 function parseCommand(text, payload, isChat = false) {
+  const boss = parseBossText(text);
+  if (boss !== null) return boss;
   const force = parseForce(text);
   if (force !== null) return force;
   const mailing = parseMailing(text);
@@ -2675,6 +3068,8 @@ function parseCommand(text, payload, isChat = false) {
       return { kind: "development" };
     }
   }
+  const bossPayload = parseBossPayload(value);
+  if (bossPayload !== null) return bossPayload;
   const giveaway = parseGiveawayPayload(value);
   if (giveaway !== null) return giveaway;
   const dicePayload = parseDicePayload(value);
@@ -2690,6 +3085,7 @@ function parseCommand(text, payload, isChat = false) {
     return itemCommand;
   }
   if (isRecord(value)) {
+    if (value.command === "help") return { kind: "help" };
     if ((value.command === "donate_confirm" || value.command === "donate_cancel") && typeof value.token === "string" && value.token.length > 0 && value.token.length <= 200) return { kind: value.command, token: value.token };
     if (value.command === "donate" || value.command === "donate_nick" || value.command === "donate_thief" || value.command === "donate_dealer") return { kind: value.command };
     if (value.command === "item" && typeof value.itemId === "number" && Number.isSafeInteger(value.itemId) && value.itemId > 0) {
@@ -2887,18 +3283,13 @@ var itemTexts = {
   private: "⚠️ Управляйте предметами в личных сообщениях бота.",
   adminUsage: "⚠️ Формат: !giveitem <ID игрока> <ID предмета> [количество] или !takeitem <ID игрока> <ID предмета>. Каталог: !itemlist. Количество — от 1 до 1000, по умолчанию 1."
 };
-function itemName(kind) {
-  const entry = itemConfig.catalog.find((item) => item.kind === kind);
-  if (entry === void 0) {
-    throw new Error("Unknown item kind");
-  }
-  return entry.name;
-}
-function dropText(index) {
-  const drop = itemConfig.drops[index];
+function dropText(index, kind = "zhdun_case") {
+  const drop = caseDrops(kind)[index];
   if (drop === void 0) {
     throw new Error("Unknown case drop");
   }
+  if (!("currency" in drop)) return itemName(drop.itemKind);
+  if (drop.currency === "bitcoin") return `💠 ${formatAmount(drop.amount, game.bitcoinScale)}₿`;
   return drop.currency === "kc" ? `💰 ${formatKc(drop.amount)} KC` : `💶 ${formatAmount(drop.amount, game.euroScale)} евро`;
 }
 function itemDetails(kind, count, use = false) {
@@ -2907,15 +3298,15 @@ function itemDetails(kind, count, use = false) {
   return (use ? `«${itemName(kind)}» (доступно: ${count} шт.):` : `📒 Предмет "${itemName(kind)}" (x${count}):`) + `
 Может выпасть:
 
-${itemConfig.drops.map((_, index) => dropText(index)).join("\n")}`;
+${caseDrops(kind).map((_, index) => dropText(index, kind)).join("\n")}`;
 }
 function itemQuantityText(count) {
   return `🎒 Введите число предметов (у вас: ${count}).`;
 }
-function caseResultText(player, rewards) {
+function caseResultText(player, rewards, kind = "zhdun_case") {
   return `${mention(player)}, 🎁 Вот что выпало:
 
-` + rewards.counts.flatMap((count, index) => count === 0 ? [] : [`${dropText(index)}${count > 1 ? ` x${count}` : ""}`]).join("\n");
+` + rewards.counts.flatMap((count, index) => count === 0 ? [] : [`${dropText(index, kind)}${count > 1 ? ` x${count}` : ""}`]).join("\n");
 }
 function giftSentText(receiver, kind, quantity) {
   return `✅ Вы успешно передали игроку ${mention(receiver)} ${itemName(kind)} x${quantity}`;
@@ -3078,6 +3469,36 @@ function buildKeyboard(spec) {
         label: itemLabels.confirm,
         payload: { command: "item_buy", offerId: spec.offerId }
       })]]).inline();
+    case "help":
+      return Keyboard.keyboard([
+        [Keyboard.urlButton({ label: "🆘 Поддержка VK", url: "https://vk.ru/kreox_owner" })],
+        [Keyboard.urlButton({ label: "Поддержка Telegram", url: "https://t.me/kleymorf" })],
+        [button("📕 Меню", { kind: "menu" })]
+      ]).oneTime(false);
+    case "boss_none":
+      return Keyboard.keyboard([[button("🔔 Подписаться на уведомления", { kind: "boss_subscribe" })]]).inline();
+    case "boss_notice":
+      return Keyboard.keyboard([[button("🎩 Босс", { kind: "boss" })], [button("🔕 Отписаться от уведомлений", { kind: "boss_subscribe" })]]).inline();
+    case "boss_menu":
+      return Keyboard.keyboard([
+        [button("⚔️ В бой!", { kind: "boss_fight" })],
+        [button("🏆 Лидеры по урону", { kind: "boss_leaders" })],
+        [button("💪🏻 Качалка", { kind: "boss_gym" })],
+        [button("📕 Меню", { kind: "menu" })]
+      ]).oneTime(false);
+    case "boss_gym":
+      return Keyboard.keyboard([[button("🗡️ Урон", { kind: "boss_damage" })], [button("↩️ Назад", { kind: "boss" })]]).oneTime(false);
+    case "boss_upgrade":
+      return Keyboard.keyboard([
+        [button("🆙 Прокачать", { kind: "boss_upgrade", token: spec.token, quantity: 1 })],
+        [10, 100, 1e3].map((quantity) => button(`x${quantity}`, { kind: "boss_upgrade", token: spec.token, quantity }))
+      ]).inline();
+    case "boss_fight": {
+      if (spec.emojis.length !== 16 || spec.emojis.filter((value) => value === "⚔️").length !== 1) throw new Error("Invalid boss keyboard");
+      const rows = [0, 4, 8, 12].map((offset) => spec.emojis.slice(offset, offset + 4).map((label, index) => button(label, { kind: "boss_attack", token: spec.token, slot: offset + index })));
+      rows.push([button("📕 Меню", { kind: "menu" })]);
+      return Keyboard.keyboard(rows).oneTime(false);
+    }
     case "none":
       return Keyboard.keyboard([]);
     case "promo":
@@ -3112,8 +3533,8 @@ function buildKeyboard(spec) {
         [button(labels.battlePass, { kind: "development" })],
         [button(labels.profile, { kind: "profile" }), button(labels.bonus, { kind: "bonus" }), button(labels.rating, { kind: "ranking", metric: "kc" })],
         [button(labels.promo, { kind: "promo" }), Keyboard.textButton({ label: labels.city, color: Keyboard.PRIMARY_COLOR, payload: { command: "city" } }), button(labels.mining, { kind: "mining" })],
-        [Keyboard.textButton({ label: labels.donate, color: Keyboard.POSITIVE_COLOR, payload: { command: "donate" } }), button(labels.boss, { kind: "development" }), button(labels.tasks, { kind: "development" })],
-        [button(labels.help, { kind: "development" })]
+        [Keyboard.textButton({ label: labels.donate, color: Keyboard.POSITIVE_COLOR, payload: { command: "donate" } }), button(labels.boss, { kind: "boss" }), button(labels.tasks, { kind: "development" })],
+        [button(labels.help, { kind: "help" })]
       ]).oneTime(false);
     case "profile":
       return Keyboard.keyboard([[button(labels.referral, { kind: "referrals" }), button(labels.inventory, { kind: "inventory", page: 0 })], [button(labels.menu, { kind: "menu" })]]).oneTime(false);
@@ -3182,7 +3603,7 @@ async function sendReply(vk, peerId, randomId, reply3, clearKeyboard = false) {
     }
   }
 }
-function createMessageHandler(vk, game2, groupId, wakeNotifications) {
+function createMessageHandler(vk, game2, groupId, wakeNotifications, resolvePhoto) {
   return async (context) => {
     if (context.isOutbox || context.isEvent || !isPositiveId(context.senderId)) {
       return;
@@ -3198,6 +3619,7 @@ function createMessageHandler(vk, game2, groupId, wakeNotifications) {
       if (!context.isChat && context.text?.trim().toLowerCase() === "вор") return;
       const payload = context.messagePayload;
       const command = parseCommand(context.text, payload, context.isChat);
+      if ((command.kind === "boss_create" || command.kind === "boss_invalid") && !adminIds.has(context.senderId)) return;
       if (isGiveawayCommand(command) && (!context.isChat || isGiveawayAdminCommand(command) && !adminIds.has(context.senderId))) return;
       if ((command.kind === "mailing" || command.kind === "mailing_invalid") && !adminIds.has(context.senderId)) return;
       if (isAdminItemCommand(command) && !adminIds.has(context.senderId)) {
@@ -3242,6 +3664,10 @@ function createMessageHandler(vk, game2, groupId, wakeNotifications) {
       return;
     }
     try {
+      if (reply3.photoUrl !== void 0 && resolvePhoto !== void 0) {
+        const attachment = await resolvePhoto(context.peerId, reply3.photoUrl);
+        if (attachment !== null) reply3 = { ...reply3, attachment };
+      }
       if (reply3.text.length > 0) await sendReply(vk, context.peerId, reply3.randomId, reply3, context.isChat);
     } catch (error) {
       logError("vk_reply", error, { eventId, vkId: context.senderId });
@@ -3275,7 +3701,7 @@ function createReferralLinkResolver(vk, groupId) {
 // src/handlers/notifications.ts
 import { randomUUID } from "node:crypto";
 import { APIError as APIError5 } from "vk-io";
-function startNotifications(queue, vk, resolveRoulettePhoto) {
+function startNotifications(queue, vk, resolveRoulettePhoto, resolvePhoto, bossAllowed) {
   let running;
   let stopped = false;
   let wakeRequested = false;
@@ -3290,8 +3716,9 @@ function startNotifications(queue, vk, resolveRoulettePhoto) {
         let state = "sent";
         let delay = 0;
         try {
-          const attachment = notification.roulettePhoto === void 0 || resolveRoulettePhoto === void 0 ? null : await resolveRoulettePhoto(notification.peerId, notification.roulettePhoto);
-          await sendReply(vk, notification.peerId, notification.randomId, {
+          const allowed = notification.bossSummon === void 0 || bossAllowed !== void 0 && await bossAllowed(notification.peerId, notification.bossSummon);
+          const attachment = notification.photoUrl !== void 0 && resolvePhoto !== void 0 ? await resolvePhoto(notification.peerId, notification.photoUrl) : notification.roulettePhoto === void 0 || resolveRoulettePhoto === void 0 ? null : await resolveRoulettePhoto(notification.peerId, notification.roulettePhoto);
+          if (allowed) await sendReply(vk, notification.peerId, notification.randomId, {
             text: notification.text,
             keyboard: notification.keyboard ?? { kind: "none" },
             ...attachment === null ? {} : { attachment }
@@ -3759,24 +4186,29 @@ var MongoItemStore = class extends MongoPromoStore {
   }
   async openItems(player, kind, quantity, rewards, now) {
     if (kind === "croupier") throw new Error("Not a case");
-    if (![rewards.kc, rewards.euro].every((value) => Number.isSafeInteger(value) && value >= 0 && value <= game.maxAmount)) {
+    if (![rewards.kc, rewards.euro, rewards.bitcoin ?? 0, rewards.aristocrat ?? 0].every((value) => Number.isSafeInteger(value) && value >= 0 && value <= game.maxAmount)) {
       throw new Error("Invalid case rewards");
     }
-    if (![player.kc, player.euro].every((value) => Number.isSafeInteger(value) && value >= 0 && value <= game.maxAmount)) {
+    if (![player.kc, player.euro, player.bitcoin].every((value) => Number.isSafeInteger(value) && value >= 0 && value <= game.maxAmount)) {
       return "limit";
     }
     const units = await this.select(player._id, kind, quantity, now);
     if (units.length !== quantity) {
       return "items";
     }
+    const extra = rewards.aristocrat ?? 0;
+    if (extra > quantity) throw new Error("Invalid case item reward");
     const result = await this.itemPlayers.updateOne({
       _id: player._id,
+      bitcoin: { $gte: 0, $lte: game.maxAmount - (rewards.bitcoin ?? 0) },
+      nextItemId: { $gte: 1, $lte: game.maxAmount - extra },
       kc: { $gte: 0, $lte: game.maxAmount - rewards.kc },
       euro: { $gte: 0, $lte: game.maxAmount - rewards.euro }
-    }, { $inc: { kc: rewards.kc, euro: rewards.euro } }, { session: this.itemSession });
+    }, { $inc: { kc: rewards.kc, euro: rewards.euro, bitcoin: rewards.bitcoin ?? 0 } }, { session: this.itemSession });
     if (result.matchedCount !== 1) {
       return "limit";
     }
+    if (extra > 0 && !await this.grantItems(player._id, "aristocrat_case", extra)) throw new Error("Case item credit conflict");
     await this.deleteUnits(units);
     return "ok";
   }
@@ -4097,6 +4529,15 @@ var MongoCasinoStore = class extends MongoBankStore {
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > accountCapacity) throw new Error("Invalid casino query bound");
     let filter;
     switch (query.kind) {
+      case "boss_subscribers":
+        filter = { kind: "boss_player", subscribed: true, subscribedAt: { $lte: query.before }, vkId: { $gt: query.after } };
+        break;
+      case "boss_broadcast":
+        filter = { kind: "boss_broadcast", stage: "pending", dueAt: { $lte: query.dueAt } };
+        break;
+      case "casino_photo":
+        filter = { kind: "round", mode: { $in: ["roulette", "double"] }, stage: { $in: ["open", "closed", "waiting", "settling", "announcing"] }, _id: { $gt: query.after } };
+        break;
       case "dice_chat":
         filter = { kind: "dice_chat", dueAt: { $lte: query.dueAt } };
         break;
@@ -4134,7 +4575,7 @@ var MongoCasinoStore = class extends MongoBankStore {
         filter = { kind: "chat", active: true, _id: { $gt: query.after } };
         break;
     }
-    return this.records.find(filter, { session: this.casinoSession }).sort(query.kind === "bet" || query.kind === "bid" || query.kind === "chat" || query.kind === "roulette_photo" || query.kind === "jackpot_entries" ? { _id: 1 } : { dueAt: 1, _id: 1 }).limit(limit).toArray();
+    return this.records.find(filter, { session: this.casinoSession }).sort(query.kind === "boss_subscribers" ? { vkId: 1 } : query.kind === "casino_photo" ? { _id: 1 } : query.kind === "bet" || query.kind === "bid" || query.kind === "chat" || query.kind === "roulette_photo" || query.kind === "jackpot_entries" ? { _id: 1 } : { dueAt: 1, _id: 1 }).limit(limit).toArray();
   }
   async casinoInsert(record) {
     if (record.version !== 0) throw new Error("Invalid initial casino version");
@@ -4155,6 +4596,23 @@ var MongoCasinoStore = class extends MongoBankStore {
     if (!Number.isSafeInteger(amount) || amount < 0 || amount > game.maxAmount) throw new Error("Invalid casino income");
     const result = await this.casinoDealers.updateOne({ _id: "casino", holderId: vkId, earnedKC: { $gte: 0, $lte: game.maxAmount - amount }, $expr: { $eq: ["$earnedKC", { $trunc: "$earnedKC" }] } }, { $inc: { earnedKC: amount } }, { session: this.casinoSession });
     return result.matchedCount === 1;
+  }
+};
+
+// src/repositories/mongo-boss.ts
+var MongoBossStore = class extends MongoCasinoStore {
+  constructor(db, bossSession) {
+    super(db, bossSession);
+    this.bossSession = bossSession;
+    this.damage = db.collection("casino_records");
+  }
+  bossSession;
+  damage;
+  async bossRanking(runId, vkId) {
+    const personal = await this.damage.findOne({ _id: `boss-damage:${runId}:${vkId}`, kind: "boss_damage" }, { session: this.bossSession });
+    const leaders = await this.damage.find({ kind: "boss_damage", runId }, { session: this.bossSession }).sort({ damage: -1, accountId: 1 }).limit(10).toArray();
+    const place = await this.damage.countDocuments({ kind: "boss_damage", runId, $or: [{ damage: { $gt: personal?.damage ?? 0 } }, { damage: personal?.damage ?? 0, accountId: { $lt: personal?.accountId ?? 0 } }] }, { session: this.bossSession });
+    return { leaders: leaders.map((value) => ({ _id: value.vkId, name: value.name, accountId: value.accountId, score: value.damage })), place: place + 1 };
   }
 };
 
@@ -4254,6 +4712,13 @@ var MongoGameDatabase = class {
     if (previous === null) throw new Error("Response ID range is exhausted");
     return { first: previous.value + 1, last: Math.min(game.maxRandomId, previous.value + storageConfig.responseIdBlockSize) };
   });
+  async bossNotificationsAllowed(vkId, runId) {
+    const [subscriber, run] = await Promise.all([
+      this.db.collection("casino_records").findOne({ _id: `boss-player:${vkId}`, kind: "boss_player", subscribed: true }, { projection: { _id: 1 } }),
+      this.db.collection("casino_records").findOne({ _id: runId, kind: "boss_run", health: { $gt: 0 } }, { projection: { _id: 1 } })
+    ]);
+    return subscriber !== null && run !== null;
+  }
   async initialize() {
     const hello = await this.db.command({ hello: 1 });
     if (!isRecord(hello) || typeof hello.setName !== "string" && hello.msg !== "isdbgrid") {
@@ -4270,7 +4735,9 @@ var MongoGameDatabase = class {
       { key: { kind: 1, roundId: 1, vkId: 1, _id: 1 } },
       { key: { kind: 1, electionId: 1, settled: 1, _id: 1 } },
       { key: { kind: 1, active: 1, _id: 1 } },
-      { key: { kind: 1, mode: 1, stage: 1, _id: 1 } }
+      { key: { kind: 1, mode: 1, stage: 1, _id: 1 } },
+      { key: { kind: 1, runId: 1, damage: -1, accountId: 1 } },
+      { key: { kind: 1, subscribed: 1, vkId: 1 } }
     ]);
     await this.db.collection("deposits").createIndex({ vkId: 1, state: 1, depositId: 1 });
     await this.db.collection("deposits").createIndex({ vkId: 1, depositId: 1 }, { unique: true });
@@ -4380,7 +4847,7 @@ var MongoGameDatabase = class {
     }
   }
 };
-var MongoGameStore = class extends MongoCasinoStore {
+var MongoGameStore = class extends MongoBossStore {
   constructor(db, session, responseIds) {
     super(db, session);
     this.session = session;
@@ -4459,7 +4926,7 @@ var MongoGameStore = class extends MongoCasinoStore {
     if (!result.acknowledged) throw new Error("Mailing notification insert failed");
     this.queuedNotifications = true;
   }
-  async enqueueItemNotification(id, peerId, text, keyboard, roulettePhoto) {
+  async enqueueItemNotification(id, peerId, text, keyboard, roulettePhoto, media) {
     if (roulettePhoto !== void 0 && (!Number.isSafeInteger(roulettePhoto) || roulettePhoto < 0 || roulettePhoto >= rouletteConfig.numbers)) throw new Error("Invalid roulette photo");
     const result = await this.notifications.insertOne({
       _id: id,
@@ -4467,6 +4934,7 @@ var MongoGameStore = class extends MongoCasinoStore {
       text,
       keyboard,
       ...roulettePhoto === void 0 ? {} : { roulettePhoto },
+      ...media,
       randomId: await this.nextRandomId(),
       state: "pending",
       nextAttemptAt: /* @__PURE__ */ new Date(0),
@@ -4677,8 +5145,138 @@ var MongoGameStore = class extends MongoCasinoStore {
   }
 };
 
+// src/services/boss.ts
+async function currentBoss(store) {
+  const current = await store.casinoGet("boss-current");
+  if (current === null) return null;
+  if (current.kind !== "boss_current") throw new Error("Invalid current boss");
+  const run = await store.casinoGet(current.runId);
+  if (run?.kind !== "boss_run" || !Number.isSafeInteger(run.health) || run.health < 0 || run.health > run.initialHealth) throw new Error("Invalid boss run");
+  return run;
+}
+async function createBoss(store, command, eventId) {
+  if (command.kind === "boss_invalid") return { text: bossTexts.usage, keyboard: { kind: "none" } };
+  if (!Number.isSafeInteger(command.health) || command.health <= 0 || command.health > game.maxAmount || !validBossName(command.name) || !validBossColor(command.color) || command.photo !== null && !trustedPhotoUrl(command.photo)) throw new Error("Invalid typed boss creation");
+  const old = await currentBoss(store);
+  if (old !== null && old.health > 0) return { text: bossTexts.alive, keyboard: { kind: "none" } };
+  const run = { _id: `boss:${bossToken(eventId)}`, kind: "boss_run", version: 0, name: command.name, color: command.color, photo: command.photo, health: command.health, initialHealth: command.health, createdAt: await store.now() };
+  const current = await store.casinoGet("boss-current");
+  if (current !== null && current.kind !== "boss_current") throw new Error("Invalid current boss");
+  await store.casinoInsert(run);
+  if (current === null) await store.casinoInsert({ _id: "boss-current", kind: "boss_current", version: 0, runId: run._id });
+  else {
+    current.runId = run._id;
+    await store.casinoSave(current);
+  }
+  await store.casinoInsert({ _id: `boss-broadcast:${run._id}`, kind: "boss_broadcast", version: 0, runId: run._id, after: 0, stage: "pending", dueAt: /* @__PURE__ */ new Date(0) });
+  return { text: bossSummoned(run), keyboard: { kind: "none" } };
+}
+async function bossPlayer(store, vkId) {
+  const existing = await store.casinoGet(`boss-player:${vkId}`);
+  if (existing !== null) {
+    if (existing.kind !== "boss_player") throw new Error("Invalid boss player");
+    bossPower(existing.level);
+    return existing;
+  }
+  const value = { _id: `boss-player:${vkId}`, kind: "boss_player", version: 0, vkId, subscribed: false, level: 0 };
+  await store.casinoInsert(value);
+  return value;
+}
+function fightReply(text, player) {
+  if (player.fight === void 0) throw new Error("Missing boss attack layout");
+  return { text, keyboard: { kind: "boss_fight", token: player.fight.token, emojis: player.fight.emojis } };
+}
+function newFight(player, run, eventId, random) {
+  player.fight = { runId: run._id, token: bossToken(eventId), emojis: bossBoard(random, eventId, player.fight?.runId === run._id ? player.fight.emojis.indexOf("⚔️") : -1) };
+}
+async function upgrade(store, player, fighter, command, eventId) {
+  let success = false;
+  if (command.kind === "boss_upgrade" && command.token === fighter.upgradeToken) {
+    const cost2 = upgradeCost(fighter.level, command.quantity);
+    if (cost2 === null || upgradeCost(fighter.level + command.quantity, 1) === null) return { text: bossTexts.limit, keyboard: { kind: "boss_upgrade", token: command.token } };
+    if (!await store.updateBalance(player._id, "kc", "take", cost2)) return { text: bossTexts.funds, keyboard: { kind: "boss_upgrade", token: command.token } };
+    fighter.level += command.quantity;
+    success = true;
+  }
+  if (command.kind !== "boss_upgrade" || success || fighter.upgradeToken === void 0) {
+    fighter.upgradeToken = bossToken(eventId);
+    await store.casinoSave(fighter);
+  }
+  const cost = upgradeCost(fighter.level, 1);
+  if (cost === null) return { text: bossTexts.limit, keyboard: { kind: "boss_gym" } };
+  const updated = await store.player(player._id);
+  if (updated === null) throw new Error("Missing upgraded player");
+  const token = fighter.upgradeToken;
+  if (token === void 0) throw new Error("Missing boss upgrade quote");
+  return { text: upgradeText(bossPower(fighter.level), cost, updated.kc, success), keyboard: { kind: "boss_upgrade", token } };
+}
+async function bossAction(store, player, command, input, random) {
+  const fighter = await bossPlayer(store, player._id);
+  if (command.kind === "boss_subscribe") {
+    fighter.subscribed = !fighter.subscribed;
+    if (fighter.subscribed) fighter.subscribedAt = await store.now();
+    await store.casinoSave(fighter);
+    return { text: fighter.subscribed ? bossTexts.subscribed : bossTexts.unsubscribed, keyboard: { kind: "none" } };
+  }
+  if (command.kind === "boss_gym") return { text: gymText(bossPower(fighter.level)), keyboard: { kind: "boss_gym" } };
+  if (command.kind === "boss_damage" || command.kind === "boss_upgrade") return upgrade(store, player, fighter, command, input.eventId);
+  const run = await currentBoss(store);
+  if (command.kind === "boss_leaders" && run !== null) {
+    const personal = await store.casinoGet(`boss-damage:${run._id}:${player._id}`);
+    if (personal !== null && personal.kind !== "boss_damage") throw new Error("Invalid boss damage");
+    return { text: bossLeaders(await store.bossRanking(run._id, player._id), player, personal?.damage ?? 0), keyboard: { kind: "boss_menu" } };
+  }
+  if (run === null || run.health === 0) return { text: bossAbsent(player), keyboard: { kind: "boss_none" } };
+  switch (command.kind) {
+    case "boss":
+      return { text: bossMenu(run, bossPower(fighter.level)), keyboard: { kind: "boss_menu" }, ...run.photo === null ? {} : { photoUrl: run.photo } };
+    case "boss_fight":
+      newFight(fighter, run, input.eventId, random);
+      await store.casinoSave(fighter);
+      return fightReply(bossTexts.fight, fighter);
+    case "boss_attack": {
+      const board = fighter.fight;
+      if (board === void 0 || board.runId !== run._id || board.token !== command.token) {
+        if (board === void 0 || board.runId !== run._id) {
+          newFight(fighter, run, input.eventId, random);
+          await store.casinoSave(fighter);
+        }
+        return fightReply(bossTexts.fight, fighter);
+      }
+      if (!Number.isInteger(command.slot) || command.slot < 0 || command.slot >= 16) throw new Error("Invalid boss slot");
+      if (board.emojis[command.slot] !== "⚔️") return fightReply(bossTexts.miss, fighter);
+      const power = bossPower(fighter.level);
+      const damage = Math.min(run.health, power <= 50 ? power : random(`${input.eventId}:damage`, power) + 1);
+      const drop = random(`${input.eventId}:drop`, 10) === 0;
+      const itemKind = bossCaseKind(run.color, run.name);
+      if (drop && !await store.grantItems(player._id, itemKind, 1)) return fightReply(itemTexts.limit, fighter);
+      run.health -= damage;
+      await store.casinoSave(run);
+      const old = await store.casinoGet(`boss-damage:${run._id}:${player._id}`);
+      if (old !== null && old.kind !== "boss_damage") throw new Error("Invalid boss damage");
+      if (old === null) await store.casinoInsert({ _id: `boss-damage:${run._id}:${player._id}`, kind: "boss_damage", version: 0, runId: run._id, vkId: player._id, name: player.name, accountId: player.accountId, damage });
+      else {
+        old.damage += damage;
+        old.name = player.name;
+        await store.casinoSave(old);
+      }
+      newFight(fighter, run, input.eventId, random);
+      await store.casinoSave(fighter);
+      const text = bossHit(damage, power > 50 && damage >= power - 5, drop ? itemName(itemKind) : null, run.health === 0);
+      return run.health === 0 ? { text, keyboard: { kind: "boss_menu" } } : fightReply(text, fighter);
+    }
+    case "boss_leaders":
+      throw new Error("Missing boss leaderboard");
+    case "boss_create":
+    case "boss_invalid":
+      throw new Error("Unexpected boss administrator action");
+    default:
+      return assertNever(command);
+  }
+}
+
 // src/services/giveaway.ts
-import { createHash as createHash2 } from "node:crypto";
+import { createHash as createHash3 } from "node:crypto";
 var reply2 = (text = "") => ({ text, keyboard: { kind: "none" } });
 async function currentGiveaway(store, peerId) {
   const state = await store.casinoGet(giveawayKey(peerId));
@@ -4721,7 +5319,7 @@ async function giveawayAdminAction(store, input, command) {
     kind: "giveaway",
     version: previous?.version ?? 0,
     peerId: input.peerId,
-    token: createHash2("sha256").update(input.eventId).digest("hex"),
+    token: createHash3("sha256").update(input.eventId).digest("hex"),
     reward: command.reward,
     count: command.count,
     remaining: command.count,
@@ -4750,7 +5348,7 @@ async function claimGiveaway(store, input, player, command, prepared) {
 }
 
 // src/services/coin-rules.ts
-import { createHash as createHash3 } from "node:crypto";
+import { createHash as createHash4 } from "node:crypto";
 function coinMultiplier(step) {
   const value = privateCasinoConfig.coinMultipliers[step - 1];
   if (value === void 0 || !Number.isSafeInteger(step)) throw new Error("Invalid coin step");
@@ -4768,7 +5366,7 @@ function coinKey(vkId) {
   return `coin:${vkId}`;
 }
 function coinSession(eventId) {
-  return createHash3("sha256").update(eventId).digest("hex");
+  return createHash4("sha256").update(eventId).digest("hex");
 }
 
 // src/services/coin.ts
@@ -4920,7 +5518,7 @@ async function acceptBet(store, player, line, input, index, random) {
   const current = typeof line.amount === "number" ? player : await store.player(player._id);
   if (current === null) throw new Error("Missing casino actor");
   const amount = resolveCasinoStake(line.amount, current.kc);
-  if (!safeBankMoney(amount) || !Number.isSafeInteger(line.target) || (line.mode === "crash" ? line.target <= 100 || line.target > casinoConfig.maxCrash : line.mode === "roulette" ? !validRouletteTarget(line.target) : !casinoConfig.sectors.some((sector) => sector === line.target))) throw new Error("Invalid typed casino bet");
+  if (!safeBankMoney(amount) || !Number.isSafeInteger(line.target) || (line.mode === "crash" ? line.target <= 100 || line.target > casinoConfig.maxCrash : line.mode === "roulette" ? !validRouletteTarget(line.target) : line.mode === "double" ? !doubleConfig.sectors.some((sector) => sector === line.target) : !casinoConfig.sectors.some((sector) => sector === line.target))) throw new Error("Invalid typed casino bet");
   const now = await store.now();
   const existing = await store.casinoGet(roundKey(peerId, line.mode));
   if (existing !== null && existing.kind !== "round") throw new Error("Invalid active round");
@@ -4929,6 +5527,7 @@ async function acceptBet(store, player, line, input, index, random) {
     return "";
   }
   if (amount < casinoConfig.minimum) return betMinimum(line.mode);
+  if (amount > casinoConfig.maximum) return betMaximum(line.mode);
   const director = await directorState(store, now);
   if (director.dueAt <= now) return casinoTexts.electionPending;
   const active = existing !== null && existing.stage !== "finished";
@@ -5047,13 +5646,13 @@ async function open(store, player, kind, quantity, roll) {
   if (await store.itemCount(player._id, kind, now) < quantity) {
     return back(await unavailableText(store, player, kind, now), kind);
   }
-  const rewards = caseRewards(quantity, roll);
+  const rewards = caseRewards(quantity, roll, kind);
   const result = await store.openItems(player, kind, quantity, rewards, now);
   if (result !== "ok") {
     return back(result === "items" ? await unavailableText(store, player, kind, now) : itemTexts.limit, kind);
   }
   await store.setItemDraft(player._id, null);
-  return { text: caseResultText(player, rewards), keyboard: { kind: "item_use", itemKind: kind } };
+  return { text: caseResultText(player, rewards, kind), keyboard: { kind: "item_use", itemKind: kind } };
 }
 async function itemAction(store, player, command, input, roll) {
   switch (command.kind) {
@@ -5762,6 +6361,7 @@ var GameService = class {
     if (!isPositiveId(input.vkId) || !input.eventId || input.eventId.length > 200) {
       throw new Error("Invalid event identity");
     }
+    if ((input.command.kind === "boss_create" || input.command.kind === "boss_invalid") && !adminIds.has(input.vkId)) throw new Error("Administrator access is required");
     if (isGiveawayAdminCommand(input.command) && !adminIds.has(input.vkId)) throw new Error("Administrator access is required");
     if (input.command.kind === "delete_keyboards" && (!input.isChat || input.vkId !== keyboardResetAdminId)) {
       throw new Error("Administrator chat access is required");
@@ -5818,7 +6418,7 @@ var GameService = class {
           if (typeof reply4 === "string") {
             return { reply: reply4, wake: false };
           }
-          const prepared = await store.remember(input, input.isChat && reply4.keyboard.kind !== "dice_game" && reply4.keyboard.kind !== "giveaway" ? { ...reply4, keyboard: { kind: "none" } } : reply4);
+          const prepared = await store.remember(input, input.isChat && reply4.keyboard.kind !== "dice_game" && reply4.keyboard.kind !== "giveaway" && !reply4.keyboard.kind.startsWith("boss_") && reply4.keyboard.kind !== "help" ? { ...reply4, keyboard: { kind: "none" } } : reply4);
           return { reply: prepared, wake: store.notificationsQueued() };
         });
         const reply3 = outcome2.reply;
@@ -5869,6 +6469,7 @@ var GameService = class {
     throw new Error("Transaction retry limit reached");
   }
   async execute(store, input, name, referralUrl, resolvedTarget, roll, members, donateRandom, bankRandom, casinoRoll) {
+    if (input.command.kind === "boss_create" || input.command.kind === "boss_invalid") return createBoss(store, input.command, input.eventId);
     if (input.command.kind === "mailing" || input.command.kind === "mailing_invalid") return mailingAction(store, input, input.command);
     if (input.command.kind === "delete_keyboards") {
       return { text: texts.keyboardsDeleted, keyboard: { kind: "none" } };
@@ -5927,6 +6528,16 @@ var GameService = class {
         if (player.directorDraft !== void 0) await store.setDirectorDraft(player._id, null);
       }
       return privateCasinoAction(store, player, command, input, casinoRoll);
+    }
+    if (isBossCommand(command) || command.kind === "help") {
+      if (!input.isChat) {
+        if (player.bankDraft !== void 0) await store.setBankDraft(player._id, null);
+        if (player.donateDraft !== void 0) await store.setDonateDraft(player._id, null);
+        if (player.promoDraft !== void 0) await store.setPromoDraft(player._id, null);
+        if (player.itemDraft !== void 0) await store.setItemDraft(player._id, null);
+        if (player.directorDraft !== void 0) await store.setDirectorDraft(player._id, null);
+      }
+      return command.kind === "help" ? { text: bossTexts.help, keyboard: { kind: "help" } } : bossAction(store, player, command, input, casinoRoll);
     }
     if (command.kind === "casino_bets" || command.kind === "casino_log" || command.kind === "director_view" || command.kind === "director_bid" || command.kind === "director_confirm" || command.kind === "city_director") {
       if (!input.isChat) {
@@ -6081,6 +6692,7 @@ async function main2() {
   });
   const pending = /* @__PURE__ */ new Set();
   let stopping;
+  let stopBoss;
   let stopDice;
   let stopJackpot;
   let stopMailing;
@@ -6094,6 +6706,7 @@ async function main2() {
       try {
         await vk.updates.stop();
         await stopChats?.();
+        await stopBoss?.();
         await stopDice?.();
         await stopJackpot?.();
         await stopCasino?.();
@@ -6123,9 +6736,11 @@ async function main2() {
     });
     const service = new GameService(database, createReferralLinkResolver(vk, env.vkGroupId), createItemTargetResolver(vk));
     const resolvePhoto = createRoulettePhotoResolver(vk, new MongoMessagePhotos(client.db(env.mongoDb)), env.vkGroupId);
-    const notifications = startNotifications(database, vk, resolvePhoto);
-    const handle = createMessageHandler(vk, service, env.vkGroupId, notifications.wake);
-    stopPhotos = startRoulettePhotoWorker(database, resolvePhoto);
+    const resolveMessagePhoto = createMessagePhotoResolver(vk, new MongoMessagePhotos(client.db(env.mongoDb)), env.vkGroupId);
+    const notifications = startNotifications(database, vk, resolvePhoto, resolveMessagePhoto, (vkId, runId) => database.bossNotificationsAllowed(vkId, runId));
+    stopBoss = startBossWorker(database, notifications.wake);
+    const handle = createMessageHandler(vk, service, env.vkGroupId, notifications.wake, resolveMessagePhoto);
+    stopPhotos = startRoulettePhotoWorker(database, resolvePhoto, resolveMessagePhoto);
     stopNotifications = notifications;
     stopMailing = startMailingWorker(database, notifications.wake);
     stopBank = startBankWorker(database, notifications.wake);

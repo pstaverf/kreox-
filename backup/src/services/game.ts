@@ -1,3 +1,6 @@
+import { isBossCommand } from './boss-rules.js';
+import { bossAction, createBoss } from './boss.js';
+import { bossTexts } from './boss-texts.js';
 import { logError } from '../utils/log.js';
 import type { GiveawayState } from '../types/giveaway.js';
 import { claimGiveaway, giveawayAdminAction, prepareGiveawayClaim } from './giveaway.js';
@@ -54,6 +57,7 @@ export class GameService {
     if (!isPositiveId(input.vkId) || !input.eventId || input.eventId.length > 200) {
       throw new Error('Invalid event identity');
     }
+    if ((input.command.kind === 'boss_create' || input.command.kind === 'boss_invalid') && !adminIds.has(input.vkId)) throw new Error('Administrator access is required');
     if (isGiveawayAdminCommand(input.command) && !adminIds.has(input.vkId)) throw new Error('Administrator access is required');
     if (input.command.kind === 'delete_keyboards' && (!input.isChat || input.vkId !== keyboardResetAdminId)) {
       throw new Error('Administrator chat access is required');
@@ -110,7 +114,7 @@ export class GameService {
           if (typeof reply === 'string') {
             return { reply, wake: false };
           }
-          const prepared = await store.remember(input, input.isChat && reply.keyboard.kind !== 'dice_game' && reply.keyboard.kind !== 'giveaway' ? { ...reply, keyboard: { kind: 'none' } } : reply);
+          const prepared = await store.remember(input, input.isChat && reply.keyboard.kind !== 'dice_game' && reply.keyboard.kind !== 'giveaway' && !reply.keyboard.kind.startsWith('boss_') && reply.keyboard.kind !== 'help' ? { ...reply, keyboard: { kind: 'none' } } : reply);
           return { reply: prepared, wake: store.notificationsQueued() };
         });
         const reply = outcome.reply;
@@ -158,6 +162,7 @@ export class GameService {
   }
 
   private async execute(store: GameStore, input: GameInput, name: string | null, referralUrl: string | null, resolvedTarget: number | null | undefined, roll: () => number, members: readonly number[] | undefined, donateRandom: DonateRandom, bankRandom: (maximum: number) => number, casinoRoll: CasinoRandom): Promise<Reply | 'name' | 'link' | 'target' | 'members'> {
+    if (input.command.kind === 'boss_create' || input.command.kind === 'boss_invalid') return createBoss(store, input.command, input.eventId);
     if (input.command.kind === 'mailing' || input.command.kind === 'mailing_invalid') return mailingAction(store, input, input.command);
     if (input.command.kind === 'delete_keyboards') {
       return { text: texts.keyboardsDeleted, keyboard: { kind: 'none' } };
@@ -216,6 +221,16 @@ export class GameService {
         if (player.directorDraft !== undefined) await store.setDirectorDraft(player._id, null);
       }
       return privateCasinoAction(store, player, command, input, casinoRoll);
+    }
+    if (isBossCommand(command) || command.kind === 'help') {
+      if (!input.isChat) {
+        if (player.bankDraft !== undefined) await store.setBankDraft(player._id, null);
+        if (player.donateDraft !== undefined) await store.setDonateDraft(player._id, null);
+        if (player.promoDraft !== undefined) await store.setPromoDraft(player._id, null);
+        if (player.itemDraft !== undefined) await store.setItemDraft(player._id, null);
+        if (player.directorDraft !== undefined) await store.setDirectorDraft(player._id, null);
+      }
+      return command.kind === 'help' ? { text: bossTexts.help, keyboard: { kind: 'help' } } : bossAction(store, player, command, input, casinoRoll);
     }
     if (command.kind === 'casino_bets' || command.kind === 'casino_log' || command.kind === 'director_view' || command.kind === 'director_bid' || command.kind === 'director_confirm' || command.kind === 'city_director') {
       if (!input.isChat) {

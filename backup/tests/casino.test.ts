@@ -1,3 +1,4 @@
+import { betMaximum } from '../src/services/casino-texts.js';
 import { roundKcRatio } from '../src/services/kc-money.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -383,7 +384,7 @@ test('oversized maximum payouts are rejected before spending KC or opening round
   const f = await fixture();
   f.db.player().kc = game.maxAmount;
   const reply = await f.chat('краш 5000 900000000000\nдрим 40 900000000000');
-  assert.equal(reply.text, `${casinoTexts.limit}\n${casinoTexts.limit}`);
+  assert.equal(reply.text, `${betMaximum('crash')}\n${betMaximum('dream')}`);
   assert.equal(f.db.player().kc, game.maxAmount);
   assert.equal([...f.db.state.casino.values()].filter(record => record.kind === 'round').length, 0);
 });
@@ -485,7 +486,7 @@ test('relative amounts retain minimum and overflow checks without spending funds
   assert.equal(f.db.player().kc, 0);
   assert.match((await f.chat('краш 1.7 вб')).text, /Минимальная ставка/);
   f.db.player(2).kc = game.maxAmount;
-  assert.equal((await f.chat('краш 5000 все', 2)).text, casinoTexts.limit);
+  assert.equal((await f.chat('краш 5000 все', 2)).text, betMaximum('crash'));
   assert.equal(f.db.player(2).kc, game.maxAmount);
 });
 

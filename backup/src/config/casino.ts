@@ -3,6 +3,7 @@ import { game } from './game.js';
 export const casinoConfig = {
   minimum: 1000 * game.kcScale,
   maxBets: 10,
+  maximum: 1_000_000 * game.kcScale,
   acceptanceMs: 10_000,
   extensionMs: 500,
   resultsMs: 5000,

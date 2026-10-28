@@ -1,3 +1,4 @@
+import type { MessagePhotoResolver } from '../types/message-photos.js';
 import { isGiveawayAdminCommand, isGiveawayCommand } from '../services/giveaway-rules.js';
 import { loadChatMembers } from './chat-members.js';
 import { isAdminItemCommand } from '../services/item-rules.js';
@@ -40,7 +41,7 @@ export async function sendReply(vk: VK, peerId: number, randomId: number, reply:
   }
 }
 
-export function createMessageHandler(vk: VK, game: GameService, groupId: number, wakeNotifications?: () => void): (context: MessageContext) => Promise<void> {
+export function createMessageHandler(vk: VK, game: GameService, groupId: number, wakeNotifications?: () => void, resolvePhoto?: MessagePhotoResolver): (context: MessageContext) => Promise<void> {
   return async context => {
     if (context.isOutbox || context.isEvent || !isPositiveId(context.senderId)) {
       return;
@@ -56,6 +57,7 @@ export function createMessageHandler(vk: VK, game: GameService, groupId: number,
       if (!context.isChat && context.text?.trim().toLowerCase() === 'вор') return;
       const payload: unknown = context.messagePayload;
       const command = parseCommand(context.text, payload, context.isChat);
+      if ((command.kind === 'boss_create' || command.kind === 'boss_invalid') && !adminIds.has(context.senderId)) return;
       if (isGiveawayCommand(command) && (!context.isChat || (isGiveawayAdminCommand(command) && !adminIds.has(context.senderId)))) return;
       if ((command.kind === 'mailing' || command.kind === 'mailing_invalid') && !adminIds.has(context.senderId)) return;
       if (isAdminItemCommand(command) && !adminIds.has(context.senderId)) {
@@ -100,6 +102,10 @@ export function createMessageHandler(vk: VK, game: GameService, groupId: number,
       return;
     }
     try {
+      if (reply.photoUrl !== undefined && resolvePhoto !== undefined) {
+        const attachment = await resolvePhoto(context.peerId, reply.photoUrl);
+        if (attachment !== null) reply = { ...reply, attachment };
+      }
       if (reply.text.length > 0) await sendReply(vk, context.peerId, reply.randomId, reply, context.isChat);
     } catch (error: unknown) {
       logError('vk_reply', error, { eventId, vkId: context.senderId });

@@ -1,3 +1,4 @@
+import { betMaximum } from '../src/services/casino-texts.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { rouletteConfig, roulettePhotos } from '../src/config/roulette.js';
@@ -176,7 +177,7 @@ test('roulette maximum payout guards, transaction rollback and durable full-wall
   assert.deepEqual(f.db.state, before);
   f.db.failRemember = false;
   f.db.player(2).kc = game.maxAmount;
-  assert.equal((await f.chat('рулетка 2 все', 2)).text, casinoTexts.limit);
+  assert.equal((await f.chat('рулетка 2 все', 2)).text, betMaximum('roulette'));
   assert.equal(f.db.player(2).kc, game.maxAmount);
   await f.chat('рулетка 2 1000');
   f.db.player().kc = game.maxAmount;
@@ -232,18 +233,18 @@ test('short roulette bets share balance, round extensions, caps and event dedupl
 
 test('all-in roulette uses whole KC for both the all-in stake and the exact payout', async () => {
   const f = await fixture(16);
-  f.db.player().kc = 180_394_700;
+  f.db.player().kc = 80_394_700;
   const reply = await f.chat('16 все');
-  assert.equal(reply.text, '✅ [id1|Игрок 1] — 1.803.947 KC на 16');
+  assert.equal(reply.text, '✅ [id1|Игрок 1] — 803.947 KC на 16');
   assert.equal(f.db.player().kc, 0);
   const bet = [...f.db.state.casino.values()].find(value => value.kind === 'bet');
   assert.ok(bet?.kind === 'bet');
-  assert.equal(bet.amount, 180_394_700);
+  assert.equal(bet.amount, 80_394_700);
   f.db.time = new Date(f.round().closesAt);
   await f.drain();
-  assert.equal(f.db.player().kc, 6_494_209_200);
+  assert.equal(f.db.player().kc, 2_894_209_200);
   const result = f.db.state.notifications.find(value => value._id.startsWith('result:'));
-  assert.ok(result?.text.includes('✅ [id1|Игрок 1] — 1.803.947 KC на 16\n— Приз: 64.942.092 KC'));
+  assert.ok(result?.text.includes('✅ [id1|Игрок 1] — 803.947 KC на 16\n— Приз: 28.942.092 KC'));
 });
 
 test('late all-in bets and the casino worker share a single committed close notice without debits or duplicate replies', async () => {

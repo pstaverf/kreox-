@@ -129,6 +129,28 @@ export function buildKeyboard(spec: KeyboardSpec): KeyboardBuilder {
     case 'item_offer':
       return Keyboard.keyboard([[Keyboard.textButton({ label: itemLabels.confirm,
         payload: { command: 'item_buy', offerId: spec.offerId } })]]).inline();
+    case 'help': return Keyboard.keyboard([
+      [Keyboard.urlButton({ label: '🆘 Поддержка VK', url: 'https://vk.ru/kreox_owner' })],
+      [Keyboard.urlButton({ label: 'Поддержка Telegram', url: 'https://t.me/kleymorf' })],
+      [button('📕 Меню', { kind: 'menu' })]
+    ]).oneTime(false);
+    case 'boss_none': return Keyboard.keyboard([[button('🔔 Подписаться на уведомления', { kind: 'boss_subscribe' })]]).inline();
+    case 'boss_notice': return Keyboard.keyboard([[button('🎩 Босс', { kind: 'boss' })], [button('🔕 Отписаться от уведомлений', { kind: 'boss_subscribe' })]]).inline();
+    case 'boss_menu': return Keyboard.keyboard([
+      [button('⚔️ В бой!', { kind: 'boss_fight' })], [button('🏆 Лидеры по урону', { kind: 'boss_leaders' })],
+      [button('💪🏻 Качалка', { kind: 'boss_gym' })], [button('📕 Меню', { kind: 'menu' })]
+    ]).oneTime(false);
+    case 'boss_gym': return Keyboard.keyboard([[button('🗡️ Урон', { kind: 'boss_damage' })], [button('↩️ Назад', { kind: 'boss' })]]).oneTime(false);
+    case 'boss_upgrade': return Keyboard.keyboard([
+      [button('🆙 Прокачать', { kind: 'boss_upgrade', token: spec.token, quantity: 1 })],
+      [10, 100, 1000].map(quantity => button(`x${quantity}`, { kind: 'boss_upgrade', token: spec.token, quantity }))
+    ]).inline();
+    case 'boss_fight': {
+      if (spec.emojis.length !== 16 || spec.emojis.filter(value => value === '⚔️').length !== 1) throw new Error('Invalid boss keyboard');
+      const rows = [0, 4, 8, 12].map(offset => spec.emojis.slice(offset, offset + 4).map((label, index) => button(label, { kind: 'boss_attack', token: spec.token, slot: offset + index })));
+      rows.push([button('📕 Меню', { kind: 'menu' })]);
+      return Keyboard.keyboard(rows).oneTime(false);
+    }
     case 'none':
       return Keyboard.keyboard([]);
     case 'promo':
@@ -162,8 +184,8 @@ export function buildKeyboard(spec: KeyboardSpec): KeyboardBuilder {
         [button(labels.battlePass, { kind: 'development' })],
         [button(labels.profile, { kind: 'profile' }), button(labels.bonus, { kind: 'bonus' }), button(labels.rating, { kind: 'ranking', metric: 'kc' })],
         [button(labels.promo, { kind: 'promo' }), Keyboard.textButton({ label: labels.city, color: Keyboard.PRIMARY_COLOR, payload: { command: 'city' } }), button(labels.mining, { kind: 'mining' })],
-        [Keyboard.textButton({ label: labels.donate, color: Keyboard.POSITIVE_COLOR, payload: { command: 'donate' } }), button(labels.boss, { kind: 'development' }), button(labels.tasks, { kind: 'development' })],
-        [button(labels.help, { kind: 'development' })]
+        [Keyboard.textButton({ label: labels.donate, color: Keyboard.POSITIVE_COLOR, payload: { command: 'donate' } }), button(labels.boss, { kind: 'boss' }), button(labels.tasks, { kind: 'development' })],
+        [button(labels.help, { kind: 'help' })]
       ]).oneTime(false);
     case 'profile':
       return Keyboard.keyboard([[button(labels.referral, { kind: 'referrals' }), button(labels.inventory, { kind: 'inventory', page: 0 })], [button(labels.menu, { kind: 'menu' })]]).oneTime(false);

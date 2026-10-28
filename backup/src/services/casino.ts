@@ -1,3 +1,4 @@
+import { doubleConfig } from '../config/double.js';
 import { closeCasinoRound } from './casino-round.js';
 import { validRouletteTarget } from './roulette-rules.js';
 import { casinoConfig } from '../config/casino.js';
@@ -6,7 +7,7 @@ import type { CasinoCommand, CasinoLine, CasinoRandom, CasinoRound } from '../ty
 import type { GameInput, Player, Reply } from '../types/game.js';
 import type { GameStore } from '../types/storage.js';
 import { safeBankMoney } from './bank-rules.js';
-import { betAccepted, betLimit, betMinimum, casinoTexts, historyText } from './casino-texts.js';
+import { betAccepted, betLimit, betMinimum, betMaximum, casinoTexts, historyText } from './casino-texts.js';
 import { betPayout, casinoPercent, resolveCasinoStake, roundKey, selectOutcome } from './casino-rules.js';
 import { directorAction, directorState } from './director.js';
 
@@ -30,7 +31,7 @@ async function acceptBet(store: GameStore, player: Player, line: CasinoLine, inp
   if (current === null) throw new Error('Missing casino actor');
   const amount = resolveCasinoStake(line.amount, current.kc);
   if (!safeBankMoney(amount) || !Number.isSafeInteger(line.target)
-    || (line.mode === 'crash' ? line.target <= 100 || line.target > casinoConfig.maxCrash : line.mode === 'roulette' ? !validRouletteTarget(line.target) : !casinoConfig.sectors.some(sector => sector === line.target))) throw new Error('Invalid typed casino bet');
+    || (line.mode === 'crash' ? line.target <= 100 || line.target > casinoConfig.maxCrash : line.mode === 'roulette' ? !validRouletteTarget(line.target) : line.mode === 'double' ? !doubleConfig.sectors.some(sector => sector === line.target) : !casinoConfig.sectors.some(sector => sector === line.target))) throw new Error('Invalid typed casino bet');
   const now = await store.now();
   const existing = await store.casinoGet(roundKey(peerId, line.mode));
   if (existing !== null && existing.kind !== 'round') throw new Error('Invalid active round');
@@ -39,6 +40,7 @@ async function acceptBet(store: GameStore, player: Player, line: CasinoLine, inp
     return '';
   }
   if (amount < casinoConfig.minimum) return betMinimum(line.mode);
+  if (amount > casinoConfig.maximum) return betMaximum(line.mode);
   const director = await directorState(store, now);
   if (director.dueAt <= now) return casinoTexts.electionPending;
   const active = existing !== null && existing.stage !== 'finished';

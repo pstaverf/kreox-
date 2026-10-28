@@ -1,3 +1,5 @@
+import { startBossWorker } from './handlers/boss-worker.js';
+import { createMessagePhotoResolver } from './handlers/message-photos.js';
 import { startDiceWorker } from './handlers/dice-worker.js';
 import { startJackpotWorker } from './handlers/jackpot-worker.js';
 import { startMailingWorker } from './handlers/mailing-worker.js';
@@ -34,6 +36,7 @@ async function main(): Promise<void> {
   });
   const pending = new Set<Promise<void>>();
   let stopping: Promise<void> | undefined;
+  let stopBoss: (() => Promise<void>) | undefined;
   let stopDice: (() => Promise<void>) | undefined;
   let stopJackpot: (() => Promise<void>) | undefined;
   let stopMailing: (() => Promise<void>) | undefined;
@@ -47,6 +50,7 @@ async function main(): Promise<void> {
       try {
         await vk.updates.stop();
         await stopChats?.();
+        await stopBoss?.();
         await stopDice?.();
         await stopJackpot?.();
         await stopCasino?.();
@@ -74,9 +78,11 @@ async function main(): Promise<void> {
     await syncChatRegistry(vk, database, env.vkGroupId).catch((error: unknown) => { logError('chat_registry', error); });
     const service = new GameService(database, createReferralLinkResolver(vk, env.vkGroupId), createItemTargetResolver(vk));
     const resolvePhoto = createRoulettePhotoResolver(vk, new MongoMessagePhotos(client.db(env.mongoDb)), env.vkGroupId);
-    const notifications = startNotifications(database, vk, resolvePhoto);
-    const handle = createMessageHandler(vk, service, env.vkGroupId, notifications.wake);
-    stopPhotos = startRoulettePhotoWorker(database, resolvePhoto);
+    const resolveMessagePhoto = createMessagePhotoResolver(vk, new MongoMessagePhotos(client.db(env.mongoDb)), env.vkGroupId);
+    const notifications = startNotifications(database, vk, resolvePhoto, resolveMessagePhoto, (vkId, runId) => database.bossNotificationsAllowed(vkId, runId));
+    stopBoss = startBossWorker(database, notifications.wake);
+    const handle = createMessageHandler(vk, service, env.vkGroupId, notifications.wake, resolveMessagePhoto);
+    stopPhotos = startRoulettePhotoWorker(database, resolvePhoto, resolveMessagePhoto);
     stopNotifications = notifications;
     stopMailing = startMailingWorker(database, notifications.wake);
     stopBank = startBankWorker(database, notifications.wake);

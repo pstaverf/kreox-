@@ -91,22 +91,25 @@ export class MongoItemStore extends MongoPromoStore {
   }
   async openItems(player: Player, kind: ItemKind, quantity: number, rewards: CaseRewards, now: Date): Promise<ItemResult> {
     if (kind === 'croupier') throw new Error('Not a case');
-    if (![rewards.kc, rewards.euro].every(value => Number.isSafeInteger(value) && value >= 0 && value <= game.maxAmount)) {
+    if (![rewards.kc, rewards.euro, rewards.bitcoin ?? 0, rewards.aristocrat ?? 0].every(value => Number.isSafeInteger(value) && value >= 0 && value <= game.maxAmount)) {
       throw new Error('Invalid case rewards');
     }
-    if (![player.kc, player.euro].every(value => Number.isSafeInteger(value) && value >= 0 && value <= game.maxAmount)) {
+    if (![player.kc, player.euro, player.bitcoin].every(value => Number.isSafeInteger(value) && value >= 0 && value <= game.maxAmount)) {
       return 'limit';
     }
     const units = await this.select(player._id, kind, quantity, now);
     if (units.length !== quantity) {
       return 'items';
     }
+    const extra = rewards.aristocrat ?? 0;
+    if (extra > quantity) throw new Error('Invalid case item reward');
     const result = await this.itemPlayers.updateOne({
-      _id: player._id, kc: { $gte: 0, $lte: game.maxAmount - rewards.kc }, euro: { $gte: 0, $lte: game.maxAmount - rewards.euro }
-    }, { $inc: { kc: rewards.kc, euro: rewards.euro } }, { session: this.itemSession });
+      _id: player._id, bitcoin: { $gte: 0, $lte: game.maxAmount - (rewards.bitcoin ?? 0) }, nextItemId: { $gte: 1, $lte: game.maxAmount - extra }, kc: { $gte: 0, $lte: game.maxAmount - rewards.kc }, euro: { $gte: 0, $lte: game.maxAmount - rewards.euro }
+    }, { $inc: { kc: rewards.kc, euro: rewards.euro, bitcoin: rewards.bitcoin ?? 0 } }, { session: this.itemSession });
     if (result.matchedCount !== 1) {
       return 'limit';
     }
+    if (extra > 0 && !await this.grantItems(player._id, 'aristocrat_case', extra)) throw new Error('Case item credit conflict');
     await this.deleteUnits(units);
     return 'ok';
   }

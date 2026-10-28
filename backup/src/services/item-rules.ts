@@ -1,3 +1,5 @@
+import { bossCaseDetails } from './boss-rules.js';
+import { caseDrops } from './case-drops.js';
 import { game } from '../config/game.js';
 import { itemConfig } from '../config/items.js';
 import type { Command } from '../types/game.js';
@@ -5,7 +7,7 @@ import type { AdminItemCommand, CaseRewards, ItemCommand, ItemKind, ItemOffer, P
 import { isPositiveId } from '../utils/validation.js';
 
 export function isItemKind(value: unknown): value is ItemKind {
-  return value === 'zhdun_case' || value === 'referral_case' || value === 'croupier';
+  return value === 'zhdun_case' || value === 'referral_case' || value === 'croupier' || value === 'aristocrat_case' || (typeof value === 'string' && bossCaseDetails(value) !== null);
 }
 export function isAdminItemCommand(command: Command): command is AdminItemCommand {
   return command.kind === 'admin_item' || command.kind === 'admin_itemlist' || command.kind === 'admin_item_invalid';
@@ -44,21 +46,29 @@ export function parseItemPrice(text: string): number | null {
   const amount = BigInt(whole) * 1000n ** BigInt(suffix) * BigInt(game.kcScale);
   return amount <= BigInt(game.maxAmount) ? Number(amount) : null;
 }
-export function caseRewards(quantity: number, roll: () => number): CaseRewards {
+export function caseRewards(quantity: number, roll: () => number, kind: ItemKind = 'zhdun_case'): CaseRewards {
   if (!validItemQuantity(quantity)) {
     throw new Error('Invalid case quantity');
   }
-  const result: CaseRewards = { kc: 0, euro: 0, counts: itemConfig.drops.map(() => 0) };
+  const drops = caseDrops(kind);
+  const modern = kind === 'aristocrat_case' || kind.startsWith('boss_case:');
+  const result: CaseRewards = { kc: 0, euro: 0, counts: drops.map(() => 0) };
   for (let i = 0; i < quantity; i += 1) {
-    const value = roll();
+    let value = roll();
     if (!Number.isSafeInteger(value) || value < 0 || value >= 100) {
       throw new Error('Invalid case roll');
     }
+    if (modern) {
+      const second = roll();
+      if (!Number.isSafeInteger(second) || second < 0 || second >= 100) throw new Error('Invalid case roll');
+      value = value * 10 + Math.floor(second / 10);
+    }
     let edge = 0;
-    for (const [index, drop] of itemConfig.drops.entries()) {
+    for (const [index, drop] of drops.entries()) {
       edge += drop.weight;
       if (value < edge) {
-        result[drop.currency] += drop.amount;
+        if ('currency' in drop) result[drop.currency] = (result[drop.currency] ?? 0) + drop.amount;
+        else result.aristocrat = (result.aristocrat ?? 0) + 1;
         result.counts[index] = (result.counts[index] ?? 0) + 1;
         break;
       }

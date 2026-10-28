@@ -30,6 +30,9 @@ export class MongoCasinoStore extends MongoBankStore {
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > accountCapacity) throw new Error('Invalid casino query bound');
     let filter: Filter<CasinoRecord>;
     switch (query.kind) {
+      case 'boss_subscribers': filter = { kind: 'boss_player', subscribed: true, subscribedAt: { $lte: query.before }, vkId: { $gt: query.after } }; break;
+      case 'boss_broadcast': filter = { kind: 'boss_broadcast', stage: 'pending', dueAt: { $lte: query.dueAt } }; break;
+      case 'casino_photo': filter = { kind: 'round', mode: { $in: ['roulette', 'double'] }, stage: { $in: ['open', 'closed', 'waiting', 'settling', 'announcing'] }, _id: { $gt: query.after } }; break;
       case 'dice_chat': filter = { kind: 'dice_chat', dueAt: { $lte: query.dueAt } }; break;
       case 'dice_credit': filter = { kind: 'dice_credit', stage: 'pending', dueAt: { $lte: query.dueAt } }; break;
       case 'jackpot_entries': filter = { kind: 'jackpot_entry', roundId: query.roundId, _id: { $gt: query.after } }; break;
@@ -43,7 +46,7 @@ export class MongoCasinoStore extends MongoBankStore {
       case 'bid': filter = { kind: 'bid', electionId: query.electionId, ...(query.settled === undefined ? {} : { settled: query.settled }) }; break;
       case 'chat': filter = { kind: 'chat', active: true, _id: { $gt: query.after } }; break;
     }
-    return this.records.find(filter, { session: this.casinoSession }).sort(query.kind === 'bet' || query.kind === 'bid' || query.kind === 'chat' || query.kind === 'roulette_photo' || query.kind === 'jackpot_entries' ? { _id: 1 } : { dueAt: 1, _id: 1 }).limit(limit).toArray();
+    return this.records.find(filter, { session: this.casinoSession }).sort(query.kind === 'boss_subscribers' ? { vkId: 1 } : query.kind === 'casino_photo' ? { _id: 1 } : query.kind === 'bet' || query.kind === 'bid' || query.kind === 'chat' || query.kind === 'roulette_photo' || query.kind === 'jackpot_entries' ? { _id: 1 } : { dueAt: 1, _id: 1 }).limit(limit).toArray();
   }
   async casinoInsert(record: CasinoRecord): Promise<void> {
     if (record.version !== 0) throw new Error('Invalid initial casino version');

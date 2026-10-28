@@ -1,3 +1,4 @@
+import type { BossDamage } from '../src/types/boss.js';
 import { isWholeKc, roundKc } from '../src/services/kc-money.js';
 import { mailingConfig } from '../src/config/mailing.js';
 import type { MailingCampaign } from '../src/types/mailing.js';
@@ -78,6 +79,11 @@ class MemoryStore implements GameStore {
   notificationsQueued(): boolean { return this.queuedNotifications; }
   constructor(private readonly state: State, private readonly database: MemoryDatabase) {}
 
+  async bossRanking(runId: string, vkId: number): Promise<Ranking> {
+    const values = [...this.state.casino.values()].filter((value): value is BossDamage => value.kind === 'boss_damage' && value.runId === runId).sort((a, b) => b.damage - a.damage || a.accountId - b.accountId);
+    const personal = values.find(value => value.vkId === vkId);
+    return { leaders: values.slice(0, 10).map(value => ({ _id: value.vkId, name: value.name, accountId: value.accountId, score: value.damage })), place: values.filter(value => value.damage > (personal?.damage ?? 0) || (value.damage === (personal?.damage ?? 0) && value.accountId < (personal?.accountId ?? 0))).length + 1 };
+  }
   async setDirectorDraft(vkId: number, draft: DirectorDraft | null): Promise<void> {
     const player = this.state.players.get(vkId);
     if (player === undefined) throw new Error('Missing director actor');
@@ -90,6 +96,9 @@ class MemoryStore implements GameStore {
   async casinoList(query: CasinoQuery, limit: number): Promise<CasinoRecord[]> {
     return structuredClone([...this.state.casino.values()].filter(record => {
       switch (query.kind) {
+        case 'boss_subscribers': return record.kind === 'boss_player' && record.subscribed && record.subscribedAt !== undefined && record.subscribedAt <= query.before && record.vkId > query.after;
+        case 'boss_broadcast': return record.kind === 'boss_broadcast' && record.stage === 'pending' && record.dueAt <= query.dueAt;
+        case 'casino_photo': return record.kind === 'round' && (record.mode === 'roulette' || record.mode === 'double') && record.stage !== 'finished' && record._id > query.after;
         case 'dice_chat': return record.kind === 'dice_chat' && record.dueAt <= query.dueAt;
         case 'dice_credit': return record.kind === 'dice_credit' && record.stage === 'pending' && record.dueAt <= query.dueAt;
         case 'jackpot_entries': return record.kind === 'jackpot_entry' && record.roundId === query.roundId && record._id > query.after;
@@ -104,7 +113,8 @@ class MemoryStore implements GameStore {
         case 'chat': return record.kind === 'chat' && record.active && record._id > query.after;
       }
     }).sort((a, b) => {
-      if (query.kind !== 'roulette_photo' && query.kind !== 'jackpot_entries' && 'dueAt' in a && 'dueAt' in b && a.dueAt.getTime() !== b.dueAt.getTime()) return a.dueAt.getTime() - b.dueAt.getTime();
+      if (query.kind === 'boss_subscribers' && a.kind === 'boss_player' && b.kind === 'boss_player') return a.vkId - b.vkId;
+      if (query.kind !== 'casino_photo' && query.kind !== 'roulette_photo' && query.kind !== 'jackpot_entries' && 'dueAt' in a && 'dueAt' in b && a.dueAt.getTime() !== b.dueAt.getTime()) return a.dueAt.getTime() - b.dueAt.getTime();
       return a._id.localeCompare(b._id);
     }).slice(0, limit));
   }
@@ -327,12 +337,14 @@ class MemoryStore implements GameStore {
     if (this.available(player._id, kind, now).length < quantity) {
       return 'items';
     }
-    if (player.kc < 0 || player.euro < 0 || player.kc > game.maxAmount - rewards.kc || player.euro > game.maxAmount - rewards.euro) {
+    if (player.kc < 0 || player.euro < 0 || player.kc > game.maxAmount - rewards.kc || player.euro > game.maxAmount - rewards.euro || player.bitcoin > game.maxAmount - (rewards.bitcoin ?? 0) || player.nextItemId > game.maxAmount - (rewards.aristocrat ?? 0)) {
       return 'limit';
     }
     await this.removeItems(player._id, kind, quantity, now);
     player.kc += rewards.kc;
     player.euro += rewards.euro;
+    player.bitcoin += rewards.bitcoin ?? 0;
+    if ((rewards.aristocrat ?? 0) > 0 && !await this.grantItems(player._id, 'aristocrat_case', rewards.aristocrat ?? 0)) throw new Error('Case item credit conflict');
     return 'ok';
   }
   async giftItems(sender: Player, receiver: Player, kind: ItemKind, quantity: number, now: Date): Promise<ItemResult> {
@@ -421,12 +433,12 @@ class MemoryStore implements GameStore {
       state: 'pending', nextAttemptAt: new Date(0), attempts: 0 });
     this.queuedNotifications = true;
   }
-  async enqueueItemNotification(id: string, peerId: number, text: string, keyboard: KeyboardSpec, roulettePhoto?: number): Promise<void> {
+  async enqueueItemNotification(id: string, peerId: number, text: string, keyboard: KeyboardSpec, roulettePhoto?: number, media?: { photoUrl?: string; bossSummon?: string }): Promise<void> {
     if (roulettePhoto !== undefined && (!Number.isSafeInteger(roulettePhoto) || roulettePhoto < 0 || roulettePhoto >= rouletteConfig.numbers)) throw new Error('Invalid roulette photo');
     if (this.state.notifications.some(value => value._id === id)) {
       throw new Error('Duplicate notification');
     }
-    this.state.notifications.push({ _id: id, peerId, text, keyboard, ...(roulettePhoto === undefined ? {} : { roulettePhoto }), randomId: ++this.state.responses,
+    this.state.notifications.push({ _id: id, peerId, text, keyboard, ...(roulettePhoto === undefined ? {} : { roulettePhoto }), ...media, randomId: ++this.state.responses,
       state: 'pending', nextAttemptAt: new Date(0), attempts: 0 });
     this.queuedNotifications = true;
   }

@@ -1,0 +1,9 @@
+export const bossConfig = {
+  baseUpgrade: 5000,
+  upgradeGrowth: 1000,
+  damagePerLevel: 3,
+  maxNameBytes: 96,
+  broadcastBatch: 20,
+  workerMs: 500,
+  emojis: ['♻️', '💉', '🪡', '👑', '🍗', '✏️', '🎲', '🔮', '⚡️', '🩷', '🧩', '💎', '🪄', '🍀', '🦋', '🎯', '🧸', '🍒', '🌙', '🔥', '🦀', '🎈', '🪙', '💊']
+} as const;

@@ -1,7 +1,8 @@
+import type { BossRecord } from './boss.js';
 import type { GiveawayState, GiveawayClaim } from './giveaway.js';
 import type { DiceChat, DiceCredit } from './dice.js';
 import type { CoinState, JackpotState, JackpotEntry, JackpotDraw } from './private-casino.js';
-export type CasinoMode = 'crash' | 'dream' | 'roulette';
+export type CasinoMode = 'crash' | 'dream' | 'roulette' | 'double';
 export type CasinoStake = number | 'half' | 'all';
 export type CasinoLine = { mode: CasinoMode; amount: CasinoStake; target: number } | { error: string };
 export type CasinoCommand =
@@ -44,8 +45,11 @@ export interface CasinoCredit extends RecordBase {
 export interface CasinoChat extends RecordBase { kind: 'chat'; peerId: number; active: boolean }
 export interface CasinoPage extends RecordBase { kind: 'page'; roundId: string; index: number; text: string }
 export interface CasinoDelivery extends RecordBase { kind: 'delivery'; peerId: number; texts: string[]; index: number; stage: 'pending' | 'finished'; dueAt: Date }
-export type CasinoRecord = GiveawayState | GiveawayClaim | DiceChat | DiceCredit | CoinState | JackpotState | JackpotEntry | JackpotDraw | CasinoDelivery | CasinoRound | CasinoBet | DirectorState | DirectorBid | DirectorElection | CasinoCredit | CasinoChat | CasinoPage;
+export type CasinoRecord = BossRecord | GiveawayState | GiveawayClaim | DiceChat | DiceCredit | CoinState | JackpotState | JackpotEntry | JackpotDraw | CasinoDelivery | CasinoRound | CasinoBet | DirectorState | DirectorBid | DirectorElection | CasinoCredit | CasinoChat | CasinoPage;
 export type CasinoQuery =
+  | { kind: 'boss_subscribers'; after: number; before: Date }
+  | { kind: 'boss_broadcast'; dueAt: Date }
+  | { kind: 'casino_photo'; after: string }
   | { kind: 'dice_chat' | 'dice_credit'; dueAt: Date }
   | { kind: 'jackpot_entries'; roundId: string; after: string }
   | { kind: 'jackpot_draw'; dueAt: Date }

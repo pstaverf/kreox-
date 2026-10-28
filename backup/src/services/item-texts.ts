@@ -1,3 +1,6 @@
+import { caseDrops } from './case-drops.js';
+import { itemName } from './item-names.js';
+export { itemName } from './item-names.js';
 import { itemConfig } from '../config/items.js';
 import { game } from '../config/game.js';
 import type { Player } from '../types/game.js';
@@ -32,32 +35,27 @@ export const itemTexts = {
   private: '⚠️ Управляйте предметами в личных сообщениях бота.',
   adminUsage: '⚠️ Формат: !giveitem <ID игрока> <ID предмета> [количество] или !takeitem <ID игрока> <ID предмета>. Каталог: !itemlist. Количество — от 1 до 1000, по умолчанию 1.'
 } as const;
-export function itemName(kind: ItemKind): string {
-  const entry = itemConfig.catalog.find(item => item.kind === kind);
-  if (entry === undefined) {
-    throw new Error('Unknown item kind');
-  }
-  return entry.name;
-}
-function dropText(index: number): string {
-  const drop = itemConfig.drops[index];
+function dropText(index: number, kind: ItemKind = 'zhdun_case'): string {
+  const drop = caseDrops(kind)[index];
   if (drop === undefined) {
     throw new Error('Unknown case drop');
   }
+  if (!('currency' in drop)) return itemName(drop.itemKind);
+  if (drop.currency === 'bitcoin') return `💠 ${formatAmount(drop.amount, game.bitcoinScale)}₿`;
   return drop.currency === 'kc' ? `💰 ${formatKc(drop.amount)} KC`
     : `💶 ${formatAmount(drop.amount, game.euroScale)} евро`;
 }
 export function itemDetails(kind: ItemKind, count: number, use = false): string {
   if (kind === 'croupier') return `📒 Предмет "${itemName(kind)}" (x${count}):\nСнимает КД на покупку крупье, пока находится в вашем инвентаре. Не расходуется.`;
   return (use ? `«${itemName(kind)}» (доступно: ${count} шт.):` : `📒 Предмет "${itemName(kind)}" (x${count}):`)
-    + `\nМожет выпасть:\n\n${itemConfig.drops.map((_, index) => dropText(index)).join('\n')}`;
+    + `\nМожет выпасть:\n\n${caseDrops(kind).map((_, index) => dropText(index, kind)).join('\n')}`;
 }
 export function itemQuantityText(count: number): string {
   return `🎒 Введите число предметов (у вас: ${count}).`;
 }
-export function caseResultText(player: Player, rewards: CaseRewards): string {
+export function caseResultText(player: Player, rewards: CaseRewards, kind: ItemKind = 'zhdun_case'): string {
   return `${mention(player)}, 🎁 Вот что выпало:\n\n` + rewards.counts.flatMap((count, index) =>
-    count === 0 ? [] : [`${dropText(index)}${count > 1 ? ` x${count}` : ''}`]).join('\n');
+    count === 0 ? [] : [`${dropText(index, kind)}${count > 1 ? ` x${count}` : ''}`]).join('\n');
 }
 export function giftSentText(receiver: Player, kind: ItemKind, quantity: number): string {
   return `✅ Вы успешно передали игроку ${mention(receiver)} ${itemName(kind)} x${quantity}`;
