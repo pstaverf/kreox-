@@ -344,3 +344,18 @@ test('chat theft does not cancel another active DM wizard', async () => {
   await text('вор', 1, true);
   assert.deepEqual(db.player().itemDraft, { step: 'custom', itemKind: 'referral_case' });
 });
+
+
+test('dealer view never prints fractional KC for the reported 126579904.12 balance', async () => {
+  const f = await fixture();
+  await f.send({ kind: 'profile' }, 312631501);
+  f.db.player(312631501).name = 'xxxx';
+  f.db.state.dealer.holderId = 312631501;
+  f.db.state.dealer.earnedKC = 12_657_990_412;
+  const reply = await f.text('крупье', 1, true);
+  assert.equal(reply.text, '🤑 Крупье: [id312631501|xxxx] (заработал: 126.579.904 KC)');
+  f.restart();
+  assert.equal((await f.text('крупье', 1, true)).text, reply.text);
+  f.db.state.dealer.earnedKC = 12_657_990_450;
+  assert.equal((await f.text('крупье', 1, true)).text, '🤑 Крупье: [id312631501|xxxx] (заработал: 126.579.905 KC)');
+});

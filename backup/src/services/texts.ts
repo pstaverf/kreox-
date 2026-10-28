@@ -81,7 +81,10 @@ export function formatAmount(amount: number, scale: number, minimumDecimals = 0)
   return fraction.length > 0 ? `${whole},${fraction}` : whole;
 }
 
-export function formatKc(amount: number): string { return formatAmount(roundKc(amount), game.kcScale); }
+export function formatKc(amount: number): string {
+  const coins = BigInt(roundKc(amount)) / BigInt(game.kcScale);
+  return coins.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+}
 
 export function wholeKcNotice(text: string, previous: number): string {
   const old = formatAmount(previous, game.kcScale);

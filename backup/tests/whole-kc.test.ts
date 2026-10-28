@@ -180,3 +180,14 @@ test('legacy dice credits round KC once and keep exact EUR/BTC payouts', async (
     assert.equal(await settleDice(db), 0);
   }
 });
+
+
+test('KC text is strictly whole coins for the reported balance, sub-coin values and safe limits', () => {
+  for (const value of [0, 12, 49, 50, 99, 100, 12_657_990_412, 12_657_990_450, game.maxAmount]) {
+    const text = formatKc(value);
+    assert.match(text, /^\d{1,3}(?:\.\d{3})*$/u);
+    assert.equal(BigInt(text.replaceAll('.', '')) * BigInt(game.kcScale), BigInt(roundKc(value)));
+  }
+  assert.equal(formatKc(12_657_990_412), '126.579.904');
+  assert.equal(formatKc(12_657_990_450), '126.579.905');
+});

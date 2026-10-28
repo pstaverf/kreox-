@@ -293,7 +293,8 @@ function formatAmount(amount, scale, minimumDecimals = 0) {
   return fraction.length > 0 ? `${whole},${fraction}` : whole;
 }
 function formatKc(amount) {
-  return formatAmount(roundKc(amount), game.kcScale);
+  const coins = BigInt(roundKc(amount)) / BigInt(game.kcScale);
+  return coins.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
 }
 function wholeKcNotice(text, previous) {
   const old = formatAmount(previous, game.kcScale);
