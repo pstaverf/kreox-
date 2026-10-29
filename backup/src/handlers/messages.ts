@@ -1,0 +1,114 @@
+import type { MessagePhotoResolver } from '../types/message-photos.js';
+import { isGiveawayAdminCommand, isGiveawayCommand } from '../services/giveaway-rules.js';
+import { loadChatMembers } from './chat-members.js';
+import { isAdminItemCommand } from '../services/item-rules.js';
+import { randomInt } from 'node:crypto';
+import { setTimeout } from 'node:timers/promises';
+import { ExecuteError, type MessageContext, type VK } from 'vk-io';
+import { adminIds, keyboardResetAdminId } from '../config/admin.js';
+import type { GameService } from '../services/game.js';
+import { texts } from '../services/texts.js';
+import { logError } from '../utils/log.js';
+import { isPositiveId } from '../utils/validation.js';
+import { game as limits } from '../config/game.js';
+import type { PreparedReply, Reply } from '../types/game.js';
+import { parseCommand, parseReferrer } from './commands.js';
+import { buildKeyboard } from './keyboards.js';
+
+export async function sendReply(vk: VK, peerId: number, randomId: number, reply: Reply, clearKeyboard = false): Promise<void> {
+  if (reply.text.length > limits.maxMessageLength) {
+    throw new Error('Reply is too long');
+  }
+  const params = {
+    peer_id: peerId,
+    random_id: randomId,
+    message: reply.text,
+    ...(reply.attachment === undefined ? {} : { attachment: reply.attachment }),
+    ...(reply.keyboard.kind === 'none' && !clearKeyboard ? {} : { keyboard: buildKeyboard(reply.keyboard).toString() }),
+    disable_mentions: true,
+    dont_parse_links: true
+  };
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await vk.api.messages.send(params);
+      return;
+    } catch (error: unknown) {
+      if (!(error instanceof ExecuteError) || error.code !== 6 || attempt >= 2) {
+        throw error;
+      }
+      await setTimeout(1_000 * (attempt + 1));
+    }
+  }
+}
+
+export function createMessageHandler(vk: VK, game: GameService, groupId: number, wakeNotifications?: () => void, resolvePhoto?: MessagePhotoResolver): (context: MessageContext) => Promise<void> {
+  return async context => {
+    if (context.isOutbox || context.isEvent || !isPositiveId(context.senderId)) {
+      return;
+    }
+    const messageId = context.conversationMessageId;
+    if (messageId === undefined || !isPositiveId(messageId) || messageId > limits.maxRandomId || !isPositiveId(context.peerId)) {
+      logError('invalid_message_identity', new Error('Invalid message identity'));
+      return;
+    }
+    const eventId = `${groupId}:${context.peerId}:${messageId}`;
+    let reply: PreparedReply;
+    try {
+      if (!context.isChat && context.text?.trim().toLowerCase() === 'вор') return;
+      const payload: unknown = context.messagePayload;
+      const command = parseCommand(context.text, payload, context.isChat);
+      if ((command.kind === 'boss_create' || command.kind === 'boss_invalid') && !adminIds.has(context.senderId)) return;
+      if (isGiveawayCommand(command) && (!context.isChat || (isGiveawayAdminCommand(command) && !adminIds.has(context.senderId)))) return;
+      if ((command.kind === 'mailing' || command.kind === 'mailing_invalid') && !adminIds.has(context.senderId)) return;
+      if (isAdminItemCommand(command) && !adminIds.has(context.senderId)) {
+        return;
+      }
+      if ((command.kind === 'admin_balance' || command.kind === 'admin_balance_invalid') && !adminIds.has(context.senderId)) {
+        return;
+      }
+      if (command.kind === 'delete_keyboards' && (!context.isChat || context.senderId !== keyboardResetAdminId)) {
+        return;
+      }
+      if (context.isChat && command.kind === 'development') {
+        return;
+      }
+      const replySenderId = context.replyMessage?.senderId;
+      const referrerId = context.isChat ? undefined : parseReferrer(context.referralValue, context.senderId);
+      reply = await game.handle({
+        eventId,
+        vkId: context.senderId,
+        peerId: context.peerId,
+        command,
+        ...(replySenderId === undefined ? {} : { replySenderId }),
+        ...(payload === undefined || payload === null ? {} : { hasPayload: true }),
+        ...(context.text === undefined ? {} : { text: context.text }),
+        ...(context.isChat ? { isChat: true } : {}),
+        ...(referrerId === undefined ? {} : { referrerId })
+      }, async () => {
+        const users = await vk.api.users.get({ user_ids: [context.senderId] });
+        const user = users[0];
+        if (user === undefined || user.id !== context.senderId) {
+          throw new Error('VK user is unavailable');
+        }
+        return user.first_name;
+      }, () => loadChatMembers(vk, context.peerId, groupId), wakeNotifications);
+    } catch (error: unknown) {
+      logError('message_processing', error, { eventId, vkId: context.senderId });
+      try {
+        await sendReply(vk, context.peerId, -randomInt(1, limits.maxRandomId + 1), { text: texts.error, keyboard: { kind: context.isChat ? 'none' : 'main' } }, context.isChat);
+      } catch (sendError: unknown) {
+        logError('error_reply', sendError, { eventId });
+      }
+      return;
+    }
+    try {
+      if (reply.photoUrl !== undefined && resolvePhoto !== undefined) {
+        const attachment = await resolvePhoto(context.peerId, reply.photoUrl);
+        if (attachment !== null) reply = { ...reply, attachment };
+      }
+      if (reply.text.length > 0) await sendReply(vk, context.peerId, reply.randomId, reply, context.isChat);
+    } catch (error: unknown) {
+      logError('vk_reply', error, { eventId, vkId: context.senderId });
+    }
+  };
+}
