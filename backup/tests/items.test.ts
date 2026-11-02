@@ -505,6 +505,17 @@ test('giveitem accepts every current item catalog ID including Aristocrat case I
 });
 
 
+test('inventory IDs are arranged four across in sequential rows with navigation kept separate', () => {
+  const value: unknown = JSON.parse(buildKeyboard({ kind: 'inventory', itemIds: [19, 20, 21, 22, 23, 24, 25, 26], page: 1, hasNext: true }).toString());
+  assert.ok(isRecord(value) && Array.isArray(value.buttons));
+  const rowLabels = (row: unknown): unknown[] => Array.isArray(row)
+    ? row.map((button: unknown) => isRecord(button) && isRecord(button.action) ? button.action.label : null) : [];
+  const labels = value.buttons.slice(0, 2).map(rowLabels);
+  assert.deepEqual(labels, [['🆔 19', '🆔 20', '🆔 21', '🆔 22'], ['🆔 23', '🆔 24', '🆔 25', '🆔 26']]);
+  assert.deepEqual(rowLabels(value.buttons[2]), ['◀️', '▶️']);
+  assert.deepEqual(rowLabels(value.buttons[3]), ['↩️ Назад']);
+});
+
 test('activation confirmation is a VK inline text button carrying only the validated identity-bound payload', () => {
   const keyboard: unknown = JSON.parse(buildKeyboard({ kind: 'item_confirmation', mode: 'activate', token: 'event-1' }).toString());
   assert.ok(isRecord(keyboard) && keyboard.inline === true && Array.isArray(keyboard.buttons));

@@ -3656,7 +3656,10 @@ function buildKeyboard(spec) {
     case "referrals":
       return Keyboard.keyboard([[Keyboard.textButton({ label: labels.back, payload: { command: "profile" } })]]).oneTime(false);
     case "inventory": {
-      const rows = spec.itemIds.map((id) => [Keyboard.textButton({ label: `🆔 ${id}`, payload: { command: "item", itemId: id } })]);
+      const rows = [];
+      for (let index = 0; index < spec.itemIds.length; index += 4) {
+        rows.push(spec.itemIds.slice(index, index + 4).map((id) => Keyboard.textButton({ label: `🆔 ${id}`, payload: { command: "item", itemId: id } })));
+      }
       const navigation = [];
       if (spec.page > 0) {
         navigation.push(Keyboard.textButton({ label: labels.previous, payload: { command: "inventory", page: spec.page - 1 } }));
