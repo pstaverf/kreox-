@@ -533,6 +533,7 @@ test('new passive and active items have the requested catalog entries and exact 
     assert.ok(item);
     const detail = await send({ kind: 'item', itemId: item.itemId });
     assert.ok(detail.text.includes(description));
+    if (kind === 'joker') assert.equal(detail.text, '📒 Предмет "🃏 Джокер" (x1):\n📋 После активации снимает лимит в казино на 10 минут.');
   }
 });
 

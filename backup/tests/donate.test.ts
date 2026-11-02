@@ -245,9 +245,12 @@ test('croupier item ID 3 bypasses global cooldown without consumption and cannot
   const before = structuredClone(db.state.items);
   assert.match((await send({ kind: 'item_open', itemKind: 'croupier', quantity: 1 }, 2)).text, /неограниченно становиться крупье/);
   assert.deepEqual(db.state.items, before);
-  assert.equal((await text('купитькрупье', 2)).text, '[id2|Игрок 2], вы успешно стали новым крупье.');
+  const keyboard: unknown = JSON.parse(buildKeyboard({ kind: 'item_detail', itemKind: 'croupier' }).toString());
+  assert.ok(JSON.stringify(keyboard).includes('✅ Использовать'));
+  const used = await send({ kind: 'item_use', itemKind: 'croupier' }, 2);
+  assert.equal(used.text, '[id2|Игрок 2], вы успешно стали новым крупье.');
   assert.deepEqual(db.state.items, before);
-  assert.equal((await text('купитькрупье', 2)).text, donateTexts.self);
+  assert.equal((await send({ kind: 'item_use', itemKind: 'croupier' }, 2)).text, donateTexts.self);
 });
 
 test('dealer failures and rollback preserve buyer funds, pending payout and current role', async () => {

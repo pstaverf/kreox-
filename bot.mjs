@@ -3382,9 +3382,10 @@ function itemDetails(kind, count, use = false) {
     anti_check: "При активации вас нельзя будет чекнуть на 1 час."
   };
   const description = passive[kind];
-  if (description !== void 0) return `📒 Предмет "${itemName(kind)}" (x${count}):
+  if (description !== void 0) return `📒 Предмет "${itemName(kind)}" (x${count}):${kind === "joker" ? `
+📋 ${description}` : `
 
-${description}`;
+${description}`}`;
   return (use ? `«${itemName(kind)}» (доступно: ${count} шт.):` : `📒 Предмет "${itemName(kind)}" (x${count}):`) + `
 Может выпасть:
 
@@ -3534,7 +3535,7 @@ function buildKeyboard(spec) {
     }
     case "item_detail":
       return Keyboard.keyboard([
-        ...spec.itemKind === "croupier" ? [] : [[Keyboard.textButton({ label: itemLabels.use, payload: { command: "item_use", itemKind: spec.itemKind } })]],
+        [Keyboard.textButton({ label: itemLabels.use, payload: { command: "item_use", itemKind: spec.itemKind } })],
         [
           Keyboard.textButton({ label: itemLabels.sell, payload: { command: "item_sell", itemKind: spec.itemKind } }),
           Keyboard.textButton({ label: itemLabels.gift, payload: { command: "item_gift", itemKind: spec.itemKind } })
@@ -5720,422 +5721,9 @@ async function casinoAction(store, player, command, input, random) {
   return { text: parts[0] ?? "", keyboard: { kind: "none" } };
 }
 
-// src/services/items.ts
-async function resolveStoredTarget(store, target, resolved) {
-  switch (target.kind) {
-    case "number":
-      return await store.playerByAccountId(target.id) ?? await store.player(target.id);
-    case "vk":
-      return store.player(target.id);
-    case "screen":
-      return resolved === void 0 ? "target" : resolved === null ? null : store.player(resolved);
-    default:
-      return assertNever(target);
-  }
-}
-var back = (text, kind) => ({ text, keyboard: { kind: "item_back", itemKind: kind } });
-async function adminItems(store, command) {
-  const reply3 = (text) => ({ text, keyboard: { kind: "none" } });
-  if (command.kind === "admin_itemlist") {
-    return reply3(itemCatalogText());
-  }
-  if (command.kind === "admin_item_invalid") {
-    return reply3(itemTexts.adminUsage);
-  }
-  const entry = itemConfig.catalog.find((item) => item.id === command.catalogId);
-  if (entry === void 0 || command.target.kind === "screen" || !validItemQuantity(command.quantity) || command.operation === "take" && command.quantity !== 1) {
-    return reply3(itemTexts.adminUsage);
-  }
-  const receiver = await resolveStoredTarget(store, command.target, void 0);
-  if (receiver === null || receiver === "target") {
-    return reply3(itemTexts.missing);
-  }
-  const success = command.operation === "give" ? await store.grantItems(receiver._id, entry.kind, command.quantity) : await store.removeItems(receiver._id, entry.kind, 1, await store.now());
-  return reply3(success ? itemTexts.done : command.operation === "take" ? itemTexts.none : itemTexts.limit);
-}
-async function unavailableText(store, player, kind, now) {
-  return await store.hasReservedItems(player._id, kind, now) ? itemTexts.reserved : itemTexts.none;
-}
-async function itemView(store, player, itemKind, use = false, eventId) {
-  const now = await store.now();
-  const count = await store.itemCount(player._id, itemKind, now);
-  if (count === 0) return { text: await unavailableText(store, player, itemKind, now), keyboard: { kind: "profile" } };
-  if (use && itemKind === "dice") return { text: "🎲 Этот предмет пассивный. Ваша комиссия в костях уже равна 1%.", keyboard: { kind: "item_back", itemKind } };
-  if (use && itemKind === "croupier") return { text: "📋 Пока в инвентаре, вы можете неограниченно становиться крупье.", keyboard: { kind: "item_back", itemKind } };
-  if (use && itemKind === "vpn") {
-    if (player.hiddenFromRanking === true) return { text: "Теперь вы не отображаетесь в топе.", keyboard: { kind: "item_back", itemKind } };
-    if (eventId === void 0 || eventId.length === 0 || eventId.length > 200) throw new Error("Missing VPN activation event ID");
-    await store.setItemDraft(player._id, { step: "activate_confirm", itemKind, token: eventId });
-    return { text: `✅ Вы точно хотите использовать предмет:"${itemName(itemKind)}"?`, keyboard: { kind: "item_confirmation", mode: "activate", token: eventId } };
-  }
-  if (use && (itemKind === "joker" || itemKind === "anti_check")) {
-    if (eventId === void 0 || eventId.length === 0 || eventId.length > 200) throw new Error("Missing item activation event ID");
-    const token = eventId;
-    await store.setItemDraft(player._id, { step: "activate_confirm", itemKind, token });
-    return { text: `✅ Вы точно хотите использовать предмет:"${itemName(itemKind)}"?`, keyboard: { kind: "item_confirmation", mode: "activate", token } };
-  }
-  return { text: itemDetails(itemKind, count, use && itemKind !== "croupier"), keyboard: { kind: use ? "item_use" : "item_detail", itemKind } };
-}
-async function open(store, player, kind, quantity, roll) {
-  if (!isOpenableCase(kind)) return itemView(store, player, kind);
-  if (!validItemQuantity(quantity)) {
-    return back(itemTexts.badQuantity, kind);
-  }
-  const now = await store.now();
-  if (await store.itemCount(player._id, kind, now) < quantity) {
-    return back(await unavailableText(store, player, kind, now), kind);
-  }
-  const rewards = caseRewards(quantity, roll, kind);
-  const result = await store.openItems(player, kind, quantity, rewards, now);
-  if (result !== "ok") {
-    return back(result === "items" ? await unavailableText(store, player, kind, now) : itemTexts.limit, kind);
-  }
-  await store.setItemDraft(player._id, null);
-  return { text: caseResultText(player, rewards, kind), keyboard: { kind: "item_use", itemKind: kind } };
-}
-async function itemAction(store, player, command, input, roll) {
-  switch (command.kind) {
-    case "item_detail":
-    case "item_use":
-      await store.setItemDraft(player._id, null);
-      return itemView(store, player, command.itemKind, command.kind === "item_use", input.eventId);
-    case "item_activate_confirm": {
-      const draft = player.itemDraft;
-      if (draft?.step !== "activate_confirm" || draft.token !== command.token) return { text: itemTexts.stale, keyboard: { kind: "profile" } };
-      const now = await store.now();
-      if (draft.itemKind === "vpn") {
-        if (await store.itemCount(player._id, "vpn", now) === 0) return back(await unavailableText(store, player, "vpn", now), "vpn");
-        await store.hideFromRanking(player._id);
-        await store.setItemDraft(player._id, null);
-        return back("Теперь вы не отображаетесь в топе.", "vpn");
-      }
-      if (draft.itemKind !== "joker" && draft.itemKind !== "anti_check") return { text: itemTexts.stale, keyboard: { kind: "profile" } };
-      if (!await store.removeItems(player._id, draft.itemKind, 1, now)) return back(await unavailableText(store, player, draft.itemKind, now), draft.itemKind);
-      const duration = draft.itemKind === "joker" ? itemConfig.jokerDurationMs : itemConfig.antiCheckDurationMs;
-      const currentUntil = draft.itemKind === "joker" ? player.jokerUntil : player.antiCheckUntil;
-      const startsAt = Math.max(now.getTime(), currentUntil?.getTime() ?? 0);
-      await store.setTimedItemEffect(player._id, draft.itemKind, new Date(startsAt + duration));
-      await store.setItemDraft(player._id, null);
-      return back(draft.itemKind === "joker" ? "Ваши лимиты в казино больше не ограничены." : "Теперь вас нельзя чекнуть в течение 1 часа.", draft.itemKind);
-    }
-    case "item_custom":
-    case "item_gift":
-    case "item_sell": {
-      if (command.kind === "item_custom" && !isOpenableCase(command.itemKind)) return itemView(store, player, command.itemKind);
-      const now = await store.now();
-      const count = await store.itemCount(player._id, command.itemKind, now);
-      if (count === 0) {
-        return back(await unavailableText(store, player, command.itemKind, now), command.itemKind);
-      }
-      const draft = command.kind === "item_custom" ? { step: "custom", itemKind: command.itemKind } : { step: "target", itemKind: command.itemKind, mode: command.kind === "item_gift" ? "gift" : "sale" };
-      await store.setItemDraft(player._id, draft);
-      return back(command.kind === "item_custom" ? itemTexts.custom : itemTexts.target, command.itemKind);
-    }
-    case "item_open":
-      if (![1, 5, 10].includes(command.quantity)) {
-        return back(itemTexts.badQuantity, command.itemKind);
-      }
-      return open(store, player, command.itemKind, command.quantity, roll);
-    case "item_open_confirm": {
-      const draft = player.itemDraft;
-      if (draft?.step !== "open_confirm" || draft.token !== command.token) {
-        return { text: itemTexts.stale, keyboard: { kind: "profile" } };
-      }
-      return open(store, player, draft.itemKind, draft.quantity, roll);
-    }
-    case "item_confirm": {
-      const draft = player.itemDraft;
-      if (draft?.step !== "gift_confirm" && draft?.step !== "sale_confirm" || draft.token !== command.token || !validItemQuantity(draft.quantity) || draft.targetId === player._id) {
-        return { text: itemTexts.stale, keyboard: { kind: "profile" } };
-      }
-      const target = await store.player(draft.targetId);
-      if (target === null) {
-        return back(itemTexts.missing, draft.itemKind);
-      }
-      const now = await store.now();
-      if (draft.step === "gift_confirm") {
-        const result = await store.giftItems(player, target, draft.itemKind, draft.quantity, now);
-        if (result !== "ok") {
-          return back(result === "items" ? await unavailableText(store, player, draft.itemKind, now) : itemTexts.limit, draft.itemKind);
-        }
-        await store.enqueueItemNotification(
-          `gift:${input.eventId}`,
-          target._id,
-          giftReceivedText(player, draft.itemKind, draft.quantity),
-          { kind: "none" }
-        );
-        await store.setItemDraft(player._id, null);
-        return back(giftSentText(target, draft.itemKind, draft.quantity), draft.itemKind);
-      }
-      const offer = {
-        _id: input.eventId,
-        sellerId: player._id,
-        buyerId: target._id,
-        itemKind: draft.itemKind,
-        quantity: draft.quantity,
-        price: draft.price,
-        expiresAt: new Date(now.getTime() + itemConfig.offerDurationMs),
-        state: "pending"
-      };
-      if (!await store.reserveOffer(offer, now)) {
-        return back(await unavailableText(store, player, draft.itemKind, now), draft.itemKind);
-      }
-      await store.enqueueItemNotification(`offer:${offer._id}`, target._id, offerText(player, offer), { kind: "item_offer", offerId: offer._id });
-      await store.setItemDraft(player._id, null);
-      return back(itemTexts.sent, draft.itemKind);
-    }
-    case "item_buy": {
-      const offer = await store.itemOffer(command.offerId);
-      if (offer === null || offer.buyerId !== player._id || offer.state !== "pending") {
-        return { text: itemTexts.invalidOffer, keyboard: { kind: "profile" } };
-      }
-      const seller = await store.player(offer.sellerId);
-      if (seller === null) {
-        return { text: itemTexts.invalidOffer, keyboard: { kind: "profile" } };
-      }
-      const result = await store.purchaseOffer(offer, player, seller, await store.now());
-      if (result !== "ok") {
-        const text = result === "funds" ? itemTexts.funds : result === "expired" ? itemTexts.expired : result === "invalid" ? itemTexts.invalidOffer : result === "items" ? itemTexts.none : itemTexts.limit;
-        return { text, keyboard: { kind: "profile" } };
-      }
-      await store.enqueueItemNotification(`sold:${offer._id}`, seller._id, soldText(player, offer), { kind: "item_back", itemKind: offer.itemKind });
-      return { text: boughtText(player), keyboard: { kind: "profile" } };
-    }
-    default:
-      return assertNever(command);
-  }
-}
-async function itemText(store, player, draft, input, resolved) {
-  const text = input.text?.trim() ?? "";
-  if (/^(отменить|отмена)$/i.test(text)) {
-    await store.setItemDraft(player._id, null);
-    return { text: itemTexts.cancelled, keyboard: { kind: "main" } };
-  }
-  switch (draft.step) {
-    case "custom": {
-      const quantity = parsePromoInteger(text);
-      if (quantity === null || !validItemQuantity(quantity)) {
-        return back(itemTexts.badQuantity, draft.itemKind);
-      }
-      const now = await store.now();
-      if (await store.itemCount(player._id, draft.itemKind, now) < quantity) {
-        return back(await unavailableText(store, player, draft.itemKind, now), draft.itemKind);
-      }
-      await store.setItemDraft(player._id, { step: "open_confirm", itemKind: draft.itemKind, quantity, token: input.eventId });
-      return { text: itemTexts.ready, keyboard: { kind: "item_confirmation", mode: "open", token: input.eventId } };
-    }
-    case "target": {
-      const parsed = parsePlayerTarget(text);
-      if (parsed === null) {
-        return back(itemTexts.missing, draft.itemKind);
-      }
-      const target = await resolveStoredTarget(store, parsed, resolved);
-      if (target === "target") {
-        return "target";
-      }
-      if (target === null || target._id === player._id) {
-        return back(target === null ? itemTexts.missing : itemTexts.self, draft.itemKind);
-      }
-      await store.setItemDraft(player._id, { ...draft, step: "quantity", targetId: target._id });
-      return back(itemQuantityText(await store.itemCount(player._id, draft.itemKind, await store.now())), draft.itemKind);
-    }
-    case "quantity": {
-      const quantity = parsePromoInteger(text);
-      if (quantity === null || !validItemQuantity(quantity)) {
-        return back(itemTexts.badQuantity, draft.itemKind);
-      }
-      const now = await store.now();
-      if (await store.itemCount(player._id, draft.itemKind, now) < quantity) {
-        return back(await unavailableText(store, player, draft.itemKind, now), draft.itemKind);
-      }
-      if (draft.mode === "sale") {
-        await store.setItemDraft(player._id, { step: "price", itemKind: draft.itemKind, quantity, targetId: draft.targetId });
-        return back(itemTexts.price, draft.itemKind);
-      }
-      await store.setItemDraft(player._id, { step: "gift_confirm", itemKind: draft.itemKind, targetId: draft.targetId, quantity, token: input.eventId });
-      return { text: itemTexts.giftConfirm, keyboard: { kind: "item_confirmation", mode: "gift", token: input.eventId } };
-    }
-    case "price": {
-      const price = parseItemPrice(text);
-      if (price === null) {
-        return back(itemTexts.badPrice, draft.itemKind);
-      }
-      await store.setItemDraft(player._id, { ...draft, step: "sale_confirm", price, token: input.eventId });
-      return { text: itemTexts.saleConfirm, keyboard: { kind: "item_confirmation", mode: "sale", token: input.eventId } };
-    }
-    case "activate_confirm":
-      return { text: `✅ Вы точно хотите использовать предмет:"${itemName(draft.itemKind)}"?`, keyboard: { kind: "item_confirmation", mode: "activate", token: draft.token } };
-    case "open_confirm":
-      return { text: itemTexts.ready, keyboard: { kind: "item_confirmation", mode: "open", token: draft.token } };
-    case "gift_confirm":
-      return { text: itemTexts.giftConfirm, keyboard: { kind: "item_confirmation", mode: "gift", token: draft.token } };
-    case "sale_confirm":
-      return { text: itemTexts.saleConfirm, keyboard: { kind: "item_confirmation", mode: "sale", token: draft.token } };
-    default:
-      return assertNever(draft);
-  }
-}
-
-// src/services/bank.ts
-var back2 = (text, destination = "bank") => ({ text, keyboard: { kind: "bank_back", destination } });
-async function depositMenu(store, player) {
-  return { text: bankTexts.deposits, keyboard: { kind: "bank_deposits", depositIds: (await store.deposits(player._id)).map((deposit) => deposit.depositId) } };
-}
-async function savings(store, player, now) {
-  const state = settleSavings(player.savingsBalance ?? 0, player.savingsSince ?? now, now);
-  if (!await store.saveSavings(player, state.balance, state.since, 0)) throw new Error("Savings update failed");
-  return state;
-}
-async function transfer(store, sender, receiver, currency, amount, input) {
-  if (!safeBankMoney(amount) || amount <= 0) return back2(bankTexts.invalid, "bank_transfer_menu");
-  if (sender._id === receiver._id) return back2(bankTexts.self, "bank_transfer_menu");
-  if (sender[currency] < amount) return back2(currency === "kc" ? bankTexts.funds : bankTexts.fundsCurrency, "bank_transfer_menu");
-  const net = transferNet(amount, currency);
-  if (!await store.transferMoney(sender, receiver, currency, amount, net)) return back2(bankTexts.limit, "bank_transfer_menu");
-  await store.enqueueItemNotification(`transfer:${input.eventId}`, receiver._id, transferReceivedText(sender, net, currency), { kind: "none" });
-  if (!input.isChat) await store.setBankDraft(sender._id, null);
-  return { text: transferSuccessText(receiver, net, currency, input.isChat ?? false), keyboard: { kind: input.isChat ? "none" : "bank_transfer_menu" } };
-}
-async function selectDepositAmount(store, player, amount, token) {
-  amount = roundKc(amount);
-  if (!safeBankMoney(amount) || amount <= 0) return back2(bankTexts.invalid, "bank_deposits");
-  if (amount > bankConfig.maxDeposit) return back2(bankTexts.depositMax, "bank_deposits");
-  if (amount > player.kc) return back2(bankTexts.funds, "bank_deposits");
-  await store.setBankDraft(player._id, { step: "deposit_days", amount, token });
-  return { text: bankTexts.depositTerm, keyboard: { kind: "bank_deposit_term", token } };
-}
-async function bankAction(store, player, command, input, resolved, random) {
-  const now = await store.now();
-  if (["city", "bank", "bank_savings", "bank_deposit_money", "bank_withdraw_money", "bank_transfer_menu", "bank_currency", "bank_deposits", "bank_deposit_create", "bank_deposit", "bank_pension"].some((kind) => kind === command.kind)) await store.setBankDraft(player._id, null);
-  switch (command.kind) {
-    case "city":
-      return { text: bankTexts.city, keyboard: { kind: "city" } };
-    case "bank":
-      return { text: bankTexts.bank, keyboard: { kind: "bank" } };
-    case "bank_savings":
-      return { text: savingsText((await savings(store, player, now)).balance), keyboard: { kind: "bank_savings" } };
-    case "bank_deposit_money":
-    case "bank_withdraw_money": {
-      const state = await savings(store, player, now);
-      const direction = command.kind === "bank_deposit_money" ? "in" : "out";
-      await store.setBankDraft(player._id, { step: "savings_amount", direction });
-      return back2(savingsPrompt(player, state.balance, direction), "bank_savings");
-    }
-    case "bank_transfer_menu":
-      return { text: bankTexts.transfer, keyboard: { kind: "bank_transfer_menu" } };
-    case "bank_currency":
-      await store.setBankDraft(player._id, { step: "transfer_target", currency: command.currency });
-      return back2(bankTexts.target, "bank_transfer_menu");
-    case "bank_transfer_invalid":
-      return back2(bankTexts.usage, "bank_transfer_menu");
-    case "bank_transfer": {
-      const target = command.target ?? (input.replySenderId !== void 0 && isPositiveId(input.replySenderId) ? { kind: "vk", id: input.replySenderId } : null);
-      if (target === null) return back2(bankTexts.usage, "bank_transfer_menu");
-      const receiver = await resolveStoredTarget(store, target, resolved);
-      if (receiver === "target") return "target";
-      return receiver === null ? back2(bankTexts.missing, "bank_transfer_menu") : transfer(store, player, receiver, command.currency, command.amount, input);
-    }
-    case "bank_pension": {
-      const age = player.registeredAt === void 0 ? 0 : bankDays(player.registeredAt, now);
-      if (age < bankConfig.pensionMinDays) return back2(bankTexts.young);
-      if (player.nextPensionAt !== void 0 && player.nextPensionAt > now) return back2(pensionWaitText(player.nextPensionAt.getTime() - now.getTime()));
-      const rewards = age > bankConfig.pensionHighDays ? bankConfig.pensionHigh : bankConfig.pensionBasic;
-      const reward = rewards[random(rewards.length)];
-      if (reward === void 0) throw new Error("Invalid pension roll");
-      return back2(await store.claimPension(player, reward * game.kcScale, now) ? pensionSuccessText(reward * game.kcScale) : bankTexts.limit);
-    }
-    case "bank_deposits":
-      return depositMenu(store, player);
-    case "bank_deposit_create":
-      if ((await store.deposits(player._id)).length >= bankConfig.maxDeposits) return back2(bankTexts.depositLimit, "bank_deposits");
-      await store.setBankDraft(player._id, { step: "deposit_amount" });
-      return { text: bankTexts.depositAmount, keyboard: { kind: "bank_deposit_amount", amounts: depositButtons(player.kc) } };
-    case "bank_deposit_amount":
-      return selectDepositAmount(store, player, command.amount, input.eventId);
-    case "bank_deposit_term": {
-      const draft = player.bankDraft;
-      if (draft?.step !== "deposit_days" || draft.token !== command.token) return back2(bankTexts.stale, "bank_deposits");
-      const created = await store.createDeposit(player, draft.amount, command.days, now);
-      if (created === "funds" || created === "limit") return back2(created === "funds" ? bankTexts.funds : bankTexts.depositLimit, "bank_deposits");
-      return depositMenu(store, player);
-    }
-    case "bank_deposit":
-    case "bank_deposit_early": {
-      const deposit = await store.deposit(player._id, command.depositId);
-      if (deposit === null) return back2(bankTexts.unavailable, "bank_deposits");
-      if (deposit.expiresAt <= now) return back2(await finishDeposit(store, deposit, now) ? bankTexts.ended : bankTexts.limit, "bank_deposits");
-      if (command.kind === "bank_deposit") return { text: depositText(deposit, now), keyboard: { kind: "bank_deposit_early", depositId: deposit.depositId } };
-      const payout = earlyDepositValue(deposit, now);
-      await store.setBankDraft(player._id, { step: "deposit_early", depositId: deposit.depositId, token: input.eventId });
-      return { text: depositEarlyPrompt(deposit, payout), keyboard: { kind: "bank_deposit_confirm", token: input.eventId } };
-    }
-    case "bank_deposit_confirm": {
-      const draft = player.bankDraft;
-      if (draft?.step !== "deposit_early" || draft.token !== command.token) return back2(bankTexts.stale, "bank_deposits");
-      const deposit = await store.deposit(player._id, draft.depositId);
-      if (deposit === null) return back2(bankTexts.unavailable, "bank_deposits");
-      if (deposit.expiresAt <= now) return back2(await finishDeposit(store, deposit, now) ? bankTexts.ended : bankTexts.limit, "bank_deposits");
-      const payout = earlyDepositValue(deposit, now);
-      const balance = player.kc + payout;
-      if (!await store.closeDeposit(player, deposit, payout, now, true)) return back2(bankTexts.limit, "bank_deposits");
-      await store.setBankDraft(player._id, null);
-      return back2(depositEarlySuccessText(deposit, payout, balance), "bank_deposits");
-    }
-    default:
-      return assertNever(command);
-  }
-}
-async function bankText(store, player, draft, input, resolved) {
-  const text = input.text?.trim() ?? "";
-  if (/^(отмена|отменить)$/i.test(text)) {
-    await store.setBankDraft(player._id, null);
-    return back2(bankTexts.cancelled);
-  }
-  switch (draft.step) {
-    case "savings_amount": {
-      const amount = parseBankMoney(text, "kc");
-      if (amount === null) return back2(bankTexts.invalid, "bank_savings");
-      const now = await store.now();
-      const state = settleSavings(player.savingsBalance ?? 0, player.savingsSince ?? now, now);
-      if (draft.direction === "in" && player.kc < amount || draft.direction === "out" && state.balance < amount) return back2(bankTexts.funds, "bank_savings");
-      const delta = draft.direction === "in" ? -amount : amount;
-      const wallet = player.kc + delta;
-      const balance = state.balance - delta;
-      if (!safeBankMoney(wallet) || !safeBankMoney(balance)) return back2(bankTexts.limit, "bank_savings");
-      if (!await store.saveSavings(player, balance, now, delta)) return back2(bankTexts.limit, "bank_savings");
-      await store.setBankDraft(player._id, null);
-      return { text: savingsResult(wallet, balance), keyboard: { kind: "bank_savings" } };
-    }
-    case "transfer_target": {
-      const target = parsePlayerTarget(text);
-      if (target === null) return back2(bankTexts.missing, "bank_transfer_menu");
-      const receiver = await resolveStoredTarget(store, target, resolved);
-      if (receiver === "target") return "target";
-      if (receiver === null || receiver._id === player._id) return back2(receiver === null ? bankTexts.missing : bankTexts.self, "bank_transfer_menu");
-      await store.setBankDraft(player._id, { step: "transfer_amount", targetId: receiver._id, currency: draft.currency });
-      return back2(transferPrompt(player, receiver, draft.currency), "bank_transfer_menu");
-    }
-    case "transfer_amount": {
-      const amount = parseBankMoney(text, draft.currency);
-      if (amount === null) return back2(bankTexts.invalid, "bank_transfer_menu");
-      const receiver = await store.player(draft.targetId);
-      return receiver === null ? back2(bankTexts.missing, "bank_transfer_menu") : transfer(store, player, receiver, draft.currency, amount, input);
-    }
-    case "deposit_amount": {
-      const amount = parseBankMoney(text, "kc");
-      return amount === null ? back2(bankTexts.invalid, "bank_deposits") : selectDepositAmount(store, player, amount, input.eventId);
-    }
-    case "deposit_days":
-    case "deposit_early":
-      return back2(bankTexts.stale, "bank_deposits");
-    default:
-      return assertNever(draft);
-  }
-}
-
 // src/services/donate.ts
 var main = (text) => ({ text, keyboard: { kind: "main" } });
-var back3 = (text) => ({ text, keyboard: { kind: "donate_back" } });
+var back = (text) => ({ text, keyboard: { kind: "donate_back" } });
 var confirm = (text, token, inline = false) => ({ text, keyboard: { kind: "donate_confirmation", token, inline } });
 async function donateText(store, player, draft, input) {
   if (/^(отмена|отменить)$/i.test(input.text?.trim() ?? "")) {
@@ -6143,12 +5731,12 @@ async function donateText(store, player, draft, input) {
     return main(donateTexts.cancelled);
   }
   if (draft.step !== "nickname") {
-    return draft.step === "confirm_nickname" ? confirm(`Вы уверены, что хотите сменить свой ник на: ${draft.nickname}?`, draft.token) : back3(donateTexts.stale);
+    return draft.step === "confirm_nickname" ? confirm(`Вы уверены, что хотите сменить свой ник на: ${draft.nickname}?`, draft.token) : back(donateTexts.stale);
   }
   const nickname = input.text?.trim() ?? "";
   const length = [...new Intl.Segmenter("ru", { granularity: "grapheme" }).segment(nickname)].length;
-  if (length < donateConfig.nicknameMin || length > donateConfig.nicknameMax) return back3(donateTexts.length);
-  if (!validNickname(nickname)) return back3(donateTexts.unsafe);
+  if (length < donateConfig.nicknameMin || length > donateConfig.nicknameMax) return back(donateTexts.length);
+  if (!validNickname(nickname)) return back(donateTexts.unsafe);
   await store.setDonateDraft(player._id, { step: "confirm_nickname", nickname, token: input.eventId });
   return confirm(`Вы уверены, что хотите сменить свой ник на: ${nickname}?`, input.eventId);
 }
@@ -6189,18 +5777,18 @@ async function donateAction(store, player, command, input, members, random) {
       return { text: "⏳ Подписки:", keyboard: { kind: "donate_subscriptions" } };
     case "donate_nick":
       await store.setDonateDraft(player._id, { step: "nickname" });
-      return back3(nicknamePrompt(player));
+      return back(nicknamePrompt(player));
     case "donate_thief":
       if (player.thiefUntil !== void 0 && player.thiefUntil > now) {
         await store.setDonateDraft(player._id, null);
-        return back3(subscriptionText(player.thiefUntil, false));
+        return back(subscriptionText(player.thiefUntil, false));
       }
       await store.setDonateDraft(player._id, { step: "confirm_thief", token: input.eventId });
       return confirm(thiefPrompt(player), input.eventId);
     case "donate_check":
       if (player.checkUntil !== void 0 && player.checkUntil > now) {
         await store.setDonateDraft(player._id, null);
-        return back3(checkPrompt(player, player.checkUntil));
+        return back(checkPrompt(player, player.checkUntil));
       }
       await store.setDonateDraft(player._id, { step: "confirm_check", token: input.eventId });
       return confirm(checkPrompt(player), input.eventId);
@@ -6261,6 +5849,423 @@ async function donateAction(store, player, command, input, members, random) {
     }
     default:
       return assertNever(command);
+  }
+}
+
+// src/services/items.ts
+async function resolveStoredTarget(store, target, resolved) {
+  switch (target.kind) {
+    case "number":
+      return await store.playerByAccountId(target.id) ?? await store.player(target.id);
+    case "vk":
+      return store.player(target.id);
+    case "screen":
+      return resolved === void 0 ? "target" : resolved === null ? null : store.player(resolved);
+    default:
+      return assertNever(target);
+  }
+}
+var back2 = (text, kind) => ({ text, keyboard: { kind: "item_back", itemKind: kind } });
+async function adminItems(store, command) {
+  const reply3 = (text) => ({ text, keyboard: { kind: "none" } });
+  if (command.kind === "admin_itemlist") {
+    return reply3(itemCatalogText());
+  }
+  if (command.kind === "admin_item_invalid") {
+    return reply3(itemTexts.adminUsage);
+  }
+  const entry = itemConfig.catalog.find((item) => item.id === command.catalogId);
+  if (entry === void 0 || command.target.kind === "screen" || !validItemQuantity(command.quantity) || command.operation === "take" && command.quantity !== 1) {
+    return reply3(itemTexts.adminUsage);
+  }
+  const receiver = await resolveStoredTarget(store, command.target, void 0);
+  if (receiver === null || receiver === "target") {
+    return reply3(itemTexts.missing);
+  }
+  const success = command.operation === "give" ? await store.grantItems(receiver._id, entry.kind, command.quantity) : await store.removeItems(receiver._id, entry.kind, 1, await store.now());
+  return reply3(success ? itemTexts.done : command.operation === "take" ? itemTexts.none : itemTexts.limit);
+}
+async function unavailableText(store, player, kind, now) {
+  return await store.hasReservedItems(player._id, kind, now) ? itemTexts.reserved : itemTexts.none;
+}
+async function itemView(store, player, itemKind, use = false, eventId) {
+  const now = await store.now();
+  const count = await store.itemCount(player._id, itemKind, now);
+  if (count === 0) return { text: await unavailableText(store, player, itemKind, now), keyboard: { kind: "profile" } };
+  if (use && itemKind === "dice") return { text: "🎲 Этот предмет пассивный. Ваша комиссия в костях уже равна 1%.", keyboard: { kind: "item_back", itemKind } };
+  if (use && itemKind === "vpn") {
+    if (player.hiddenFromRanking === true) return { text: "Теперь вы не отображаетесь в топе.", keyboard: { kind: "item_back", itemKind } };
+    if (eventId === void 0 || eventId.length === 0 || eventId.length > 200) throw new Error("Missing VPN activation event ID");
+    await store.setItemDraft(player._id, { step: "activate_confirm", itemKind, token: eventId });
+    return { text: `✅ Вы точно хотите использовать предмет:"${itemName(itemKind)}"?`, keyboard: { kind: "item_confirmation", mode: "activate", token: eventId } };
+  }
+  if (use && (itemKind === "joker" || itemKind === "anti_check")) {
+    if (eventId === void 0 || eventId.length === 0 || eventId.length > 200) throw new Error("Missing item activation event ID");
+    const token = eventId;
+    await store.setItemDraft(player._id, { step: "activate_confirm", itemKind, token });
+    return { text: `✅ Вы точно хотите использовать предмет:"${itemName(itemKind)}"?`, keyboard: { kind: "item_confirmation", mode: "activate", token } };
+  }
+  return { text: itemDetails(itemKind, count, use && itemKind !== "croupier"), keyboard: { kind: use ? "item_use" : "item_detail", itemKind } };
+}
+async function open(store, player, kind, quantity, roll) {
+  if (!isOpenableCase(kind)) return itemView(store, player, kind);
+  if (!validItemQuantity(quantity)) {
+    return back2(itemTexts.badQuantity, kind);
+  }
+  const now = await store.now();
+  if (await store.itemCount(player._id, kind, now) < quantity) {
+    return back2(await unavailableText(store, player, kind, now), kind);
+  }
+  const rewards = caseRewards(quantity, roll, kind);
+  const result = await store.openItems(player, kind, quantity, rewards, now);
+  if (result !== "ok") {
+    return back2(result === "items" ? await unavailableText(store, player, kind, now) : itemTexts.limit, kind);
+  }
+  await store.setItemDraft(player._id, null);
+  return { text: caseResultText(player, rewards, kind), keyboard: { kind: "item_use", itemKind: kind } };
+}
+async function itemAction(store, player, command, input, roll) {
+  switch (command.kind) {
+    case "item_detail":
+    case "item_use":
+      await store.setItemDraft(player._id, null);
+      if (command.kind === "item_use" && command.itemKind === "croupier") {
+        const now = await store.now();
+        if (await store.itemCount(player._id, "croupier", now) === 0) return back2(await unavailableText(store, player, "croupier", now), "croupier");
+        return buyDealer(store, player, now, input.eventId);
+      }
+      return itemView(store, player, command.itemKind, command.kind === "item_use", input.eventId);
+    case "item_activate_confirm": {
+      const draft = player.itemDraft;
+      if (draft?.step !== "activate_confirm" || draft.token !== command.token) return { text: itemTexts.stale, keyboard: { kind: "profile" } };
+      const now = await store.now();
+      if (draft.itemKind === "vpn") {
+        if (await store.itemCount(player._id, "vpn", now) === 0) return back2(await unavailableText(store, player, "vpn", now), "vpn");
+        await store.hideFromRanking(player._id);
+        await store.setItemDraft(player._id, null);
+        return back2("Теперь вы не отображаетесь в топе.", "vpn");
+      }
+      if (draft.itemKind !== "joker" && draft.itemKind !== "anti_check") return { text: itemTexts.stale, keyboard: { kind: "profile" } };
+      if (!await store.removeItems(player._id, draft.itemKind, 1, now)) return back2(await unavailableText(store, player, draft.itemKind, now), draft.itemKind);
+      const duration = draft.itemKind === "joker" ? itemConfig.jokerDurationMs : itemConfig.antiCheckDurationMs;
+      const currentUntil = draft.itemKind === "joker" ? player.jokerUntil : player.antiCheckUntil;
+      const startsAt = Math.max(now.getTime(), currentUntil?.getTime() ?? 0);
+      await store.setTimedItemEffect(player._id, draft.itemKind, new Date(startsAt + duration));
+      await store.setItemDraft(player._id, null);
+      return back2(draft.itemKind === "joker" ? "Ваши лимиты в казино больше не ограничены." : "Теперь вас нельзя чекнуть в течение 1 часа.", draft.itemKind);
+    }
+    case "item_custom":
+    case "item_gift":
+    case "item_sell": {
+      if (command.kind === "item_custom" && !isOpenableCase(command.itemKind)) return itemView(store, player, command.itemKind);
+      const now = await store.now();
+      const count = await store.itemCount(player._id, command.itemKind, now);
+      if (count === 0) {
+        return back2(await unavailableText(store, player, command.itemKind, now), command.itemKind);
+      }
+      const draft = command.kind === "item_custom" ? { step: "custom", itemKind: command.itemKind } : { step: "target", itemKind: command.itemKind, mode: command.kind === "item_gift" ? "gift" : "sale" };
+      await store.setItemDraft(player._id, draft);
+      return back2(command.kind === "item_custom" ? itemTexts.custom : itemTexts.target, command.itemKind);
+    }
+    case "item_open":
+      if (![1, 5, 10].includes(command.quantity)) {
+        return back2(itemTexts.badQuantity, command.itemKind);
+      }
+      return open(store, player, command.itemKind, command.quantity, roll);
+    case "item_open_confirm": {
+      const draft = player.itemDraft;
+      if (draft?.step !== "open_confirm" || draft.token !== command.token) {
+        return { text: itemTexts.stale, keyboard: { kind: "profile" } };
+      }
+      return open(store, player, draft.itemKind, draft.quantity, roll);
+    }
+    case "item_confirm": {
+      const draft = player.itemDraft;
+      if (draft?.step !== "gift_confirm" && draft?.step !== "sale_confirm" || draft.token !== command.token || !validItemQuantity(draft.quantity) || draft.targetId === player._id) {
+        return { text: itemTexts.stale, keyboard: { kind: "profile" } };
+      }
+      const target = await store.player(draft.targetId);
+      if (target === null) {
+        return back2(itemTexts.missing, draft.itemKind);
+      }
+      const now = await store.now();
+      if (draft.step === "gift_confirm") {
+        const result = await store.giftItems(player, target, draft.itemKind, draft.quantity, now);
+        if (result !== "ok") {
+          return back2(result === "items" ? await unavailableText(store, player, draft.itemKind, now) : itemTexts.limit, draft.itemKind);
+        }
+        await store.enqueueItemNotification(
+          `gift:${input.eventId}`,
+          target._id,
+          giftReceivedText(player, draft.itemKind, draft.quantity),
+          { kind: "none" }
+        );
+        await store.setItemDraft(player._id, null);
+        return back2(giftSentText(target, draft.itemKind, draft.quantity), draft.itemKind);
+      }
+      const offer = {
+        _id: input.eventId,
+        sellerId: player._id,
+        buyerId: target._id,
+        itemKind: draft.itemKind,
+        quantity: draft.quantity,
+        price: draft.price,
+        expiresAt: new Date(now.getTime() + itemConfig.offerDurationMs),
+        state: "pending"
+      };
+      if (!await store.reserveOffer(offer, now)) {
+        return back2(await unavailableText(store, player, draft.itemKind, now), draft.itemKind);
+      }
+      await store.enqueueItemNotification(`offer:${offer._id}`, target._id, offerText(player, offer), { kind: "item_offer", offerId: offer._id });
+      await store.setItemDraft(player._id, null);
+      return back2(itemTexts.sent, draft.itemKind);
+    }
+    case "item_buy": {
+      const offer = await store.itemOffer(command.offerId);
+      if (offer === null || offer.buyerId !== player._id || offer.state !== "pending") {
+        return { text: itemTexts.invalidOffer, keyboard: { kind: "profile" } };
+      }
+      const seller = await store.player(offer.sellerId);
+      if (seller === null) {
+        return { text: itemTexts.invalidOffer, keyboard: { kind: "profile" } };
+      }
+      const result = await store.purchaseOffer(offer, player, seller, await store.now());
+      if (result !== "ok") {
+        const text = result === "funds" ? itemTexts.funds : result === "expired" ? itemTexts.expired : result === "invalid" ? itemTexts.invalidOffer : result === "items" ? itemTexts.none : itemTexts.limit;
+        return { text, keyboard: { kind: "profile" } };
+      }
+      await store.enqueueItemNotification(`sold:${offer._id}`, seller._id, soldText(player, offer), { kind: "item_back", itemKind: offer.itemKind });
+      return { text: boughtText(player), keyboard: { kind: "profile" } };
+    }
+    default:
+      return assertNever(command);
+  }
+}
+async function itemText(store, player, draft, input, resolved) {
+  const text = input.text?.trim() ?? "";
+  if (/^(отменить|отмена)$/i.test(text)) {
+    await store.setItemDraft(player._id, null);
+    return { text: itemTexts.cancelled, keyboard: { kind: "main" } };
+  }
+  switch (draft.step) {
+    case "custom": {
+      const quantity = parsePromoInteger(text);
+      if (quantity === null || !validItemQuantity(quantity)) {
+        return back2(itemTexts.badQuantity, draft.itemKind);
+      }
+      const now = await store.now();
+      if (await store.itemCount(player._id, draft.itemKind, now) < quantity) {
+        return back2(await unavailableText(store, player, draft.itemKind, now), draft.itemKind);
+      }
+      await store.setItemDraft(player._id, { step: "open_confirm", itemKind: draft.itemKind, quantity, token: input.eventId });
+      return { text: itemTexts.ready, keyboard: { kind: "item_confirmation", mode: "open", token: input.eventId } };
+    }
+    case "target": {
+      const parsed = parsePlayerTarget(text);
+      if (parsed === null) {
+        return back2(itemTexts.missing, draft.itemKind);
+      }
+      const target = await resolveStoredTarget(store, parsed, resolved);
+      if (target === "target") {
+        return "target";
+      }
+      if (target === null || target._id === player._id) {
+        return back2(target === null ? itemTexts.missing : itemTexts.self, draft.itemKind);
+      }
+      await store.setItemDraft(player._id, { ...draft, step: "quantity", targetId: target._id });
+      return back2(itemQuantityText(await store.itemCount(player._id, draft.itemKind, await store.now())), draft.itemKind);
+    }
+    case "quantity": {
+      const quantity = parsePromoInteger(text);
+      if (quantity === null || !validItemQuantity(quantity)) {
+        return back2(itemTexts.badQuantity, draft.itemKind);
+      }
+      const now = await store.now();
+      if (await store.itemCount(player._id, draft.itemKind, now) < quantity) {
+        return back2(await unavailableText(store, player, draft.itemKind, now), draft.itemKind);
+      }
+      if (draft.mode === "sale") {
+        await store.setItemDraft(player._id, { step: "price", itemKind: draft.itemKind, quantity, targetId: draft.targetId });
+        return back2(itemTexts.price, draft.itemKind);
+      }
+      await store.setItemDraft(player._id, { step: "gift_confirm", itemKind: draft.itemKind, targetId: draft.targetId, quantity, token: input.eventId });
+      return { text: itemTexts.giftConfirm, keyboard: { kind: "item_confirmation", mode: "gift", token: input.eventId } };
+    }
+    case "price": {
+      const price = parseItemPrice(text);
+      if (price === null) {
+        return back2(itemTexts.badPrice, draft.itemKind);
+      }
+      await store.setItemDraft(player._id, { ...draft, step: "sale_confirm", price, token: input.eventId });
+      return { text: itemTexts.saleConfirm, keyboard: { kind: "item_confirmation", mode: "sale", token: input.eventId } };
+    }
+    case "activate_confirm":
+      return { text: `✅ Вы точно хотите использовать предмет:"${itemName(draft.itemKind)}"?`, keyboard: { kind: "item_confirmation", mode: "activate", token: draft.token } };
+    case "open_confirm":
+      return { text: itemTexts.ready, keyboard: { kind: "item_confirmation", mode: "open", token: draft.token } };
+    case "gift_confirm":
+      return { text: itemTexts.giftConfirm, keyboard: { kind: "item_confirmation", mode: "gift", token: draft.token } };
+    case "sale_confirm":
+      return { text: itemTexts.saleConfirm, keyboard: { kind: "item_confirmation", mode: "sale", token: draft.token } };
+    default:
+      return assertNever(draft);
+  }
+}
+
+// src/services/bank.ts
+var back3 = (text, destination = "bank") => ({ text, keyboard: { kind: "bank_back", destination } });
+async function depositMenu(store, player) {
+  return { text: bankTexts.deposits, keyboard: { kind: "bank_deposits", depositIds: (await store.deposits(player._id)).map((deposit) => deposit.depositId) } };
+}
+async function savings(store, player, now) {
+  const state = settleSavings(player.savingsBalance ?? 0, player.savingsSince ?? now, now);
+  if (!await store.saveSavings(player, state.balance, state.since, 0)) throw new Error("Savings update failed");
+  return state;
+}
+async function transfer(store, sender, receiver, currency, amount, input) {
+  if (!safeBankMoney(amount) || amount <= 0) return back3(bankTexts.invalid, "bank_transfer_menu");
+  if (sender._id === receiver._id) return back3(bankTexts.self, "bank_transfer_menu");
+  if (sender[currency] < amount) return back3(currency === "kc" ? bankTexts.funds : bankTexts.fundsCurrency, "bank_transfer_menu");
+  const net = transferNet(amount, currency);
+  if (!await store.transferMoney(sender, receiver, currency, amount, net)) return back3(bankTexts.limit, "bank_transfer_menu");
+  await store.enqueueItemNotification(`transfer:${input.eventId}`, receiver._id, transferReceivedText(sender, net, currency), { kind: "none" });
+  if (!input.isChat) await store.setBankDraft(sender._id, null);
+  return { text: transferSuccessText(receiver, net, currency, input.isChat ?? false), keyboard: { kind: input.isChat ? "none" : "bank_transfer_menu" } };
+}
+async function selectDepositAmount(store, player, amount, token) {
+  amount = roundKc(amount);
+  if (!safeBankMoney(amount) || amount <= 0) return back3(bankTexts.invalid, "bank_deposits");
+  if (amount > bankConfig.maxDeposit) return back3(bankTexts.depositMax, "bank_deposits");
+  if (amount > player.kc) return back3(bankTexts.funds, "bank_deposits");
+  await store.setBankDraft(player._id, { step: "deposit_days", amount, token });
+  return { text: bankTexts.depositTerm, keyboard: { kind: "bank_deposit_term", token } };
+}
+async function bankAction(store, player, command, input, resolved, random) {
+  const now = await store.now();
+  if (["city", "bank", "bank_savings", "bank_deposit_money", "bank_withdraw_money", "bank_transfer_menu", "bank_currency", "bank_deposits", "bank_deposit_create", "bank_deposit", "bank_pension"].some((kind) => kind === command.kind)) await store.setBankDraft(player._id, null);
+  switch (command.kind) {
+    case "city":
+      return { text: bankTexts.city, keyboard: { kind: "city" } };
+    case "bank":
+      return { text: bankTexts.bank, keyboard: { kind: "bank" } };
+    case "bank_savings":
+      return { text: savingsText((await savings(store, player, now)).balance), keyboard: { kind: "bank_savings" } };
+    case "bank_deposit_money":
+    case "bank_withdraw_money": {
+      const state = await savings(store, player, now);
+      const direction = command.kind === "bank_deposit_money" ? "in" : "out";
+      await store.setBankDraft(player._id, { step: "savings_amount", direction });
+      return back3(savingsPrompt(player, state.balance, direction), "bank_savings");
+    }
+    case "bank_transfer_menu":
+      return { text: bankTexts.transfer, keyboard: { kind: "bank_transfer_menu" } };
+    case "bank_currency":
+      await store.setBankDraft(player._id, { step: "transfer_target", currency: command.currency });
+      return back3(bankTexts.target, "bank_transfer_menu");
+    case "bank_transfer_invalid":
+      return back3(bankTexts.usage, "bank_transfer_menu");
+    case "bank_transfer": {
+      const target = command.target ?? (input.replySenderId !== void 0 && isPositiveId(input.replySenderId) ? { kind: "vk", id: input.replySenderId } : null);
+      if (target === null) return back3(bankTexts.usage, "bank_transfer_menu");
+      const receiver = await resolveStoredTarget(store, target, resolved);
+      if (receiver === "target") return "target";
+      return receiver === null ? back3(bankTexts.missing, "bank_transfer_menu") : transfer(store, player, receiver, command.currency, command.amount, input);
+    }
+    case "bank_pension": {
+      const age = player.registeredAt === void 0 ? 0 : bankDays(player.registeredAt, now);
+      if (age < bankConfig.pensionMinDays) return back3(bankTexts.young);
+      if (player.nextPensionAt !== void 0 && player.nextPensionAt > now) return back3(pensionWaitText(player.nextPensionAt.getTime() - now.getTime()));
+      const rewards = age > bankConfig.pensionHighDays ? bankConfig.pensionHigh : bankConfig.pensionBasic;
+      const reward = rewards[random(rewards.length)];
+      if (reward === void 0) throw new Error("Invalid pension roll");
+      return back3(await store.claimPension(player, reward * game.kcScale, now) ? pensionSuccessText(reward * game.kcScale) : bankTexts.limit);
+    }
+    case "bank_deposits":
+      return depositMenu(store, player);
+    case "bank_deposit_create":
+      if ((await store.deposits(player._id)).length >= bankConfig.maxDeposits) return back3(bankTexts.depositLimit, "bank_deposits");
+      await store.setBankDraft(player._id, { step: "deposit_amount" });
+      return { text: bankTexts.depositAmount, keyboard: { kind: "bank_deposit_amount", amounts: depositButtons(player.kc) } };
+    case "bank_deposit_amount":
+      return selectDepositAmount(store, player, command.amount, input.eventId);
+    case "bank_deposit_term": {
+      const draft = player.bankDraft;
+      if (draft?.step !== "deposit_days" || draft.token !== command.token) return back3(bankTexts.stale, "bank_deposits");
+      const created = await store.createDeposit(player, draft.amount, command.days, now);
+      if (created === "funds" || created === "limit") return back3(created === "funds" ? bankTexts.funds : bankTexts.depositLimit, "bank_deposits");
+      return depositMenu(store, player);
+    }
+    case "bank_deposit":
+    case "bank_deposit_early": {
+      const deposit = await store.deposit(player._id, command.depositId);
+      if (deposit === null) return back3(bankTexts.unavailable, "bank_deposits");
+      if (deposit.expiresAt <= now) return back3(await finishDeposit(store, deposit, now) ? bankTexts.ended : bankTexts.limit, "bank_deposits");
+      if (command.kind === "bank_deposit") return { text: depositText(deposit, now), keyboard: { kind: "bank_deposit_early", depositId: deposit.depositId } };
+      const payout = earlyDepositValue(deposit, now);
+      await store.setBankDraft(player._id, { step: "deposit_early", depositId: deposit.depositId, token: input.eventId });
+      return { text: depositEarlyPrompt(deposit, payout), keyboard: { kind: "bank_deposit_confirm", token: input.eventId } };
+    }
+    case "bank_deposit_confirm": {
+      const draft = player.bankDraft;
+      if (draft?.step !== "deposit_early" || draft.token !== command.token) return back3(bankTexts.stale, "bank_deposits");
+      const deposit = await store.deposit(player._id, draft.depositId);
+      if (deposit === null) return back3(bankTexts.unavailable, "bank_deposits");
+      if (deposit.expiresAt <= now) return back3(await finishDeposit(store, deposit, now) ? bankTexts.ended : bankTexts.limit, "bank_deposits");
+      const payout = earlyDepositValue(deposit, now);
+      const balance = player.kc + payout;
+      if (!await store.closeDeposit(player, deposit, payout, now, true)) return back3(bankTexts.limit, "bank_deposits");
+      await store.setBankDraft(player._id, null);
+      return back3(depositEarlySuccessText(deposit, payout, balance), "bank_deposits");
+    }
+    default:
+      return assertNever(command);
+  }
+}
+async function bankText(store, player, draft, input, resolved) {
+  const text = input.text?.trim() ?? "";
+  if (/^(отмена|отменить)$/i.test(text)) {
+    await store.setBankDraft(player._id, null);
+    return back3(bankTexts.cancelled);
+  }
+  switch (draft.step) {
+    case "savings_amount": {
+      const amount = parseBankMoney(text, "kc");
+      if (amount === null) return back3(bankTexts.invalid, "bank_savings");
+      const now = await store.now();
+      const state = settleSavings(player.savingsBalance ?? 0, player.savingsSince ?? now, now);
+      if (draft.direction === "in" && player.kc < amount || draft.direction === "out" && state.balance < amount) return back3(bankTexts.funds, "bank_savings");
+      const delta = draft.direction === "in" ? -amount : amount;
+      const wallet = player.kc + delta;
+      const balance = state.balance - delta;
+      if (!safeBankMoney(wallet) || !safeBankMoney(balance)) return back3(bankTexts.limit, "bank_savings");
+      if (!await store.saveSavings(player, balance, now, delta)) return back3(bankTexts.limit, "bank_savings");
+      await store.setBankDraft(player._id, null);
+      return { text: savingsResult(wallet, balance), keyboard: { kind: "bank_savings" } };
+    }
+    case "transfer_target": {
+      const target = parsePlayerTarget(text);
+      if (target === null) return back3(bankTexts.missing, "bank_transfer_menu");
+      const receiver = await resolveStoredTarget(store, target, resolved);
+      if (receiver === "target") return "target";
+      if (receiver === null || receiver._id === player._id) return back3(receiver === null ? bankTexts.missing : bankTexts.self, "bank_transfer_menu");
+      await store.setBankDraft(player._id, { step: "transfer_amount", targetId: receiver._id, currency: draft.currency });
+      return back3(transferPrompt(player, receiver, draft.currency), "bank_transfer_menu");
+    }
+    case "transfer_amount": {
+      const amount = parseBankMoney(text, draft.currency);
+      if (amount === null) return back3(bankTexts.invalid, "bank_transfer_menu");
+      const receiver = await store.player(draft.targetId);
+      return receiver === null ? back3(bankTexts.missing, "bank_transfer_menu") : transfer(store, player, receiver, draft.currency, amount, input);
+    }
+    case "deposit_amount": {
+      const amount = parseBankMoney(text, "kc");
+      return amount === null ? back3(bankTexts.invalid, "bank_deposits") : selectDepositAmount(store, player, amount, input.eventId);
+    }
+    case "deposit_days":
+    case "deposit_early":
+      return back3(bankTexts.stale, "bank_deposits");
+    default:
+      return assertNever(draft);
   }
 }
 

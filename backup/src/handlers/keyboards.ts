@@ -110,7 +110,7 @@ export function buildKeyboard(spec: KeyboardSpec): KeyboardBuilder {
     }
     case 'item_detail':
       return Keyboard.keyboard([
-        ...(spec.itemKind === 'croupier' ? [] : [[Keyboard.textButton({ label: itemLabels.use, payload: { command: 'item_use', itemKind: spec.itemKind } })]]),
+        [Keyboard.textButton({ label: itemLabels.use, payload: { command: 'item_use', itemKind: spec.itemKind } })],
         [Keyboard.textButton({ label: itemLabels.sell, payload: { command: 'item_sell', itemKind: spec.itemKind } }),
           Keyboard.textButton({ label: itemLabels.gift, payload: { command: 'item_gift', itemKind: spec.itemKind } })],
         [Keyboard.textButton({ label: labels.back, payload: { command: 'inventory', page: 0 } })]

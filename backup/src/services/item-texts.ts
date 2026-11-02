@@ -54,7 +54,7 @@ export function itemDetails(kind: ItemKind, count: number, use = false): string 
     anti_check: 'При активации вас нельзя будет чекнуть на 1 час.'
   };
   const description = passive[kind];
-  if (description !== undefined) return `📒 Предмет "${itemName(kind)}" (x${count}):\n\n${description}`;
+  if (description !== undefined) return `📒 Предмет "${itemName(kind)}" (x${count}):${kind === 'joker' ? `\n📋 ${description}` : `\n\n${description}`}`;
   return (use ? `«${itemName(kind)}» (доступно: ${count} шт.):` : `📒 Предмет "${itemName(kind)}" (x${count}):`)
     + `\nМожет выпасть:\n\n${caseDrops(kind).map((_, index) => dropText(index, kind)).join('\n')}`;
 }

@@ -29,7 +29,7 @@ export async function donateText(store: GameStore, player: Player, draft: Donate
   await store.setDonateDraft(player._id, { step: 'confirm_nickname', nickname, token: input.eventId });
   return confirm(`Вы уверены, что хотите сменить свой ник на: ${nickname}?`, input.eventId);
 }
-async function buyDealer(store: GameStore, player: Player, now: Date, eventId: string): Promise<Reply> {
+export async function buyDealer(store: GameStore, player: Player, now: Date, eventId: string): Promise<Reply> {
   const state = await store.dealer();
   const previous = state.holderId === null ? null : await store.player(state.holderId);
   const result = await store.buyDealer(player, previous, state, now);

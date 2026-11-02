@@ -1,5 +1,6 @@
 import { itemConfig } from '../config/items.js';
 import { itemName } from './item-names.js';
+import { buyDealer } from './donate.js';
 import type { GameInput, Player, Reply } from '../types/game.js';
 import type { AdminItemCommand, ItemCommand, ItemDraft, ItemKind, PlayerTarget } from '../types/items.js';
 import type { GameStore } from '../types/storage.js';
@@ -47,7 +48,6 @@ export async function itemView(store: GameStore, player: Player, itemKind: ItemK
   const count = await store.itemCount(player._id, itemKind, now);
   if (count === 0) return { text: await unavailableText(store, player, itemKind, now), keyboard: { kind: 'profile' } };
   if (use && itemKind === 'dice') return { text: '🎲 Этот предмет пассивный. Ваша комиссия в костях уже равна 1%.', keyboard: { kind: 'item_back', itemKind } };
-  if (use && itemKind === 'croupier') return { text: '📋 Пока в инвентаре, вы можете неограниченно становиться крупье.', keyboard: { kind: 'item_back', itemKind } };
   if (use && itemKind === 'vpn') {
     if (player.hiddenFromRanking === true) return { text: 'Теперь вы не отображаетесь в топе.', keyboard: { kind: 'item_back', itemKind } };
     if (eventId === undefined || eventId.length === 0 || eventId.length > 200) throw new Error('Missing VPN activation event ID');
@@ -83,6 +83,11 @@ export async function itemAction(store: GameStore, player: Player, command: Item
   switch (command.kind) {
     case 'item_detail': case 'item_use':
       await store.setItemDraft(player._id, null);
+      if (command.kind === 'item_use' && command.itemKind === 'croupier') {
+        const now = await store.now();
+        if (await store.itemCount(player._id, 'croupier', now) === 0) return back(await unavailableText(store, player, 'croupier', now), 'croupier');
+        return buyDealer(store, player, now, input.eventId);
+      }
       return itemView(store, player, command.itemKind, command.kind === 'item_use', input.eventId);
     case 'item_activate_confirm': {
       const draft = player.itemDraft;
