@@ -413,6 +413,8 @@ test('check requires an active chat subscription, supports account ID, VK ID and
   ] as const) {
     const reply = await text(command, 1, true, extra);
     assert.match(reply.text, /^🥷 Профиль игрока \[id2\|Второй\]/u);
+    assert.equal(reply.text.includes('🤑 Богач'), false);
+    assert.equal(reply.text.split('\n')[1], '');
     assert.match(reply.text, /🆔 ID: 1 \(VK: 2\)/u);
     assert.match(reply.text, /⏳ Регистрация: 11 ноября 2024 08:59:35/u);
   }

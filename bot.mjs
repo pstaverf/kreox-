@@ -333,8 +333,6 @@ function checkProfileText(player) {
   const date = new Intl.DateTimeFormat("ru-RU", { timeZone: bankConfig.timeZone, day: "2-digit", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" }).format(registration).replace(/,| г\. в /gu, " ").replace(/\s+/gu, " ").trim();
   return `🥷 Профиль игрока ${mention(player)}
 
-🤑 Богач
-
 💸 Баланс: ${formatKc(player.kc)} KC
 💶 Евро: ${formatAmount(player.euro, game.euroScale)}
 💠 Биткоин: ${formatMining(player.bitcoin)}₿
