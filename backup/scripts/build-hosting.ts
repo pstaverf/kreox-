@@ -30,8 +30,8 @@ await build({
   target: 'node24',
   charset: 'utf8',
   legalComments: 'none',
-  minifySyntax: true,
-  minifyWhitespace: true,
+  minifySyntax: false,
+  minifyWhitespace: false,
   minifyIdentifiers: false,
   sourcemap: false,
   logLevel: 'info'
