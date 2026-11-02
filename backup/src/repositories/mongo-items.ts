@@ -51,9 +51,12 @@ export class MongoItemStore extends MongoPromoStore {
     const result = await this.itemPlayers.updateOne({ _id: vkId }, [{ $set: { [field]: { $max: [{ $ifNull: [`$${field}`, new Date(0)] }, until] } } }], { session: this.itemSession });
     if (result.matchedCount !== 1) throw new Error('Timed item owner was not found');
   }
-  async hideFromRanking(vkId: number): Promise<void> {
-    const result = await this.itemPlayers.updateOne({ _id: vkId }, { $set: { hiddenFromRanking: true } }, { session: this.itemSession });
-    if (result.matchedCount !== 1) throw new Error('VPN owner was not found');
+  async toggleRankingVisibility(vkId: number): Promise<boolean> {
+    const player = await this.itemPlayers.findOneAndUpdate({ _id: vkId }, [{
+      $set: { hiddenFromRanking: { $not: [{ $ifNull: ['$hiddenFromRanking', false] }] } }
+    }], { session: this.itemSession, returnDocument: 'after', includeResultMetadata: false, projection: { hiddenFromRanking: 1 } });
+    if (player === null) throw new Error('VPN owner was not found');
+    return player.hiddenFromRanking === true;
   }
   private async select(vkId: number, kind: ItemKind, quantity: number, now: Date): Promise<InventoryItem[]> {
     if (!validItemQuantity(quantity)) {

@@ -535,7 +535,7 @@ test('new passive and active items have the requested catalog entries and exact 
   for (const [kind, description] of [
     ['joker', 'После активации снимает лимит в казино на 10 минут.'],
     ['dice', '📋 Пока в инвентаре, комиссия в костях уменьшается до 1%.'],
-    ['vpn', '📋 При активации скрывает вас из топа.'],
+    ['vpn', '📋 Скрывает вас из топа; повторное использование возвращает обратно.'],
     ['anti_check', 'При активации вас нельзя будет чекнуть на 1 час.']
   ] as const) {
     assert.equal(await db.transaction(store => store.grantItems(1, kind, 1)), true);
@@ -572,16 +572,24 @@ test('joker and anti-check need their inline confirmation, consume atomically, a
   }
 });
 
-test('VPN remains in inventory and permanently removes the owner from all rankings after confirmation', async () => {
+test('VPN toggles ranking visibility after each confirmation while staying in inventory', async () => {
   const { db, send } = await fixture();
   assert.equal(await db.transaction(store => store.grantItems(1, 'vpn', 1)), true);
-  const item = (await db.transaction(store => store.inventory(1, 0))).find(entry => entry.kind === 'vpn');
-  assert.ok(item);
-  const prompt = await send({ kind: 'item_use', itemKind: 'vpn' });
-  assert.match(prompt.text, /^✅ Вы точно хотите использовать предмет:/u);
-  if (prompt.keyboard.kind !== 'item_confirmation') throw new Error('Missing VPN confirmation');
-  const activated = await send({ kind: 'item_activate_confirm', token: prompt.keyboard.token });
-  assert.equal(activated.text, 'Теперь вы не отображаетесь в топе.');
+  db.player(1).kc = 100_000;
+  const promptOn = await send({ kind: 'item_use', itemKind: 'vpn' });
+  assert.equal(promptOn.text, '✅ Вы точно хотите включить ВПН?');
+  if (promptOn.keyboard.kind !== 'item_confirmation') throw new Error('Missing VPN enable confirmation');
+  const enabled = await send({ kind: 'item_activate_confirm', token: promptOn.keyboard.token });
+  assert.equal(enabled.text, 'Теперь вы не отображаетесь в топе.');
   assert.equal(db.player(1).hiddenFromRanking, true);
+  assert.equal((await send({ kind: 'ranking', metric: 'kc' })).text.includes('[id1|'), false);
+
+  const promptOff = await send({ kind: 'item_use', itemKind: 'vpn' });
+  assert.equal(promptOff.text, '✅ Вы точно хотите выключить ВПН?');
+  if (promptOff.keyboard.kind !== 'item_confirmation') throw new Error('Missing VPN disable confirmation');
+  const disabled = await send({ kind: 'item_activate_confirm', token: promptOff.keyboard.token });
+  assert.equal(disabled.text, 'Теперь вы снова отображаетесь в топе.');
+  assert.equal(db.player(1).hiddenFromRanking, false);
+  assert.equal((await send({ kind: 'ranking', metric: 'kc' })).text.includes('[id1|'), true);
   assert.equal(await db.transaction(store => store.itemCount(1, 'vpn', db.time)), 1);
 });

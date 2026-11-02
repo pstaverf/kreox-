@@ -49,10 +49,10 @@ export async function itemView(store: GameStore, player: Player, itemKind: ItemK
   if (count === 0) return { text: await unavailableText(store, player, itemKind, now), keyboard: { kind: 'profile' } };
   if (use && itemKind === 'dice') return { text: '🎲 Этот предмет пассивный. Ваша комиссия в костях уже равна 1%.', keyboard: { kind: 'item_back', itemKind } };
   if (use && itemKind === 'vpn') {
-    if (player.hiddenFromRanking === true) return { text: 'Теперь вы не отображаетесь в топе.', keyboard: { kind: 'item_back', itemKind } };
     if (eventId === undefined || eventId.length === 0 || eventId.length > 200) throw new Error('Missing VPN activation event ID');
     await store.setItemDraft(player._id, { step: 'activate_confirm', itemKind, token: eventId });
-    return { text: `✅ Вы точно хотите использовать предмет:"${itemName(itemKind)}"?`, keyboard: { kind: 'item_confirmation', mode: 'activate', token: eventId } };
+    const action = player.hiddenFromRanking === true ? 'выключить' : 'включить';
+    return { text: `✅ Вы точно хотите ${action} ВПН?`, keyboard: { kind: 'item_confirmation', mode: 'activate', token: eventId } };
   }
   if (use && (itemKind === 'joker' || itemKind === 'anti_check')) {
     if (eventId === undefined || eventId.length === 0 || eventId.length > 200) throw new Error('Missing item activation event ID');
@@ -95,9 +95,9 @@ export async function itemAction(store: GameStore, player: Player, command: Item
       const now = await store.now();
       if (draft.itemKind === 'vpn') {
         if (await store.itemCount(player._id, 'vpn', now) === 0) return back(await unavailableText(store, player, 'vpn', now), 'vpn');
-        await store.hideFromRanking(player._id);
+        const hidden = await store.toggleRankingVisibility(player._id);
         await store.setItemDraft(player._id, null);
-        return back('Теперь вы не отображаетесь в топе.', 'vpn');
+        return back(hidden ? 'Теперь вы не отображаетесь в топе.' : 'Теперь вы снова отображаетесь в топе.', 'vpn');
       }
       if (draft.itemKind !== 'joker' && draft.itemKind !== 'anti_check') return { text: itemTexts.stale, keyboard: { kind: 'profile' } };
       if (!await store.removeItems(player._id, draft.itemKind, 1, now)) return back(await unavailableText(store, player, draft.itemKind, now), draft.itemKind);

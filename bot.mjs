@@ -3391,7 +3391,7 @@ function itemDetails(kind, count, use = false) {
     croupier: "📋 Пока в инвентаре, вы можете неограниченно становиться крупье.",
     dice: "📋 Пока в инвентаре, комиссия в костях уменьшается до 1%.",
     joker: "После активации снимает лимит в казино на 10 минут.",
-    vpn: "📋 При активации скрывает вас из топа.",
+    vpn: "📋 Скрывает вас из топа; повторное использование возвращает обратно.",
     anti_check: "При активации вас нельзя будет чекнуть на 1 час."
   };
   const description = passive[kind];
@@ -4259,9 +4259,12 @@ var MongoItemStore = class extends MongoPromoStore {
     const result = await this.itemPlayers.updateOne({ _id: vkId }, [{ $set: { [field]: { $max: [{ $ifNull: [`$${field}`, /* @__PURE__ */ new Date(0)] }, until] } } }], { session: this.itemSession });
     if (result.matchedCount !== 1) throw new Error("Timed item owner was not found");
   }
-  async hideFromRanking(vkId) {
-    const result = await this.itemPlayers.updateOne({ _id: vkId }, { $set: { hiddenFromRanking: true } }, { session: this.itemSession });
-    if (result.matchedCount !== 1) throw new Error("VPN owner was not found");
+  async toggleRankingVisibility(vkId) {
+    const player = await this.itemPlayers.findOneAndUpdate({ _id: vkId }, [{
+      $set: { hiddenFromRanking: { $not: [{ $ifNull: ["$hiddenFromRanking", false] }] } }
+    }], { session: this.itemSession, returnDocument: "after", includeResultMetadata: false, projection: { hiddenFromRanking: 1 } });
+    if (player === null) throw new Error("VPN owner was not found");
+    return player.hiddenFromRanking === true;
   }
   async select(vkId, kind, quantity, now) {
     if (!validItemQuantity(quantity)) {
@@ -5910,10 +5913,10 @@ async function itemView(store, player, itemKind, use = false, eventId) {
   if (count === 0) return { text: await unavailableText(store, player, itemKind, now), keyboard: { kind: "profile" } };
   if (use && itemKind === "dice") return { text: "🎲 Этот предмет пассивный. Ваша комиссия в костях уже равна 1%.", keyboard: { kind: "item_back", itemKind } };
   if (use && itemKind === "vpn") {
-    if (player.hiddenFromRanking === true) return { text: "Теперь вы не отображаетесь в топе.", keyboard: { kind: "item_back", itemKind } };
     if (eventId === void 0 || eventId.length === 0 || eventId.length > 200) throw new Error("Missing VPN activation event ID");
     await store.setItemDraft(player._id, { step: "activate_confirm", itemKind, token: eventId });
-    return { text: `✅ Вы точно хотите использовать предмет:"${itemName(itemKind)}"?`, keyboard: { kind: "item_confirmation", mode: "activate", token: eventId } };
+    const action = player.hiddenFromRanking === true ? "выключить" : "включить";
+    return { text: `✅ Вы точно хотите ${action} ВПН?`, keyboard: { kind: "item_confirmation", mode: "activate", token: eventId } };
   }
   if (use && (itemKind === "joker" || itemKind === "anti_check")) {
     if (eventId === void 0 || eventId.length === 0 || eventId.length > 200) throw new Error("Missing item activation event ID");
@@ -5957,9 +5960,9 @@ async function itemAction(store, player, command, input, roll) {
       const now = await store.now();
       if (draft.itemKind === "vpn") {
         if (await store.itemCount(player._id, "vpn", now) === 0) return back2(await unavailableText(store, player, "vpn", now), "vpn");
-        await store.hideFromRanking(player._id);
+        const hidden = await store.toggleRankingVisibility(player._id);
         await store.setItemDraft(player._id, null);
-        return back2("Теперь вы не отображаетесь в топе.", "vpn");
+        return back2(hidden ? "Теперь вы не отображаетесь в топе." : "Теперь вы снова отображаетесь в топе.", "vpn");
       }
       if (draft.itemKind !== "joker" && draft.itemKind !== "anti_check") return { text: itemTexts.stale, keyboard: { kind: "profile" } };
       if (!await store.removeItems(player._id, draft.itemKind, 1, now)) return back2(await unavailableText(store, player, draft.itemKind, now), draft.itemKind);

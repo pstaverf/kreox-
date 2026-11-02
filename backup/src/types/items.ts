@@ -44,7 +44,7 @@ export interface ItemStore {
   hasReservedItems(vkId: number, kind: ItemKind, now: Date): Promise<boolean>;
   setItemDraft(vkId: number, draft: ItemDraft | null): Promise<void>;
   setTimedItemEffect(vkId: number, kind: 'joker' | 'anti_check', until: Date): Promise<void>;
-  hideFromRanking(vkId: number): Promise<void>;
+  toggleRankingVisibility(vkId: number): Promise<boolean>;
   grantItems(vkId: number, kind: ItemKind, quantity: number): Promise<boolean>;
   removeItems(vkId: number, kind: ItemKind, quantity: number, now: Date): Promise<boolean>;
   openItems(player: Player, kind: ItemKind, quantity: number, rewards: CaseRewards, now: Date): Promise<ItemResult>;

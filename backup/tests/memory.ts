@@ -316,10 +316,11 @@ class MemoryStore implements GameStore {
     const old = player[field];
     player[field] = new Date(Math.max(old?.getTime() ?? 0, until.getTime()));
   }
-  async hideFromRanking(vkId: number): Promise<void> {
+  async toggleRankingVisibility(vkId: number): Promise<boolean> {
     const player = this.state.players.get(vkId);
     if (player === undefined) throw new Error('Missing VPN owner');
-    player.hiddenFromRanking = true;
+    player.hiddenFromRanking = player.hiddenFromRanking !== true;
+    return player.hiddenFromRanking;
   }
   async grantItems(vkId: number, kind: ItemKind, quantity: number): Promise<boolean> {
     if (!isItemKind(kind) || !validItemQuantity(quantity)) {
