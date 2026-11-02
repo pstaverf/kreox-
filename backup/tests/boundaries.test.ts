@@ -114,11 +114,14 @@ test('all keyboards fit VK limits; city is blue and donate is green', () => {
 });
 
 test('environment validation fails closed without exposing secret values', () => {
-  const env = { VK_TOKEN: 'vk1.a.secret', VK_GROUP_ID: '123', MONGODB_URI: 'mongodb+srv://user:password@cluster.example', MONGODB_DB: 'kreox' };
+  const env = { VK_TOKEN: 'vk1.a.secret', VK_GROUP_ID: '123', MONGODB_URI: 'mongodb+srv://user:password@cluster.example', MONGODB_DB: 'kreox', VK_CALLBACK_SECRET: 'secret-value', VK_CALLBACK_CONFIRMATION: 'confirmation-value' };
   assert.equal(readEnvironment(env).vkGroupId, 123);
+  assert.equal(readEnvironment(env).port, 3000);
+  assert.equal(readEnvironment({ ...env, PORT: '8080' }).port, 8080);
   for (const invalid of [
     { VK_TOKEN: '' }, { VK_GROUP_ID: '-1' }, { VK_GROUP_ID: '1.5' }, { VK_GROUP_ID: 'Infinity' },
-    { MONGODB_URI: 'https://secret' }, { MONGODB_DB: 'invalid/database' }
+    { MONGODB_URI: 'https://secret' }, { MONGODB_DB: 'invalid/database' },
+    { VK_CALLBACK_SECRET: '' }, { VK_CALLBACK_CONFIRMATION: '' }, { PORT: '70000' }, { PORT: '3.5' }
   ]) {
     assert.throws(() => readEnvironment({ ...env, ...invalid }), error => error instanceof Error && !error.message.includes('password'));
   }

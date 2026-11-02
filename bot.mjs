@@ -2496,6 +2496,10 @@ function readEnvironment(env) {
   const group = env.VK_GROUP_ID?.trim();
   const mongoUri = env.MONGODB_URI?.trim();
   const mongoDb = env.MONGODB_DB?.trim();
+  const vkCallbackSecret = env.VK_CALLBACK_SECRET?.trim();
+  const vkCallbackConfirmation = env.VK_CALLBACK_CONFIRMATION?.trim();
+  const rawPort = env.PORT?.trim() || "3000";
+  const port = Number(rawPort);
   if (!vkToken || !/^[A-Za-z0-9._-]+$/.test(vkToken)) {
     throw new Error("Invalid VK_TOKEN");
   }
@@ -2509,7 +2513,16 @@ function readEnvironment(env) {
   if (!mongoDb || !/^[A-Za-z0-9_-]{1,63}$/.test(mongoDb)) {
     throw new Error("Invalid MONGODB_DB");
   }
-  return { vkToken, vkGroupId, mongoUri, mongoDb };
+  if (!vkCallbackSecret || vkCallbackSecret.length > 128 || !/^[^\s]+$/.test(vkCallbackSecret)) {
+    throw new Error("Invalid VK_CALLBACK_SECRET");
+  }
+  if (!vkCallbackConfirmation || vkCallbackConfirmation.length > 256 || !/^[^\s]+$/.test(vkCallbackConfirmation)) {
+    throw new Error("Invalid VK_CALLBACK_CONFIRMATION");
+  }
+  if (!/^\d+$/.test(rawPort) || !Number.isSafeInteger(port) || port < 1 || port > 65535) {
+    throw new Error("Invalid PORT");
+  }
+  return { vkToken, vkGroupId, mongoUri, mongoDb, vkCallbackSecret, vkCallbackConfirmation, port };
 }
 
 // src/config/vk.ts
@@ -6880,6 +6893,8 @@ async function main2() {
   const vk = new VK({
     token: env.vkToken,
     pollingGroupId: env.vkGroupId,
+    webhookSecret: env.vkCallbackSecret,
+    webhookConfirmation: env.vkCallbackConfirmation,
     ...vkApiOptions
   });
   const pending = /* @__PURE__ */ new Set();
@@ -6956,7 +6971,7 @@ async function main2() {
     });
     process.once("SIGINT", onSignal);
     process.once("SIGTERM", onSignal);
-    await vk.updates.startPolling();
+    await vk.updates.startWebhook({ host: "0.0.0.0", port: env.port, path: "/vk/callback" });
     if (stopping !== void 0) {
       await vk.updates.stop();
     } else {

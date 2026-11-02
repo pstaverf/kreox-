@@ -32,6 +32,8 @@ async function main(): Promise<void> {
   const vk = new VK({
     token: env.vkToken,
     pollingGroupId: env.vkGroupId,
+    webhookSecret: env.vkCallbackSecret,
+    webhookConfirmation: env.vkCallbackConfirmation,
     ...vkApiOptions
   });
   const pending = new Set<Promise<void>>();
@@ -106,7 +108,7 @@ async function main(): Promise<void> {
     });
     process.once('SIGINT', onSignal);
     process.once('SIGTERM', onSignal);
-    await vk.updates.startPolling();
+    await vk.updates.startWebhook({ host: '0.0.0.0', port: env.port, path: '/vk/callback' });
     if (stopping !== undefined) {
       await vk.updates.stop();
     } else {
