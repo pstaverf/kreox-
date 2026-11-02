@@ -416,3 +416,18 @@ test('listed dice cards have exactly two blank lines and consecutive heading, se
   assert.equal(card.text, '🎲 Игра в кости #1\n💰 Ставка: 1.000 KC\n\n👥 Мест: [2/3]\n✅ Игроки:\n[id1|Игрок 1]\n[id2|Игрок 2]\n\n⏱️ До отмены игры: 30 мин. 0 сек.');
   assert.equal(card.text.split('\n\n').length, 3);
 });
+
+
+test('passive dice item reduces tied winners commission to one percent when every winner owns it', async () => {
+  const f = await fixture(() => 7);
+  await f.text('кости 1000 3');
+  await f.click('dice_join', 2);
+  await f.click('dice_join', 2);
+  for (const vkId of [1, 2, 3]) assert.equal(await f.db.transaction(store => store.grantItems(vkId, 'dice', 1)), true);
+  const expected = diceDistribution(100_000, 3, 3, 'kc', true);
+  await f.click('dice_join', 3);
+  for (const vkId of [1, 2, 3]) assert.equal(f.db.player(vkId).kc, 100_000_000_000 - 100_000 + expected.each);
+  assert.equal(f.db.player(diceConfig.commissionId).kc, expected.commission);
+  assert.equal(expected.commission, 3_000);
+  for (const vkId of [1, 2, 3]) assert.equal(await f.db.transaction(store => store.itemCount(vkId, 'dice', f.db.time)), 1);
+});

@@ -1,12 +1,16 @@
 import type { Player } from './game.js';
+import type { PlayerTarget } from './items.js';
+
+export type CheckCommand = { kind: 'check'; target?: PlayerTarget } | { kind: 'check_invalid' };
 
 export type DonateCommand =
-  | { kind: 'donate' | 'donate_nick' | 'donate_thief' | 'donate_dealer' | 'dealer_buy' | 'dealer_view' | 'theft' }
-  | { kind: 'donate_confirm' | 'donate_cancel'; token: string };
+  | { kind: 'donate' | 'donate_nick' | 'donate_thief' | 'donate_dealer' | 'donate_subscriptions' | 'donate_check' | 'dealer_buy' | 'dealer_view' | 'theft' }
+  | { kind: 'donate_confirm' | 'donate_cancel'; token: string }
+;
 export type DonateDraft =
   | { step: 'nickname' }
   | { step: 'confirm_nickname'; nickname: string; token: string }
-  | { step: 'confirm_thief' | 'confirm_dealer'; token: string };
+  | { step: 'confirm_thief' | 'confirm_dealer' | 'confirm_check'; token: string };
 export interface DealerState {
   _id: 'casino';
   holderId: number | null;
@@ -19,6 +23,7 @@ export interface DonateStore {
   setDonateDraft(vkId: number, draft: DonateDraft | null): Promise<void>;
   changeNickname(player: Player, nickname: string): Promise<DonatePurchase>;
   buyThief(player: Player, now: Date): Promise<DonatePurchase | 'active'>;
+  buyCheck(player: Player, now: Date): Promise<DonatePurchase | 'active'>;
   theftTargetCount(actorId: number, memberIds: readonly number[]): Promise<number>;
   theftTarget(actorId: number, memberIds: readonly number[], offset: number): Promise<Player | null>;
   steal(actor: Player, victim: Player, amount: number, now: Date): Promise<boolean>;

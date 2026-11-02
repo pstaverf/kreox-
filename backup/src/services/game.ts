@@ -23,7 +23,7 @@ import { isBankCommand } from './bank-rules.js';
 import { donateConfig } from '../config/donate.js';
 import { donateAction, donateText, type DonateRandom } from './donate.js';
 import { isDonateCommand } from './donate-rules.js';
-import { donateTexts } from './donate-texts.js';
+import { donateTexts, checkPrompt } from './donate-texts.js';
 import { randomInt } from 'node:crypto';
 import { isAdminItemCommand, isItemCommand, parsePlayerTarget } from './item-rules.js';
 import { adminItems, itemAction, itemText, itemView } from './items.js';
@@ -40,7 +40,7 @@ import { promoAction, promoText } from './promos.js';
 import { promoTexts } from './promo-texts.js';
 import { miningAction } from './mining-actions.js';
 import { rankingScore } from './rankings.js';
-import { bonusText, cooldownText, inventoryText, mention, profileText, rankingText, referralRewardText, referralText, texts } from './texts.js';
+import { bonusText, cooldownText, inventoryText, mention, profileText, checkProfileText, rankingText, referralRewardText, referralText, texts } from './texts.js';
 
 export class GameService {
   constructor(
@@ -200,6 +200,17 @@ export class GameService {
       return { text: registered === null ? texts.registrationLimit : texts.welcome, keyboard: { kind: 'main' } };
     }
     const command = input.command;
+    if (command.kind === 'check_invalid') return { text: `${mention(player)}, либо вы указали игрока неверно, либо этого пользователя не существует.`, keyboard: { kind: 'none' } };
+    if (command.kind === 'check') {
+      if (!input.isChat) return { text: '', keyboard: { kind: 'none' } };
+      if (player.checkUntil === undefined || player.checkUntil <= await store.now()) return { text: checkPrompt(player), keyboard: { kind: 'donate_subscriptions' } };
+      const target = command.target?.kind === 'number' ? await store.playerByAccountId(command.target.id)
+        : command.target?.kind === 'vk' ? await store.player(command.target.id)
+        : input.replySenderId === undefined ? null : await store.player(input.replySenderId);
+      if (target === null) return { text: `${mention(player)}, либо вы указали игрока неверно, либо этого пользователя не существует.`, keyboard: { kind: 'none' } };
+      if (target.antiCheckUntil !== undefined && target.antiCheckUntil > await store.now()) return { text: '⛔️ Этого игрока нельзя чекнуть!', keyboard: { kind: 'none' } };
+      return { text: checkProfileText(target), keyboard: { kind: 'none' } };
+    }
     if (isGiveawayCommand(command)) {
       if (command.kind === 'giveaway_claim') return claimGiveaway(store, input, player, command, giveawayState);
       return giveawayAdminAction(store, input, command);

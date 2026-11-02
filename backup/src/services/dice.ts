@@ -76,7 +76,8 @@ async function finishDice(store: GameStore, chat: DiceChat, value: DiceGame, now
   });
   const best = Math.max(...scores);
   const winners = value.players.filter((_player, index) => scores[index] === best);
-  const distribution = diceDistribution(value.amount, value.players.length, winners.length, value.currency);
+  const discountedTieFee = winners.length > 1 && (await Promise.all(winners.map(winner => store.itemCount(winner.vkId, 'dice', now)))).some(count => count > 0);
+  const distribution = diceDistribution(value.amount, value.players.length, winners.length, value.currency, discountedTieFee);
   for (const winner of winners) {
     const paid = await creditDice(store, `winner:${key}:${winner.vkId}`, winner.vkId, value, distribution.each, now);
     if (!paid) await store.enqueueItemNotification(`dice-waiting:${key}:${winner.vkId}`, winner.vkId, `${diceTexts.pending}\n💰 Сумма: ${diceMoney(distribution.each, value.currency)}`, { kind: 'none' });

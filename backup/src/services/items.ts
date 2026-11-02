@@ -1,9 +1,10 @@
 import { itemConfig } from '../config/items.js';
+import { itemName } from './item-names.js';
 import type { GameInput, Player, Reply } from '../types/game.js';
 import type { AdminItemCommand, ItemCommand, ItemDraft, ItemKind, PlayerTarget } from '../types/items.js';
 import type { GameStore } from '../types/storage.js';
 import { assertNever } from '../utils/validation.js';
-import { caseRewards, parseItemPrice, parsePlayerTarget, validItemQuantity } from './item-rules.js';
+import { caseRewards, parseItemPrice, parsePlayerTarget, validItemQuantity, isOpenableCase } from './item-rules.js';
 import { boughtText, caseResultText, giftReceivedText, giftSentText, itemCatalogText, itemDetails, itemQuantityText, itemTexts, offerText, soldText } from './item-texts.js';
 import { parsePromoInteger } from './promo-rules.js';
 
@@ -41,15 +42,28 @@ export async function adminItems(store: GameStore, command: AdminItemCommand): P
 async function unavailableText(store: GameStore, player: Player, kind: ItemKind, now: Date): Promise<string> {
   return await store.hasReservedItems(player._id, kind, now) ? itemTexts.reserved : itemTexts.none;
 }
-export async function itemView(store: GameStore, player: Player, itemKind: ItemKind, use = false): Promise<Reply> {
+export async function itemView(store: GameStore, player: Player, itemKind: ItemKind, use = false, eventId?: string): Promise<Reply> {
   const now = await store.now();
   const count = await store.itemCount(player._id, itemKind, now);
-  return count === 0 ? { text: await unavailableText(store, player, itemKind, now), keyboard: { kind: 'profile' } } : {
-    text: itemDetails(itemKind, count, use && itemKind !== 'croupier'), keyboard: { kind: use && itemKind !== 'croupier' ? 'item_use' : 'item_detail', itemKind }
-  };
+  if (count === 0) return { text: await unavailableText(store, player, itemKind, now), keyboard: { kind: 'profile' } };
+  if (use && itemKind === 'dice') return { text: '🎲 Этот предмет пассивный. Ваша комиссия в костях уже равна 1%.', keyboard: { kind: 'item_back', itemKind } };
+  if (use && itemKind === 'croupier') return { text: '📋 Пока в инвентаре, вы можете неограниченно становиться крупье.', keyboard: { kind: 'item_back', itemKind } };
+  if (use && itemKind === 'vpn') {
+    if (player.hiddenFromRanking === true) return { text: 'Теперь вы не отображаетесь в топе.', keyboard: { kind: 'item_back', itemKind } };
+    if (eventId === undefined || eventId.length === 0 || eventId.length > 200) throw new Error('Missing VPN activation event ID');
+    await store.setItemDraft(player._id, { step: 'activate_confirm', itemKind, token: eventId });
+    return { text: `✅ Вы точно хотите использовать предмет:"${itemName(itemKind)}"?`, keyboard: { kind: 'item_confirmation', mode: 'activate', token: eventId } };
+  }
+  if (use && (itemKind === 'joker' || itemKind === 'anti_check')) {
+    if (eventId === undefined || eventId.length === 0 || eventId.length > 200) throw new Error('Missing item activation event ID');
+    const token = eventId;
+    await store.setItemDraft(player._id, { step: 'activate_confirm', itemKind, token });
+    return { text: `✅ Вы точно хотите использовать предмет:"${itemName(itemKind)}"?`, keyboard: { kind: 'item_confirmation', mode: 'activate', token } };
+  }
+  return { text: itemDetails(itemKind, count, use && itemKind !== 'croupier'), keyboard: { kind: use ? 'item_use' : 'item_detail', itemKind } };
 }
 async function open(store: GameStore, player: Player, kind: ItemKind, quantity: number, roll: () => number): Promise<Reply> {
-  if (kind === 'croupier') return itemView(store, player, kind);
+  if (!isOpenableCase(kind)) return itemView(store, player, kind);
   if (!validItemQuantity(quantity)) {
     return back(itemTexts.badQuantity, kind);
   }
@@ -69,9 +83,28 @@ export async function itemAction(store: GameStore, player: Player, command: Item
   switch (command.kind) {
     case 'item_detail': case 'item_use':
       await store.setItemDraft(player._id, null);
-      return itemView(store, player, command.itemKind, command.kind === 'item_use');
+      return itemView(store, player, command.itemKind, command.kind === 'item_use', input.eventId);
+    case 'item_activate_confirm': {
+      const draft = player.itemDraft;
+      if (draft?.step !== 'activate_confirm' || draft.token !== command.token) return { text: itemTexts.stale, keyboard: { kind: 'profile' } };
+      const now = await store.now();
+      if (draft.itemKind === 'vpn') {
+        if (await store.itemCount(player._id, 'vpn', now) === 0) return back(await unavailableText(store, player, 'vpn', now), 'vpn');
+        await store.hideFromRanking(player._id);
+        await store.setItemDraft(player._id, null);
+        return back('Теперь вы не отображаетесь в топе.', 'vpn');
+      }
+      if (draft.itemKind !== 'joker' && draft.itemKind !== 'anti_check') return { text: itemTexts.stale, keyboard: { kind: 'profile' } };
+      if (!await store.removeItems(player._id, draft.itemKind, 1, now)) return back(await unavailableText(store, player, draft.itemKind, now), draft.itemKind);
+      const duration = draft.itemKind === 'joker' ? itemConfig.jokerDurationMs : itemConfig.antiCheckDurationMs;
+      const currentUntil = draft.itemKind === 'joker' ? player.jokerUntil : player.antiCheckUntil;
+      const startsAt = Math.max(now.getTime(), currentUntil?.getTime() ?? 0);
+      await store.setTimedItemEffect(player._id, draft.itemKind, new Date(startsAt + duration));
+      await store.setItemDraft(player._id, null);
+      return back(draft.itemKind === 'joker' ? 'Ваши лимиты в казино больше не ограничены.' : 'Теперь вас нельзя чекнуть в течение 1 часа.', draft.itemKind);
+    }
     case 'item_custom': case 'item_gift': case 'item_sell': {
-      if (command.kind === 'item_custom' && command.itemKind === 'croupier') return itemView(store, player, command.itemKind);
+      if (command.kind === 'item_custom' && !isOpenableCase(command.itemKind)) return itemView(store, player, command.itemKind);
       const now = await store.now();
       const count = await store.itemCount(player._id, command.itemKind, now);
       if (count === 0) {
@@ -205,6 +238,8 @@ export async function itemText(store: GameStore, player: Player, draft: ItemDraf
       await store.setItemDraft(player._id, { ...draft, step: 'sale_confirm', price, token: input.eventId });
       return { text: itemTexts.saleConfirm, keyboard: { kind: 'item_confirmation', mode: 'sale', token: input.eventId } };
     }
+    case 'activate_confirm':
+      return { text: `✅ Вы точно хотите использовать предмет:"${itemName(draft.itemKind)}"?`, keyboard: { kind: 'item_confirmation', mode: 'activate', token: draft.token } };
     case 'open_confirm':
       return { text: itemTexts.ready, keyboard: { kind: 'item_confirmation', mode: 'open', token: draft.token } };
     case 'gift_confirm':

@@ -61,7 +61,7 @@ async function fixture(roll: () => number = () => 0) {
 test('catalog/admin syntax keeps grant catalog IDs separate from personal inventory IDs', async () => {
   const { send, text, db } = await fixture();
   const catalog = await text('!itemlist', 888801846);
-  assert.equal(catalog.text, '📖 ItemList:\n\n🆔 1 — 💼 Кейс «Ждун»\n\n🆔 2 — 👬 Кейс «Реферальный»\n\n🆔 3 — 🤴 Крупьер\n\n🆔 4 — 💙 Босс-кейс (Ахиллес)\n\n🆔 5 — 🏛️ Кейс «Аристократ»');
+  assert.equal(catalog.text, '📖 ItemList:\n\n🆔 1 — 💼 Кейс «Ждун»\n\n🆔 2 — 👬 Кейс «Реферальный»\n\n🆔 3 — 🤴 Крупьер\n\n🆔 4 — 💙 Босс-кейс (Ахиллес)\n\n🆔 5 — 🏛️ Кейс «Аристократ»\n\n🆔 6 — 🃏 Джокер\n\n🆔 7 — 🎲 Игральная кость\n\n🆔 8 — 🌍 ВПН\n\n🆔 9 — ⛔️ Античек');
   assert.equal((await text('!giveitem 0 2', 888801846)).text, 'Done.');
   assert.equal(db.state.items[0]?.vkId, 1);
   assert.equal(db.state.items[0]?.kind, 'referral_case');
@@ -490,4 +490,86 @@ test('one of two cases can be opened while the other stays reserved and can stil
 test('gift confirmation label is spelled correctly and matches the normal confirmation wording', () => {
   assert.equal(itemLabels.giftConfirm, '✅ Подтвердить');
   assert.equal(itemLabels.giftConfirm, itemLabels.confirm);
+});
+
+
+test('giveitem accepts every current item catalog ID including Aristocrat case ID 5', async () => {
+  const { text, db } = await fixture();
+  assert.deepEqual(parseCommand('!giveitem 0 5 10', undefined), {
+    kind: 'admin_item', operation: 'give', target: { kind: 'number', id: 0 }, catalogId: 5, quantity: 10
+  });
+  assert.equal((await text('!giveitem 0 5 10', 888801846)).text, 'Done.');
+  assert.equal(db.state.items.filter(item => item.vkId === 1 && item.kind === 'aristocrat_case').length, 10);
+  assert.equal((await text('!giveitem 0 10 10', 888801846)).text, itemTexts.adminUsage);
+  assert.equal(db.state.items.filter(item => item.vkId === 1).length, 10);
+});
+
+
+test('activation confirmation is a VK inline text button carrying only the validated identity-bound payload', () => {
+  const keyboard: unknown = JSON.parse(buildKeyboard({ kind: 'item_confirmation', mode: 'activate', token: 'event-1' }).toString());
+  assert.ok(isRecord(keyboard) && keyboard.inline === true && Array.isArray(keyboard.buttons));
+  const row = keyboard.buttons[0];
+  assert.ok(Array.isArray(row));
+  const button = row[0];
+  assert.ok(isRecord(button) && isRecord(button.action));
+  assert.equal(button.action.label, '☑️ Подтверить');
+  assert.equal(button.action.type, 'text');
+  assert.deepEqual(parseCommand(undefined, button.action.payload), { kind: 'item_activate_confirm', token: 'event-1' });
+});
+
+test('new passive and active items have the requested catalog entries and exact descriptive text', async () => {
+  const { text, db, send } = await fixture();
+  const catalog = await text('!itemlist', 888801846);
+  for (const row of ['6 — 🃏 Джокер', '7 — 🎲 Игральная кость', '8 — 🌍 ВПН', '9 — ⛔️ Античек']) assert.ok(catalog.text.includes(row));
+  for (const [kind, description] of [
+    ['joker', 'После активации снимает лимит в казино на 10 минут.'],
+    ['dice', '📋 Пока в инвентаре, комиссия в костях уменьшается до 1%.'],
+    ['vpn', '📋 При активации скрывает вас из топа.'],
+    ['anti_check', 'При активации вас нельзя будет чекнуть на 1 час.']
+  ] as const) {
+    assert.equal(await db.transaction(store => store.grantItems(1, kind, 1)), true);
+    const stack = await db.transaction(store => store.inventory(1, 0));
+    const item = stack.find(entry => entry.kind === kind);
+    assert.ok(item);
+    const detail = await send({ kind: 'item', itemId: item.itemId });
+    assert.ok(detail.text.includes(description));
+  }
+});
+
+test('joker and anti-check need their inline confirmation, consume atomically, and establish timed effects', async () => {
+  const { db, send } = await fixture();
+  for (const [kind, expected] of [['joker', 'Ваши лимиты в казино больше не ограничены.'], ['anti_check', 'Теперь вас нельзя чекнуть в течение 1 часа.']] as const) {
+    assert.equal(await db.transaction(store => store.grantItems(1, kind, 1)), true);
+    const stack = await db.transaction(store => store.inventory(1, 0));
+    const item = stack.find(entry => entry.kind === kind);
+    assert.ok(item);
+    const detail = await send({ kind: 'item', itemId: item.itemId });
+    assert.deepEqual(detail.keyboard, { kind: 'item_detail', itemKind: kind });
+    const prompted = await send({ kind: 'item_use', itemKind: kind });
+    assert.equal(prompted.text, `✅ Вы точно хотите использовать предмет:"${kind === 'joker' ? '🃏 Джокер' : '⛔️ Античек'}"?`);
+    assert.equal(prompted.keyboard.kind, 'item_confirmation');
+    if (prompted.keyboard.kind !== 'item_confirmation') throw new Error('Missing activate confirmation');
+    assert.equal(prompted.keyboard.mode, 'activate');
+    const done = await send({ kind: 'item_activate_confirm', token: prompted.keyboard.token });
+    assert.equal(done.text, expected);
+    assert.equal(await db.transaction(store => store.itemCount(1, kind, db.time)), 0);
+    const owner = db.player(1);
+    const until = kind === 'joker' ? owner.jokerUntil : owner.antiCheckUntil;
+    assert.ok(until !== undefined && until > db.time);
+    assert.equal((await send({ kind: 'item_activate_confirm', token: prompted.keyboard.token })).text, itemTexts.stale);
+  }
+});
+
+test('VPN remains in inventory and permanently removes the owner from all rankings after confirmation', async () => {
+  const { db, send } = await fixture();
+  assert.equal(await db.transaction(store => store.grantItems(1, 'vpn', 1)), true);
+  const item = (await db.transaction(store => store.inventory(1, 0))).find(entry => entry.kind === 'vpn');
+  assert.ok(item);
+  const prompt = await send({ kind: 'item_use', itemKind: 'vpn' });
+  assert.match(prompt.text, /^✅ Вы точно хотите использовать предмет:/u);
+  if (prompt.keyboard.kind !== 'item_confirmation') throw new Error('Missing VPN confirmation');
+  const activated = await send({ kind: 'item_activate_confirm', token: prompt.keyboard.token });
+  assert.equal(activated.text, 'Теперь вы не отображаетесь в топе.');
+  assert.equal(db.player(1).hiddenFromRanking, true);
+  assert.equal(await db.transaction(store => store.itemCount(1, 'vpn', db.time)), 1);
 });

@@ -91,8 +91,14 @@ export function buildKeyboard(spec: KeyboardSpec): KeyboardBuilder {
     case 'bank_deposit_confirm': return Keyboard.keyboard([[Keyboard.textButton({ label: bankLabels.confirm, color: Keyboard.POSITIVE_COLOR, payload: { command: 'bank_deposit_confirm', token: spec.token } })]]).inline();
     case 'donate':
       return Keyboard.keyboard([
-        [button(donateLabels.nickname, { kind: 'donate_nick' }), button(donateLabels.thief, { kind: 'donate_thief' }), button(donateLabels.dealer, { kind: 'donate_dealer' })],
+        [button(donateLabels.nickname, { kind: 'donate_nick' }), button(donateLabels.dealer, { kind: 'donate_dealer' })],
+        [button(donateLabels.subscriptions, { kind: 'donate_subscriptions' })],
         [button(labels.back, { kind: 'menu' })]
+      ]).oneTime(false);
+    case 'donate_subscriptions':
+      return Keyboard.keyboard([
+        [button(donateLabels.thief, { kind: 'donate_thief' }), button(donateLabels.check, { kind: 'donate_check' })],
+        [button(labels.back, { kind: 'donate' })]
       ]).oneTime(false);
     case 'donate_back': return Keyboard.keyboard([[button(labels.back, { kind: 'donate' })]]).oneTime(false);
     case 'donate_confirmation': {
@@ -118,6 +124,7 @@ export function buildKeyboard(spec: KeyboardSpec): KeyboardBuilder {
     case 'item_back':
       return Keyboard.keyboard([[Keyboard.textButton({ label: labels.back, payload: { command: 'item_detail', itemKind: spec.itemKind } })]]).oneTime(false);
     case 'item_confirmation':
+      if (spec.mode === 'activate') return Keyboard.keyboard([[Keyboard.textButton({ label: '☑️ Подтверить', color: Keyboard.POSITIVE_COLOR, payload: { command: 'item_activate_confirm', token: spec.token } })]]).inline();
       if (spec.mode === 'open') {
         return Keyboard.keyboard([
           [Keyboard.textButton({ label: itemLabels.open, payload: { command: 'item_open_confirm', token: spec.token } })],

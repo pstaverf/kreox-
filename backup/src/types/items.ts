@@ -1,6 +1,6 @@
 import type { InventoryItem, KeyboardSpec, Player } from './game.js';
 
-export type ItemKind = 'zhdun_case' | 'referral_case' | 'croupier' | 'aristocrat_case' | `boss_case:${string}`;
+export type ItemKind = 'zhdun_case' | 'referral_case' | 'croupier' | 'aristocrat_case' | 'joker' | 'dice' | 'vpn' | 'anti_check' | `boss_case:${string}`;
 export type PlayerTarget = { kind: 'number'; id: number } | { kind: 'vk'; id: number } | { kind: 'screen'; name: string };
 export type AdminItemCommand =
   | { kind: 'admin_itemlist' }
@@ -9,11 +9,12 @@ export type AdminItemCommand =
 export type ItemCommand =
   | { kind: 'item_detail' | 'item_use' | 'item_custom' | 'item_gift' | 'item_sell'; itemKind: ItemKind }
   | { kind: 'item_open'; itemKind: ItemKind; quantity: number }
-  | { kind: 'item_confirm' | 'item_open_confirm'; token: string }
+  | { kind: 'item_confirm' | 'item_open_confirm' | 'item_activate_confirm'; token: string }
   | { kind: 'item_buy'; offerId: string };
 export type ItemDraft =
   | { step: 'custom'; itemKind: ItemKind }
   | { step: 'open_confirm'; itemKind: ItemKind; quantity: number; token: string }
+  | { step: 'activate_confirm'; itemKind: ItemKind; token: string }
   | { step: 'target'; itemKind: ItemKind; mode: 'gift' | 'sale' }
   | { step: 'quantity'; itemKind: ItemKind; mode: 'gift' | 'sale'; targetId: number }
   | { step: 'price'; itemKind: ItemKind; targetId: number; quantity: number }
@@ -34,7 +35,7 @@ export type ItemResult = 'ok' | 'items' | 'limit';
 export type PurchaseResult = ItemResult | 'funds' | 'expired' | 'invalid';
 export type ItemKeyboard =
   | { kind: 'item_detail' | 'item_use' | 'item_back'; itemKind: ItemKind }
-  | { kind: 'item_confirmation'; token: string; mode: 'gift' | 'sale' | 'open' }
+  | { kind: 'item_confirmation'; token: string; mode: 'gift' | 'sale' | 'open' | 'activate' }
   | { kind: 'item_offer'; offerId: string };
 export interface ItemStore {
   playerByAccountId(accountId: number): Promise<Player | null>;
@@ -42,6 +43,8 @@ export interface ItemStore {
   itemCount(vkId: number, kind: ItemKind, now: Date): Promise<number>;
   hasReservedItems(vkId: number, kind: ItemKind, now: Date): Promise<boolean>;
   setItemDraft(vkId: number, draft: ItemDraft | null): Promise<void>;
+  setTimedItemEffect(vkId: number, kind: 'joker' | 'anti_check', until: Date): Promise<void>;
+  hideFromRanking(vkId: number): Promise<void>;
   grantItems(vkId: number, kind: ItemKind, quantity: number): Promise<boolean>;
   removeItems(vkId: number, kind: ItemKind, quantity: number, now: Date): Promise<boolean>;
   openItems(player: Player, kind: ItemKind, quantity: number, rewards: CaseRewards, now: Date): Promise<ItemResult>;

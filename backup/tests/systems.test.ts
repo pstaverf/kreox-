@@ -403,3 +403,20 @@ test('BTC ranking still compares exact satoshis when the displayed thousandths a
   assert.equal(database.player().bitcoin, 371_117_014);
   assert.equal(database.player(2).bitcoin, 371_117_015);
 });
+
+
+test('VPN-hidden players are omitted from top lists and do not receive a personal place row', async () => {
+  const { send, database } = await fixture();
+  for (let id = 2; id <= 6; id += 1) {
+    await send({ kind: 'profile' }, id);
+    database.player(id).kc = id * game.kcScale;
+  }
+  const hidden = database.player(6);
+  hidden.hiddenFromRanking = true;
+  for (const metric of ['kc', 'bitcoin', 'mining', 'euro', 'referrals', 'reputation', 'stolenKC'] satisfies RankingMetric[]) {
+    const result = await send({ kind: 'ranking', metric }, 6);
+    assert.equal(result.text.includes('[id6|'), false);
+    assert.equal(result.text.includes('➡'), false);
+  }
+  assert.equal((await send({ kind: 'ranking', metric: 'kc' }, 2)).text.includes('[id6|'), false);
+});

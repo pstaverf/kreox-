@@ -12,7 +12,7 @@ import { validDonateMoney, validNickname } from '../src/services/donate-rules.js
 import type { DealerPurchase, DealerState, DonateDraft, DonatePurchase } from '../src/types/donate.js';
 import type { CaseRewards, ItemDraft, ItemKind, ItemOffer, ItemResult, PurchaseResult } from '../src/types/items.js';
 import type { KeyboardSpec } from '../src/types/game.js';
-import { isItemKind, validItemQuantity, validateOffer } from '../src/services/item-rules.js';
+import { isItemKind, isOpenableCase, validItemQuantity, validateOffer } from '../src/services/item-rules.js';
 import type { BalanceCurrency, BalanceOperation } from '../src/types/admin-balance.js';
 import { isBalanceCurrency, validBalanceChange } from '../src/services/admin-balance.js';
 import type { Promo, PromoActivation, PromoCreation, PromoDraft } from '../src/types/promo.js';
@@ -230,6 +230,15 @@ class MemoryStore implements GameStore {
     delete player.donateDraft;
     return 'ok';
   }
+  async buyCheck(player: Player, now: Date): Promise<DonatePurchase | 'active'> {
+    if (player.checkUntil !== undefined && player.checkUntil > now) return 'active';
+    if (!validDonateMoney(player.euro)) return 'limit';
+    if (player.euro < donateConfig.subscriptionCost) return 'funds';
+    player.euro -= donateConfig.subscriptionCost;
+    player.checkUntil = new Date(now.getTime() + donateConfig.subscriptionMs);
+    delete player.donateDraft;
+    return 'ok';
+  }
   async theftTargetCount(actorId: number, memberIds: readonly number[]): Promise<number> {
     return [...this.state.players.values()].filter(player => player._id !== actorId && memberIds.includes(player._id)).length;
   }
@@ -300,6 +309,18 @@ class MemoryStore implements GameStore {
       player.itemDraft = draft;
     }
   }
+  async setTimedItemEffect(vkId: number, kind: 'joker' | 'anti_check', until: Date): Promise<void> {
+    const player = this.state.players.get(vkId);
+    if (player === undefined) throw new Error('Missing timed item owner');
+    const field = kind === 'joker' ? 'jokerUntil' : 'antiCheckUntil';
+    const old = player[field];
+    player[field] = new Date(Math.max(old?.getTime() ?? 0, until.getTime()));
+  }
+  async hideFromRanking(vkId: number): Promise<void> {
+    const player = this.state.players.get(vkId);
+    if (player === undefined) throw new Error('Missing VPN owner');
+    player.hiddenFromRanking = true;
+  }
   async grantItems(vkId: number, kind: ItemKind, quantity: number): Promise<boolean> {
     if (!isItemKind(kind) || !validItemQuantity(quantity)) {
       throw new Error('Invalid item grant');
@@ -330,7 +351,7 @@ class MemoryStore implements GameStore {
     return true;
   }
   async openItems(player: Player, kind: ItemKind, quantity: number, rewards: CaseRewards, now: Date): Promise<ItemResult> {
-    if (kind === 'croupier') throw new Error('Not a case');
+    if (!isOpenableCase(kind)) throw new Error('Not a case');
     if (!validItemQuantity(quantity)) {
       throw new Error('Invalid item quantity');
     }
@@ -621,13 +642,13 @@ class MemoryStore implements GameStore {
   }
 
   async ranking(metric: RankingMetric, player: Player): Promise<Ranking> {
-    const ordered = [...this.state.players.values()].sort((a, b) =>
+    const ordered = [...this.state.players.values()].filter(value => value.hiddenFromRanking !== true).sort((a, b) =>
       rankingScore(b, metric) - rankingScore(a, metric) || a.accountId - b.accountId);
     return {
       leaders: ordered.slice(0, game.leaderboardSize).map(value => ({
         _id: value._id, name: value.name, accountId: value.accountId, score: rankingScore(value, metric)
       })),
-      place: ordered.findIndex(value => value._id === player._id) + 1
+      place: player.hiddenFromRanking === true ? 0 : ordered.findIndex(value => value._id === player._id) + 1
     };
   }
 

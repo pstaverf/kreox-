@@ -89,7 +89,7 @@ export class MongoGameDatabase implements GameDatabase {
     await this.db.collection<ProcessedMessage>('processed_messages').createIndex({ _id: 1 });
     await this.db.collection<Notification>('notifications').createIndex({ state: 1, nextAttemptAt: 1 });
     await this.db.collection<Player>('players').createIndexes(Object.entries(rankingFields).map(([metric, field]) => ({
-      key: { [field]: -1 as const, accountId: 1 as const }, name: `ranking_${metric}`
+      key: { hiddenFromRanking: 1 as const, [field]: -1 as const, accountId: 1 as const }, name: `ranking_visible_${metric}`
     })));
     const migration = await this.db.collection<Player>('players').updateMany({ $or: [
       { mining: { $exists: false } }, { referrals: { $exists: false } }, { stolenKC: { $exists: false } }
@@ -415,17 +415,18 @@ class MongoGameStore extends MongoBossStore implements GameStore {
   async ranking(metric: RankingMetric, player: Player): Promise<Ranking> {
     const field = rankingFields[metric];
     const score = rankingScore(player, metric);
-    const leaders = await this.players.find<RankedPlayer>({}, {
+    const visible = { $or: [{ hiddenFromRanking: { $exists: false } }, { hiddenFromRanking: false }] };
+    const leaders = await this.players.find<RankedPlayer>(visible, {
       session: this.session, projection: { _id: 1, name: 1, accountId: 1, [field]: 1 }
     }).sort({ [field]: -1, accountId: 1 }).limit(game.leaderboardSize).toArray();
-    const ahead = await this.players.countDocuments({ $or: [
+    const ahead = player.hiddenFromRanking === true ? 0 : await this.players.countDocuments({ $and: [visible, { $or: [
       { [field]: { $gt: score } }, { [field]: score, accountId: { $lt: player.accountId } }
-    ] }, { session: this.session });
+    ] }] }, { session: this.session });
     return {
       leaders: leaders.map(leader => ({
         _id: leader._id, name: leader.name, accountId: leader.accountId, score: rankingScore(leader, metric)
       })),
-      place: ahead + 1
+      place: player.hiddenFromRanking === true ? 0 : ahead + 1
     };
   }
 

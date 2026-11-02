@@ -7,7 +7,10 @@ import type { AdminItemCommand, CaseRewards, ItemCommand, ItemKind, ItemOffer, P
 import { isPositiveId } from '../utils/validation.js';
 
 export function isItemKind(value: unknown): value is ItemKind {
-  return value === 'zhdun_case' || value === 'referral_case' || value === 'croupier' || value === 'aristocrat_case' || (typeof value === 'string' && bossCaseDetails(value) !== null);
+  return value === 'zhdun_case' || value === 'referral_case' || value === 'croupier' || value === 'aristocrat_case' || value === 'joker' || value === 'dice' || value === 'vpn' || value === 'anti_check' || (typeof value === 'string' && bossCaseDetails(value) !== null);
+}
+export function isOpenableCase(value: ItemKind): boolean {
+  return value === 'zhdun_case' || value === 'referral_case' || value === 'aristocrat_case' || value.startsWith('boss_case:');
 }
 export function isAdminItemCommand(command: Command): command is AdminItemCommand {
   return command.kind === 'admin_item' || command.kind === 'admin_itemlist' || command.kind === 'admin_item_invalid';
@@ -15,7 +18,7 @@ export function isAdminItemCommand(command: Command): command is AdminItemComman
 export function isItemCommand(command: Command): command is ItemCommand {
   switch (command.kind) {
     case 'item_detail': case 'item_use': case 'item_custom': case 'item_gift': case 'item_sell':
-    case 'item_open': case 'item_confirm': case 'item_open_confirm': case 'item_buy': return true;
+    case 'item_open': case 'item_confirm': case 'item_open_confirm': case 'item_activate_confirm': case 'item_buy': return true;
     default: return false;
   }
 }
@@ -50,6 +53,7 @@ export function caseRewards(quantity: number, roll: () => number, kind: ItemKind
   if (!validItemQuantity(quantity)) {
     throw new Error('Invalid case quantity');
   }
+  if (!isOpenableCase(kind)) throw new Error('Item is not an openable case');
   const drops = caseDrops(kind);
   const modern = kind === 'aristocrat_case' || kind.startsWith('boss_case:');
   const result: CaseRewards = { kc: 0, euro: 0, counts: drops.map(() => 0) };

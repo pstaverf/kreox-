@@ -503,3 +503,18 @@ test('concurrent whole-wallet bets cannot spend the same balance twice and faile
   assert.equal(f.db.player().kc, 0);
   assert.equal([...f.db.state.casino.values()].filter(record => record.kind === 'bet').length, 1);
 });
+
+
+test('joker temporarily removes only the cumulative one-million round budget while ten bets remain capped', async () => {
+  const f = await fixture();
+  const player = f.db.player();
+  player.jokerUntil = new Date(f.db.time.getTime() + 10 * 60_000);
+  player.kc = game.maxAmount - game.maxAmount % game.kcScale;
+  f.db.player(2).kc = game.maxAmount - game.maxAmount % game.kcScale;
+  for (let index = 0; index < 10; index += 1) assert.match((await f.chat('дабл 5 1000000')).text, /✅/u, `bet ${index + 1}`);
+  const balance = f.db.player().kc;
+  assert.equal((await f.chat('дабл 5 1000')).text, '💰 Не более 10 ставок в режиме «Дабл».');
+  assert.equal(f.db.player().kc, balance);
+  assert.match((await f.chat('дабл 2 1000000', 2, 2_000_000_002)).text, /✅/u);
+  assert.equal((await f.chat('дабл 3 1000', 2, 2_000_000_002)).text, betMaximum('double'));
+});

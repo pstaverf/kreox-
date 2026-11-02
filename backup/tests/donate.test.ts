@@ -25,7 +25,7 @@ async function fixture(random: DonateRandom = (_purpose, maximum) => maximum - 1
     await db.transaction(async () => {});
     return members;
   });
-  const text = (value: string, id = 1, chat = false) => send(parseCommand(value, undefined, chat), id, { text: value, isChat: chat });
+  const text = (value: string, id = 1, chat = false, extra: Partial<GameInput> = {}) => send(parseCommand(value, undefined, chat), id, { text: value, isChat: chat, ...extra });
   for (const id of [1, 2, 3]) await send({ kind: 'profile' }, id);
   const confirmation = async (kind: 'donate_thief' | 'donate_dealer', id = 1) => {
     const reply = await send({ kind }, id);
@@ -42,7 +42,7 @@ async function fixture(random: DonateRandom = (_purpose, maximum) => maximum - 1
 }
 
 test('donate keyboards have payloads, correct colors and only dealer confirmations are inline', () => {
-  const specs: KeyboardSpec[] = [{ kind: 'donate' }, { kind: 'donate_back' },
+  const specs: KeyboardSpec[] = [{ kind: 'donate' }, { kind: 'donate_back' }, { kind: 'donate_subscriptions' },
     { kind: 'donate_confirmation', token: 'test', inline: false }, { kind: 'donate_confirmation', token: 'test', inline: true }];
   for (const spec of specs) {
     const value: unknown = JSON.parse(buildKeyboard(spec).toString());
@@ -68,7 +68,7 @@ test('donate keyboards have payloads, correct colors and only dealer confirmatio
   assert.deepEqual(parseCommand('ВОР', undefined, true), { kind: 'theft' });
   assert.deepEqual(parseCommand('вор', undefined), { kind: 'development' });
   assert.deepEqual(parseCommand('Крупье', undefined, true), { kind: 'dealer_view' });
-  for (const label of ['🍩 Донат', '👤 Ник', '🥷 Вор', '🤵‍♂️ Крупье', '✅ Подтвердить', '💢 Отмена']) assert.deepEqual(parseCommand(label, undefined), { kind: 'development' });
+  for (const label of ['🍩 Донат', '👤 Ник', '🥷 Вор', '🤵‍♂️ Крупье', '⏳ Подписки', '🔍 Чек', '✅ Подтвердить', '💢 Отмена']) assert.deepEqual(parseCommand(label, undefined), { kind: 'development' });
 });
 
 test('nickname wizard validates length and mention safety, charges once, survives restart and updates all mentions', async () => {
@@ -243,7 +243,7 @@ test('croupier item ID 3 bypasses global cooldown without consumption and cannot
   assert.equal((await text('!giveitem @id2 3', 888801846)).text, 'Done.');
   assert.match((await send({ kind: 'inventory', page: 0 }, 2)).text, /🤴 Крупьер \(1 шт\.\)/);
   const before = structuredClone(db.state.items);
-  assert.match((await send({ kind: 'item_open', itemKind: 'croupier', quantity: 1 }, 2)).text, /Снимает КД/);
+  assert.match((await send({ kind: 'item_open', itemKind: 'croupier', quantity: 1 }, 2)).text, /неограниченно становиться крупье/);
   assert.deepEqual(db.state.items, before);
   assert.equal((await text('купитькрупье', 2)).text, '[id2|Игрок 2], вы успешно стали новым крупье.');
   assert.deepEqual(db.state.items, before);
@@ -358,4 +358,71 @@ test('dealer view never prints fractional KC for the reported 126579904.12 balan
   assert.equal((await f.text('крупье', 1, true)).text, reply.text);
   f.db.state.dealer.earnedKC = 12_657_990_450;
   assert.equal((await f.text('крупье', 1, true)).text, '🤑 Крупье: [id312631501|xxxx] (заработал: 126.579.905 KC)');
+});
+
+
+test('donate buttons show Nick and Croupier above Subscriptions, then Thief and Check', () => {
+  for (const [spec, labels] of [
+    [{ kind: 'donate' } as const, [['👤 Ник', '🤵‍♂️ Крупье'], ['⏳ Подписки']]],
+    [{ kind: 'donate_subscriptions' } as const, [['🥷 Вор', '🔍 Чек']]]
+  ] as const) {
+    const value: unknown = JSON.parse(buildKeyboard(spec).toString());
+    assert.ok(isRecord(value) && Array.isArray(value.buttons));
+    const actual = value.buttons.map(row => Array.isArray(row) ? row.map(button => isRecord(button) && isRecord(button.action) ? button.action.label : '') : []);
+    for (const [index, expected] of labels.entries()) assert.deepEqual(actual[index], expected);
+  }
+  assert.deepEqual(parseCommand('чек', undefined, true), { kind: 'check' });
+  assert.deepEqual(parseCommand('чек 10', undefined, true), { kind: 'check', target: { kind: 'number', id: 10 } });
+  assert.deepEqual(parseCommand('чек @id12345678', undefined, true), { kind: 'check', target: { kind: 'vk', id: 12345678 } });
+  assert.deepEqual(parseCommand('чек 10', undefined), { kind: 'development' });
+  assert.deepEqual(parseCommand('чек bad/id', undefined, true), { kind: 'check_invalid' });
+});
+
+test('check subscription costs 200 EUR, lasts 30 days, is durable and cannot be repurchased while active', async () => {
+  const { db, send } = await fixture();
+  const subscriptions = await send({ kind: 'donate_subscriptions' });
+  assert.equal(subscriptions.text, '⏳ Подписки:');
+  db.player().euro = 200 * game.euroScale;
+  const prompt = await send({ kind: 'donate_check' });
+  assert.match(prompt.text, /команда "чек" дает Вам возможность чекать профили других игроков/u);
+  assert.match(prompt.text, /стоить вам 200 💶/u);
+  assert.equal(db.player().euro, 200 * game.euroScale);
+  assert.equal((await send({ kind: 'donate_confirm', token: 'stale' })).text, donateTexts.stale);
+  if (prompt.keyboard.kind !== 'donate_confirmation') throw new Error('Missing check subscription confirmation');
+  const bought = await send({ kind: 'donate_confirm', token: prompt.keyboard.token });
+  const expiration = new Date(db.time.getTime() + donateConfig.subscriptionMs);
+  assert.equal(db.player().euro, 0);
+  assert.equal(db.player().checkUntil?.getTime(), expiration.getTime());
+  assert.match(bought.text, /^😎 Подписка на команду "чек" активна до \d{2} \S+ \d{4} \d{2}:\d{2}:\d{2}\.$/u);
+  assert.ok((await send({ kind: 'donate_check' })).text.includes(bought.text.replace(/^.*до /u, '').replace(/\.$/u, '')));
+  db.player().euro = 200 * game.euroScale;
+  assert.match((await send({ kind: 'donate_check' })).text, /активна до/u);
+  assert.equal(db.player().euro, 200 * game.euroScale);
+});
+
+test('check requires an active chat subscription, supports account ID, VK ID and reply target, and respects anti-check expiry', async () => {
+  const { db, text, send } = await fixture();
+  const unavailable = await text('чек 2', 1, true);
+  assert.match(unavailable.text, /200 💶/u);
+  assert.equal(unavailable.keyboard.kind, 'none');
+  db.player(1).checkUntil = new Date(db.time.getTime() + donateConfig.subscriptionMs);
+  db.player(2).name = 'Второй';
+  db.player(2).registeredAt = new Date('2024-11-11T05:59:35.000Z');
+  for (const [command, extra] of [
+    ['чек 1', {}], ['чек @id2', {}], ['чек', { replySenderId: 2 }]
+  ] as const) {
+    const reply = await text(command, 1, true, extra);
+    assert.match(reply.text, /^🥷 Профиль игрока \[id2\|Второй\]/u);
+    assert.match(reply.text, /🆔 ID: 1 \(VK: 2\)/u);
+    assert.match(reply.text, /⏳ Регистрация: 11 ноября 2024 08:59:35/u);
+  }
+  const missing = await text('чек 99', 1, true);
+  assert.match(missing.text, /либо вы указали игрока неверно, либо этого пользователя не существует/u);
+  assert.match((await text('чек bad/id', 1, true)).text, /либо вы указали игрока неверно/u);
+  const antiCheckUntil = new Date(db.time.getTime() + 1000);
+  db.player(3).antiCheckUntil = antiCheckUntil;
+  assert.equal((await text('чек 2', 1, true)).text, '⛔️ Этого игрока нельзя чекнуть!');
+  db.time = new Date(antiCheckUntil);
+  assert.match((await text('чек 2', 1, true)).text, /^🥷 Профиль игрока/u);
+  assert.equal((await send({ kind: 'check', target: { kind: 'number', id: 2 } }, 1, { isChat: false })).text, '');
 });

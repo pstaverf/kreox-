@@ -4,7 +4,7 @@ import type { DealerState } from '../types/donate.js';
 import type { Player } from '../types/game.js';
 import { formatKc, formatAmount, mention } from './texts.js';
 
-export const donateLabels = { nickname: '👤 Ник', thief: '🥷 Вор', dealer: '🤵‍♂️ Крупье', confirm: '✅ Подтвердить', cancel: '💢 Отмена' } as const;
+export const donateLabels = { nickname: '👤 Ник', thief: '🥷 Вор', dealer: '🤵‍♂️ Крупье', subscriptions: '⏳ Подписки', check: '🔍 Чек', confirm: '✅ Подтвердить', cancel: '💢 Отмена' } as const;
 export const donateTexts = {
   title: '💶 Донат:',
   length: '⚠️ Допустимая длина 4-20 символов.',
@@ -25,6 +25,15 @@ export function nicknamePrompt(player: Player): string {
 }
 export function thiefPrompt(player: Player): string {
   return `${mention(player)}, команда "вор" дает Вам возможность случайно красть деньги у других игроков. Вы можете купить подписку на 30 дней: это будет стоить вам ${formatAmount(donateConfig.subscriptionCost, game.euroScale)} 💶\n\n😔 Подписка на команду "вор" неактивна.`;
+}
+function checkDate(date: Date): string {
+  return new Intl.DateTimeFormat('ru-RU', { timeZone: donateConfig.timeZone, day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' }).format(date).replace(/,| г\. в /gu, ' ').replace(/\s+/gu, ' ').trim();
+}
+export function checkPrompt(player: Player, until?: Date): string {
+  return `${mention(player)}, команда "чек" дает Вам возможность чекать профили других игроков. Вы можете купить подписку на 30 дней: это будет стоить вам ${formatAmount(donateConfig.subscriptionCost, game.euroScale)} 💶${until === undefined ? '\n\n😔 Подписка на команду \"чек\" неактивна.' : `\n\n😎 Подписка на команду \"чек\" активна до ${checkDate(until)}.`}`;
+}
+export function checkSubscriptionText(until: Date): string {
+  return `😎 Подписка на команду \"чек\" активна до ${checkDate(until)}.`;
 }
 export function subscriptionText(until: Date, purchased: boolean): string {
   return `${purchased ? '✅ Подписка на команду «вор» была приобретена.' : '✅ Подписка на команду «вор» активна.'}\n📆 Подписка активна до ${moscowDate(until)}`;

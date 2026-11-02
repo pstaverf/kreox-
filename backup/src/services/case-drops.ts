@@ -18,5 +18,6 @@ export function caseDrops(kind: ItemKind): readonly CaseDrop[] {
     ...money('euro', [10, 20, 30, 40, 50], 20),
     ...money('bitcoin', [50, 100, 150, 200], 50)
   ];
-  return itemConfig.drops;
+  if (kind === 'zhdun_case' || kind === 'referral_case') return itemConfig.drops;
+  throw new Error('Item is not an openable case');
 }

@@ -51,7 +51,7 @@ async function acceptBet(store: GameStore, player: Player, line: CasinoLine, inp
     if (bet.kind !== 'bet' || !safeBankMoney(bet.amount)) throw new Error('Invalid previous casino stake');
     committed += BigInt(bet.amount);
   }
-  if (committed + BigInt(amount) > BigInt(casinoConfig.maximum)) return betMaximum(line.mode);
+  if ((player.jokerUntil === undefined || player.jokerUntil <= now) && committed + BigInt(amount) > BigInt(casinoConfig.maximum)) return betMaximum(line.mode);
   if (previousBets.length >= casinoConfig.maxBets) return betLimit(line.mode);
   const liability = betPayout(line.mode, amount, line.target, line.mode === 'dream' ? 7 : 1);
   if (liability === null) return casinoTexts.limit;

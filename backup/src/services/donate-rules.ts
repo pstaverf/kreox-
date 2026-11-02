@@ -5,7 +5,7 @@ import type { DonateCommand } from '../types/donate.js';
 
 export function isDonateCommand(command: Command): command is DonateCommand {
   switch (command.kind) {
-    case 'donate': case 'donate_nick': case 'donate_thief': case 'donate_dealer':
+    case 'donate': case 'donate_nick': case 'donate_thief': case 'donate_dealer': case 'donate_subscriptions': case 'donate_check':
     case 'donate_confirm': case 'donate_cancel': case 'dealer_buy': case 'dealer_view': case 'theft': return true;
     default: return false;
   }

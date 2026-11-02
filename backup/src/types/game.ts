@@ -5,7 +5,7 @@ import type { PrivateCasinoCommand, PrivateCasinoKeyboard } from './private-casi
 import type { MailingCommand } from './mailing.js';
 import type { CasinoCommand, CasinoKeyboard, DirectorDraft } from './casino.js';
 import type { BankCommand, BankDraft, BankKeyboard } from './bank.js';
-import type { DonateCommand, DonateDraft } from './donate.js';
+import type { CheckCommand, DonateCommand, DonateDraft } from './donate.js';
 import type { AdminItemCommand, ItemCommand, ItemDraft, ItemKeyboard, ItemKind } from './items.js';
 import type { AdminBalanceCommand } from './admin-balance.js';
 import type { PromoCommand, PromoDraft } from './promo.js';
@@ -32,6 +32,10 @@ export interface Player {
   itemDraft?: ItemDraft;
   donateDraft?: DonateDraft;
   thiefUntil?: Date;
+  checkUntil?: Date;
+  jokerUntil?: Date;
+  antiCheckUntil?: Date;
+  hiddenFromRanking?: boolean;
   nextTheftAt?: Date;
   registeredAt?: Date;
   savingsBalance?: number;
@@ -66,6 +70,7 @@ export type Command =
   | MailingCommand
   | CasinoCommand
   | DonateCommand
+  | CheckCommand
   | BankCommand
   | { kind: 'delete_keyboards' }
   | AdminBalanceCommand
@@ -82,6 +87,7 @@ export type Command =
   | { kind: 'referrals' }
   | { kind: 'ranking'; metric: RankingMetric };
 
+
 export type KeyboardSpec =
   | BossKeyboard
   | { kind: 'help' }
@@ -91,7 +97,7 @@ export type KeyboardSpec =
   | CasinoKeyboard
   | ItemKeyboard
   | BankKeyboard
-  | { kind: 'donate' | 'donate_back' }
+  | { kind: 'donate' | 'donate_back' | 'donate_subscriptions' }
   | { kind: 'donate_confirmation'; token: string; inline: boolean }
   | { kind: 'none' }
   | { kind: 'promo' | 'promo_currency' | 'promo_back' }

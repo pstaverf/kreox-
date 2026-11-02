@@ -46,7 +46,15 @@ function dropText(index: number, kind: ItemKind = 'zhdun_case'): string {
     : `💶 ${formatAmount(drop.amount, game.euroScale)} евро`;
 }
 export function itemDetails(kind: ItemKind, count: number, use = false): string {
-  if (kind === 'croupier') return `📒 Предмет "${itemName(kind)}" (x${count}):\nСнимает КД на покупку крупье, пока находится в вашем инвентаре. Не расходуется.`;
+  const passive: Partial<Record<ItemKind, string>> = {
+    croupier: '📋 Пока в инвентаре, вы можете неограниченно становиться крупье.',
+    dice: '📋 Пока в инвентаре, комиссия в костях уменьшается до 1%.',
+    joker: 'После активации снимает лимит в казино на 10 минут.',
+    vpn: '📋 При активации скрывает вас из топа.',
+    anti_check: 'При активации вас нельзя будет чекнуть на 1 час.'
+  };
+  const description = passive[kind];
+  if (description !== undefined) return `📒 Предмет "${itemName(kind)}" (x${count}):\n\n${description}`;
   return (use ? `«${itemName(kind)}» (доступно: ${count} шт.):` : `📒 Предмет "${itemName(kind)}" (x${count}):`)
     + `\nМожет выпасть:\n\n${caseDrops(kind).map((_, index) => dropText(index, kind)).join('\n')}`;
 }

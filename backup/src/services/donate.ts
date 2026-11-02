@@ -5,7 +5,7 @@ import type { GameInput, Player, Reply } from '../types/game.js';
 import type { GameStore } from '../types/storage.js';
 import { assertNever } from '../utils/validation.js';
 import { cooldownParts, validNickname } from './donate-rules.js';
-import { dealerMention, dealerPrompt, donateTexts, nicknamePrompt, subscriptionText, thiefPrompt } from './donate-texts.js';
+import { checkPrompt, checkSubscriptionText, dealerMention, dealerPrompt, donateTexts, nicknamePrompt, subscriptionText, thiefPrompt } from './donate-texts.js';
 import { formatKc, mention } from './texts.js';
 
 const main = (text: string): Reply => ({ text, keyboard: { kind: 'main' } });
@@ -52,6 +52,9 @@ export async function donateAction(store: GameStore, player: Player, command: Do
     case 'donate':
       await store.setDonateDraft(player._id, null);
       return { text: donateTexts.title, keyboard: { kind: 'donate' } };
+    case 'donate_subscriptions':
+      await store.setDonateDraft(player._id, null);
+      return { text: '⏳ Подписки:', keyboard: { kind: 'donate_subscriptions' } };
     case 'donate_nick':
       await store.setDonateDraft(player._id, { step: 'nickname' });
       return back(nicknamePrompt(player));
@@ -62,6 +65,13 @@ export async function donateAction(store: GameStore, player: Player, command: Do
       }
       await store.setDonateDraft(player._id, { step: 'confirm_thief', token: input.eventId });
       return confirm(thiefPrompt(player), input.eventId);
+    case 'donate_check':
+      if (player.checkUntil !== undefined && player.checkUntil > now) {
+        await store.setDonateDraft(player._id, null);
+        return back(checkPrompt(player, player.checkUntil));
+      }
+      await store.setDonateDraft(player._id, { step: 'confirm_check', token: input.eventId });
+      return confirm(checkPrompt(player), input.eventId);
     case 'donate_dealer': {
       const state = await store.dealer();
       const holder = state.holderId === null ? null : await store.player(state.holderId);
@@ -88,6 +98,12 @@ export async function donateAction(store: GameStore, player: Player, command: Do
             : result === 'funds' ? donateTexts.funds : donateTexts.limit);
         }
         case 'confirm_dealer': return buyDealer(store, player, now, input.eventId);
+        case 'confirm_check': {
+          const result = await store.buyCheck(player, now);
+          if (result === 'active' && player.checkUntil !== undefined) return main(checkSubscriptionText(player.checkUntil));
+          return main(result === 'ok' ? checkSubscriptionText(new Date(now.getTime() + donateConfig.subscriptionMs))
+            : result === 'funds' ? donateTexts.funds : donateTexts.limit);
+        }
         default: return assertNever(draft);
       }
     }

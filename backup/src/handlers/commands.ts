@@ -12,6 +12,7 @@ import { game } from '../config/game.js';
 import type { Command } from '../types/game.js';
 import { isRankingMetric } from '../services/rankings.js';
 import { isRecord } from '../utils/validation.js';
+import { parsePlayerTarget } from '../services/item-rules.js';
 
 export function parseCommand(text: string | undefined, payload: unknown, isChat = false): Command {
   const boss = parseBossText(text);
@@ -25,6 +26,12 @@ export function parseCommand(text: string | undefined, payload: unknown, isChat 
   }
   const dice = parseDiceText(text, isChat);
   if (dice !== null) return dice;
+  const check = isChat ? /^чек(?:\s+(.+))?$/iu.exec(text?.trim() ?? '') : null;
+  if (check !== null) {
+    if (check[1] === undefined) return { kind: 'check' };
+    const target = parsePlayerTarget(check[1]);
+    return target === null || target.kind === 'screen' ? { kind: 'check_invalid' } : { kind: 'check', target };
+  }
   const casino = parseCasinoText(text, isChat);
   if (casino !== null) return casino;
   const ranking = parseChatRanking(text, isChat);
@@ -73,7 +80,7 @@ export function parseCommand(text: string | undefined, payload: unknown, isChat 
   if (isRecord(value)) {
     if (value.command === 'help') return { kind: 'help' };
     if ((value.command === 'donate_confirm' || value.command === 'donate_cancel') && typeof value.token === 'string' && value.token.length > 0 && value.token.length <= 200) return { kind: value.command, token: value.token };
-    if (value.command === 'donate' || value.command === 'donate_nick' || value.command === 'donate_thief' || value.command === 'donate_dealer') return { kind: value.command };
+    if (value.command === 'donate' || value.command === 'donate_nick' || value.command === 'donate_thief' || value.command === 'donate_dealer' || value.command === 'donate_subscriptions' || value.command === 'donate_check') return { kind: value.command };
     if (value.command === 'item' && typeof value.itemId === 'number' && Number.isSafeInteger(value.itemId) && value.itemId > 0) {
       return { kind: 'item', itemId: value.itemId };
     }

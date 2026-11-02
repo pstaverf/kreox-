@@ -39,6 +39,16 @@ export class MongoDonateStore extends MongoItemStore {
     }, { $inc: { euro: -donateConfig.subscriptionCost }, $set: { thiefUntil: new Date(now.getTime() + donateConfig.subscriptionMs) }, $unset: { donateDraft: '' } }, { session: this.donateSession });
     return result.matchedCount === 1 ? 'ok' : 'funds';
   }
+  async buyCheck(player: Player, now: Date): Promise<DonatePurchase | 'active'> {
+    if (player.checkUntil !== undefined && player.checkUntil > now) return 'active';
+    if (!validDonateMoney(player.euro)) return 'limit';
+    const result = await this.donatePlayers.updateOne({
+      _id: player._id, euro: { $gte: donateConfig.subscriptionCost, $lte: game.maxAmount },
+      $expr: { $eq: ['$euro', { $trunc: '$euro' }] },
+      $or: [{ checkUntil: { $exists: false } }, { checkUntil: { $lte: now } }]
+    }, { $inc: { euro: -donateConfig.subscriptionCost }, $set: { checkUntil: new Date(now.getTime() + donateConfig.subscriptionMs) }, $unset: { donateDraft: '' } }, { session: this.donateSession });
+    return result.matchedCount === 1 ? 'ok' : 'funds';
+  }
   async theftTargetCount(actorId: number, memberIds: readonly number[]): Promise<number> {
     return this.donatePlayers.countDocuments({ _id: { $in: [...memberIds], $ne: actorId } }, { session: this.donateSession });
   }

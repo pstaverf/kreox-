@@ -18,13 +18,13 @@ export function validDiceStake(currency: BalanceCurrency, amount: number, slots:
     && Number.isSafeInteger(slots) && slots >= diceConfig.minPlayers && slots <= diceConfig.maxPlayers
     && BigInt(amount) * BigInt(slots) <= BigInt(game.maxAmount);
 }
-export function diceDistribution(amount: number, count: number, winners: number, currency: BalanceCurrency = 'kc'): { each: number; commission: number } {
+export function diceDistribution(amount: number, count: number, winners: number, currency: BalanceCurrency = 'kc', discountedTieFee = false): { each: number; commission: number } {
   if (!safeBankMoney(amount) || amount <= 0 || !Number.isSafeInteger(count) || count < 2 || count > diceConfig.maxPlayers
     || !Number.isSafeInteger(winners) || winners < 1 || winners > count) throw new Error('Invalid dice distribution');
   const rawPot = BigInt(amount) * BigInt(count);
   const pot = currency === 'kc' ? BigInt(roundKcRatio(rawPot)) : rawPot;
   if (rawPot > BigInt(game.maxAmount)) throw new Error('Dice pot limit');
-  const fee = winners === 1 ? diceConfig.winnerFee : diceConfig.tieFee;
+  const fee = winners === 1 ? diceConfig.winnerFee : discountedTieFee ? diceConfig.winnerFee : diceConfig.tieFee;
   const numerator = pot * BigInt(diceConfig.feeScale - fee);
   const denominator = BigInt(diceConfig.feeScale) * BigInt(winners);
   const rounded = currency === 'kc' ? BigInt(roundKcRatio(numerator, denominator)) : numerator / denominator;

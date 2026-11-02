@@ -1,12 +1,18 @@
 export const itemConfig = {
   maxBatch: 1000,
+  jokerDurationMs: 10 * 60 * 1000,
+  antiCheckDurationMs: 60 * 60 * 1000,
   offerDurationMs: 10 * 60 * 1000,
   catalog: [
     { id: 1, kind: 'zhdun_case', name: '💼 Кейс «Ждун»' },
     { id: 2, kind: 'referral_case', name: '👬 Кейс «Реферальный»' },
     { id: 3, kind: 'croupier', name: '🤴 Крупьер' },
     { id: 4, kind: 'boss_case:💙:Ахиллес', name: '💙 Босс-кейс (Ахиллес)' },
-    { id: 5, kind: 'aristocrat_case', name: '🏛️ Кейс «Аристократ»' }
+    { id: 5, kind: 'aristocrat_case', name: '🏛️ Кейс «Аристократ»' },
+    { id: 6, kind: 'joker', name: '🃏 Джокер' },
+    { id: 7, kind: 'dice', name: '🎲 Игральная кость' },
+    { id: 8, kind: 'vpn', name: '🌍 ВПН' },
+    { id: 9, kind: 'anti_check', name: '⛔️ Античек' }
   ],
   drops: [
     { currency: 'kc', amount: 150_000, weight: 30 },

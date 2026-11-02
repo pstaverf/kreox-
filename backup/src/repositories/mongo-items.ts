@@ -3,7 +3,7 @@ import type { ClientSession, Db } from 'mongodb';
 import { game } from '../config/game.js';
 import type { InventoryItem, Player } from '../types/game.js';
 import type { CaseRewards, ItemDraft, ItemKind, ItemOffer, ItemResult, PurchaseResult } from '../types/items.js';
-import { isItemKind, validItemQuantity, validateOffer } from '../services/item-rules.js';
+import { isItemKind, isOpenableCase, validItemQuantity, validateOffer } from '../services/item-rules.js';
 import { MongoPromoStore } from './mongo-promos.js';
 
 export class MongoItemStore extends MongoPromoStore {
@@ -45,6 +45,15 @@ export class MongoItemStore extends MongoPromoStore {
     if (result.matchedCount !== 1) {
       throw new Error('Item actor was not found');
     }
+  }
+  async setTimedItemEffect(vkId: number, kind: 'joker' | 'anti_check', until: Date): Promise<void> {
+    const field = kind === 'joker' ? 'jokerUntil' : 'antiCheckUntil';
+    const result = await this.itemPlayers.updateOne({ _id: vkId }, [{ $set: { [field]: { $max: [{ $ifNull: [`$${field}`, new Date(0)] }, until] } } }], { session: this.itemSession });
+    if (result.matchedCount !== 1) throw new Error('Timed item owner was not found');
+  }
+  async hideFromRanking(vkId: number): Promise<void> {
+    const result = await this.itemPlayers.updateOne({ _id: vkId }, { $set: { hiddenFromRanking: true } }, { session: this.itemSession });
+    if (result.matchedCount !== 1) throw new Error('VPN owner was not found');
   }
   private async select(vkId: number, kind: ItemKind, quantity: number, now: Date): Promise<InventoryItem[]> {
     if (!validItemQuantity(quantity)) {
@@ -90,7 +99,7 @@ export class MongoItemStore extends MongoPromoStore {
     return true;
   }
   async openItems(player: Player, kind: ItemKind, quantity: number, rewards: CaseRewards, now: Date): Promise<ItemResult> {
-    if (kind === 'croupier') throw new Error('Not a case');
+    if (!isOpenableCase(kind)) throw new Error('Not a case');
     if (![rewards.kc, rewards.euro, rewards.bitcoin ?? 0, rewards.aristocrat ?? 0].every(value => Number.isSafeInteger(value) && value >= 0 && value <= game.maxAmount)) {
       throw new Error('Invalid case rewards');
     }

@@ -114,6 +114,13 @@ export function profileText(player: Player, now?: Date): string {
   ].join('\n');
 }
 
+export function checkProfileText(player: Player): string {
+  const registration = player.registeredAt;
+  if (registration === undefined) throw new Error('Missing check target registration date');
+  const date = new Intl.DateTimeFormat('ru-RU', { timeZone: bankConfig.timeZone, day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' }).format(registration).replace(/,| г\. в /gu, ' ').replace(/\s+/gu, ' ').trim();
+  return `🥷 Профиль игрока ${mention(player)}\n\n🤑 Богач\n\n💸 Баланс: ${formatKc(player.kc)} KC\n💶 Евро: ${formatAmount(player.euro, game.euroScale)}\n💠 Биткоин: ${formatMining(player.bitcoin)}₿\n👍 Репутация: ${player.reputation}\n⛏ Ферма: ${formatMining(player.mining?.rate ?? game.mining.initialRate)}₿/ч\n\n🆔 ID: ${player.accountId} (VK: ${player._id})\n⏳ Регистрация: ${date}`;
+}
+
 export function bonusText(day: number, reward: Reward): string {
   return `🎁 Бонус ${day}-го дня:\n\n` + [
     `💰 ${formatKc(reward.kc)} KC`,
@@ -208,6 +215,7 @@ function rankingValue(score: number, metric: RankingMetric): string {
 export function rankingText(metric: RankingMetric, ranking: Ranking, player: Player, score: number): string {
   const rows = ranking.leaders.map((leader, index) =>
     `${rankEmoji(index + 1)} ${mention(leader)} — ${rankingValue(leader.score, metric)}`);
+  if (player.hiddenFromRanking === true) return `${rankingTitles[metric]}\n\n${rows.join('\n')}`;
   return `${rankingTitles[metric]}\n\n${rows.join('\n')}\n—————————————————\n`
     + `➡${rankEmoji(ranking.place)} ${mention(player)} — ${rankingValue(score, metric)}`;
 }
