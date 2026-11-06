@@ -47,13 +47,13 @@ test('five distinct random tasks are persisted, use varied goals and reset at mi
   const { db, send } = await fixture();
   const screen = await send({ kind: 'tasks' });
   assert.match(screen.text, /^📍 Ваши задания на сегодня:\n\n/u);
-  assert.match(screen.text, /💰 Награда за выполнение:\n\n💰 100\.000 KC\n\n💠 100₿$/u);
+  assert.match(screen.text, /💰 Награда за выполнение:\n\n💰 100\.000 KC\n\n💠 100₿\n\n💫 \+1 XP$/u);
   assert.equal(screen.keyboard.kind, 'tasks');
   assert.match(buildKeyboard(screen.keyboard).toString(), /↩️ Назад/u);
   const persisted = structuredClone(db.state.dailyTasks.get('1:2026-11-06'));
   assert.equal(persisted?.tasks.length, 5);
   assert.equal(db.player().assignedTasks, 5);
-  assert.match((await send({ kind: 'profile' })).text, /💫 Уровень: 1\n👍 Репутация: 0\n🏆 Задания: 0\/5 \[0\.00%\]/u);
+  assert.match((await send({ kind: 'profile' })).text, /💫 Уровень: 1 \(0\/4 опыта\)\n👍 Репутация: 0\n🏆 Задания: 0\/5 \[0\.00%\]/u);
   for (let count = 0; count < 5; count += 1) await send({ kind: 'tasks' });
   assert.deepEqual(db.state.dailyTasks.get('1:2026-11-06'), persisted);
   assert.equal(db.player().assignedTasks, 5);
@@ -132,8 +132,8 @@ test('real bonus, deposit, director bid, item gift and KC transfer complete task
   assert.equal(db.player().taskSetsCompleted, 1);
   assert.equal(db.state.dailyTasks.get('1:2026-11-06')?.rewarded, true);
   const results = await Promise.all(Array.from({ length: 12 }, () => send({ kind: 'tasks' })));
-  assert.ok(results.every(result => result.text === '✅ Вы успешно выполнили все задания!\n\n💰 Награды:\n\n💰 100.000 KC\n\n💠 100₿\n\n💫 +1 уровень'));
-  assert.match((await send({ kind: 'profile' })).text, /💫 Уровень: 2\n👍 Репутация: 0\n🏆 Задания: 5\/5 \[100\.00%\]/u);
+  assert.ok(results.every(result => result.text === '✅ Вы успешно выполнили все задания!\n\n💰 Награды:\n\n💰 100.000 KC\n\n💠 100₿\n\n💫 +1 XP'));
+  assert.match((await send({ kind: 'profile' })).text, /💫 Уровень: 1 \(1\/4 опыта\)\n👍 Репутация: 0\n🏆 Задания: 5\/5 \[100\.00%\]/u);
   assert.equal(db.player().taskSetsCompleted, 1);
   assert.equal(db.player().bitcoin, before.bitcoin + fourthBonus.bitcoin + taskConfig.rewardBitcoin);
 });
@@ -296,5 +296,23 @@ test('parallel completions and repeated winning-round deliveries cannot duplicat
   assert.equal(db.player().bitcoin, taskConfig.rewardBitcoin);
   assert.equal(db.player().taskSetsCompleted, 1);
   assert.equal(db.player().completedTasks, 5);
+  assert.equal(db.state.dailyTasks.get('1:2026-11-06')?.rewarded, true);
+});
+
+test('previously rewarded sets become XP and the fourth full set raises level exactly once', async () => {
+  const { db, send } = await fixture();
+  db.player().taskSetsCompleted = 3;
+  db.player().completedTasks = 4;
+  await seed(db, 1, [
+    { kind: 'roulette_win', progress: 0, goal: 1 }, { kind: 'deposit', progress: 1, goal: 1 },
+    { kind: 'director_bid', progress: 1, goal: 1 }, { kind: 'item_gift', progress: 1, goal: 1 },
+    { kind: 'item_sale', progress: 1, goal: 1 }
+  ]);
+  assert.match((await send({ kind: 'profile' })).text, /💫 Уровень: 1 \(3\/4 опыта\)/u);
+  await Promise.all(Array.from({ length: 8 }, () => db.transaction(store => progressDailyTask(store, 1, 'roulette_win', db.time, 1, 'round-to-level-2'))));
+  assert.equal(db.player().taskSetsCompleted, 4);
+  assert.match((await send({ kind: 'profile' })).text, /💫 Уровень: 2 \(0\/12 опыта\)/u);
+  assert.match((await send({ kind: 'tasks' })).text, /💫 \+1 XP$/u);
+  assert.equal(db.player().taskSetsCompleted, 4);
   assert.equal(db.state.dailyTasks.get('1:2026-11-06')?.rewarded, true);
 });

@@ -187,6 +187,31 @@ function itemName(kind) {
   return entry.name;
 }
 
+// src/services/levels.ts
+function spentBeforeLevel(level) {
+  return level === 1n ? 0n : 3n * level * (level - 1n) - 2n;
+}
+function levelProgress(totalExperience) {
+  if (!Number.isSafeInteger(totalExperience) || totalExperience < 0) throw new Error("Invalid experience");
+  const total = BigInt(totalExperience);
+  let lower = 1n;
+  let upper = 2n;
+  while (spentBeforeLevel(upper) <= total) {
+    lower = upper;
+    upper *= 2n;
+  }
+  while (lower + 1n < upper) {
+    const middle = (lower + upper) / 2n;
+    if (spentBeforeLevel(middle) <= total) lower = middle;
+    else upper = middle;
+  }
+  return {
+    level: Number(lower),
+    experience: Number(total - spentBeforeLevel(lower)),
+    required: lower === 1n ? 4 : Number(6n * lower)
+  };
+}
+
 // src/services/kc-money.ts
 var maxWholeKc = Number(BigInt(game.maxAmount) / BigInt(game.kcScale) * BigInt(game.kcScale));
 function roundKcRatio(numerator, denominator = 1n) {
@@ -322,12 +347,13 @@ function mention(player) {
 function profileText(player, now) {
   const totalTasks = player.assignedTasks ?? 0;
   const percentage = totalTasks > 0 ? (player.completedTasks * 100 / totalTasks).toFixed(2) : "0.00";
+  const level = levelProgress(player.taskSetsCompleted ?? 0);
   return [
     `👤Ник: ${mention(player)}`,
     `💸 Баланс: ${formatKc(player.kc)} KC`,
     `💶 Евро: ${formatAmount(player.euro, game.euroScale)}`,
     `💠 Биткоин: ${formatMining(player.bitcoin)}₿`,
-    `💫 Уровень: ${(player.taskSetsCompleted ?? 0) + 1}`,
+    `💫 Уровень: ${level.level} (${level.experience}/${level.required} опыта)`,
     `👍 Репутация: ${signedInteger(player.reputation)}`,
     `🏆 Задания: ${player.completedTasks}/${totalTasks} [${percentage}%]`,
     ...now === void 0 || player.registeredAt === void 0 ? [] : [`🤖 В боте ${Math.max(0, Math.floor((now.getTime() - player.registeredAt.getTime()) / bankConfig.dayMs))} дней. | ${new Intl.DateTimeFormat("ru-RU", { timeZone: bankConfig.timeZone, day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(player.registeredAt).replace(", ", " ")}`],
@@ -2051,14 +2077,12 @@ async function dailyTasksAction(store, player) {
   }
   const daily = await ensureDailyTasks(store, player._id, await store.now());
   if (daily.completed && !daily.rewarded && !await store.awardDailyTasks(daily)) pending = true;
-  const rewards = "💰 100.000 KC\n\n💠 100₿";
+  const rewards = "💰 100.000 KC\n\n💠 100₿\n\n💫 +1 XP";
   const text = daily.completed && daily.rewarded ? `✅ Вы успешно выполнили все задания!
 
 💰 Награды:
 
-${rewards}
-
-💫 +1 уровень` : `📍 Ваши задания на сегодня:
+${rewards}` : `📍 Ваши задания на сегодня:
 
 ${daily.tasks.map(taskLine).join("\n")}
 

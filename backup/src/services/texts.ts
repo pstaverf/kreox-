@@ -1,4 +1,5 @@
 import { itemName } from './item-names.js';
+import { levelProgress } from './levels.js';
 import { roundKc } from './kc-money.js';
 import { bankConfig } from '../config/bank.js';
 import { game } from '../config/game.js';
@@ -108,12 +109,13 @@ export function mention(player: Pick<Player, '_id' | 'name'>): string {
 export function profileText(player: Player, now?: Date): string {
   const totalTasks = player.assignedTasks ?? 0;
   const percentage = totalTasks > 0 ? (player.completedTasks * 100 / totalTasks).toFixed(2) : '0.00';
+  const level = levelProgress(player.taskSetsCompleted ?? 0);
   return [
     `👤Ник: ${mention(player)}`,
     `💸 Баланс: ${formatKc(player.kc)} KC`,
     `💶 Евро: ${formatAmount(player.euro, game.euroScale)}`,
     `💠 Биткоин: ${formatMining(player.bitcoin)}₿`,
-    `💫 Уровень: ${(player.taskSetsCompleted ?? 0) + 1}`,
+    `💫 Уровень: ${level.level} (${level.experience}/${level.required} опыта)`,
     `👍 Репутация: ${signedInteger(player.reputation)}`,
     `🏆 Задания: ${player.completedTasks}/${totalTasks} [${percentage}%]`,
     ...(now === undefined || player.registeredAt === undefined ? [] : [`🤖 В боте ${Math.max(0, Math.floor((now.getTime() - player.registeredAt.getTime()) / bankConfig.dayMs))} дней. | ${new Intl.DateTimeFormat('ru-RU', { timeZone: bankConfig.timeZone, day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(player.registeredAt).replace(', ', ' ')}`]),

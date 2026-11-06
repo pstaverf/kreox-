@@ -85,9 +85,9 @@ export async function dailyTasksAction(store: GameStore, player: Player): Promis
   }
   const daily = await ensureDailyTasks(store, player._id, await store.now());
   if (daily.completed && !daily.rewarded && !await store.awardDailyTasks(daily)) pending = true;
-  const rewards = '💰 100.000 KC\n\n💠 100₿';
+  const rewards = '💰 100.000 KC\n\n💠 100₿\n\n💫 +1 XP';
   const text = daily.completed && daily.rewarded
-    ? `✅ Вы успешно выполнили все задания!\n\n💰 Награды:\n\n${rewards}\n\n💫 +1 уровень`
+    ? `✅ Вы успешно выполнили все задания!\n\n💰 Награды:\n\n${rewards}`
     : `📍 Ваши задания на сегодня:\n\n${daily.tasks.map(taskLine).join('\n')}\n\n💰 Награда за выполнение:\n\n${rewards}`;
   return { text: `${text}${pending ? '\n\n⚠️ Награда ожидает начисления: достигнут предел баланса.' : ''}`, keyboard: { kind: 'tasks' } };
 }

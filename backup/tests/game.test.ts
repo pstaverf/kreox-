@@ -35,7 +35,7 @@ test('first interaction only registers and welcomes; duplicate does not register
 test('profile, menu, empty inventory and navigation have requested text and keyboards', async () => {
   const { send } = await fixture();
   const profile = await send({ kind: 'profile' });
-  assert.equal(profile.text, '👤Ник: [id1|Александр]\n💸 Баланс: 0 KC\n💶 Евро: 0\n💠 Биткоин: 0,000₿\n💫 Уровень: 1\n👍 Репутация: 0\n🏆 Задания: 0/0 [0.00%]\n🤖 В боте 0 дней. | 23.10.26 03:00\n🆔0');
+  assert.equal(profile.text, '👤Ник: [id1|Александр]\n💸 Баланс: 0 KC\n💶 Евро: 0\n💠 Биткоин: 0,000₿\n💫 Уровень: 1 (0/4 опыта)\n👍 Репутация: 0\n🏆 Задания: 0/0 [0.00%]\n🤖 В боте 0 дней. | 23.10.26 03:00\n🆔0');
   assert.deepEqual(profile.keyboard, { kind: 'profile' });
   assert.equal((await send({ kind: 'menu' })).text, `[id1|Александр], меню:\n\n${profile.text}`);
   const inventory = await send({ kind: 'inventory', page: 0 });
@@ -278,7 +278,7 @@ test('funded profile matches the compact Felix example and only menu adds an emp
     '💸 Баланс: 2.500 KC',
     '💶 Евро: 0',
     '💠 Биткоин: 1,500₿',
-    '💫 Уровень: 1',
+    '💫 Уровень: 1 (0/4 опыта)',
     '👍 Репутация: 0',
     '🏆 Задания: 0/0 [0.00%]',
     '🤖 В боте 0 дней. | 23.10.26 03:00',

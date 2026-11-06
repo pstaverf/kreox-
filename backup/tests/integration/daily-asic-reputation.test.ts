@@ -55,6 +55,8 @@ test('MongoDB replica set: ASIC, reputation cooldown, task progress and one atom
     assert.equal(winner.assignedTasks, 5);
     assert.equal(winner.taskSetsCompleted, 1);
     assert.equal((await records.findOne({ _id: daily._id }))?.rewarded, true);
+    const profile = await service.handle({ eventId: 'xp-profile', vkId: 1, command: { kind: 'profile' } }, async () => 'Игрок');
+    assert.match(profile.text, /💫 Уровень: 1 \(1\/4 опыта\)/u);
 
     assert.equal(await database.transaction(store => store.grantItems(1, 'asic', 1)), true);
     const asic = await service.handle({ eventId: 'asic', vkId: 1, command: { kind: 'mining_asic' } }, async () => 'Игрок');
