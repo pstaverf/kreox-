@@ -505,16 +505,115 @@ test('concurrent whole-wallet bets cannot spend the same balance twice and faile
 });
 
 
-test('joker temporarily removes only the cumulative one-million round budget while ten bets remain capped', async () => {
+test('confirmed joker accepts ч3 all-in above one million and settles the winning stake exactly once', async () => {
+  const f = await fixture((purpose, maximum) => purpose.endsWith(':roulette') ? 20 : maximum - 1);
+  const amount = 2_500_000 * game.kcScale;
+  f.db.player(2).kc = amount;
+  assert.equal((await f.chat('ч3 все', 2)).text, betMaximum('roulette'));
+  assert.equal(f.db.player(2).kc, amount);
+  assert.equal(await f.db.transaction(store => store.grantItems(1, 'joker', 1)), true);
+  const prompt = await f.send({ kind: 'item_use', itemKind: 'joker' });
+  assert.equal(prompt.keyboard.kind, 'item_confirmation');
+  if (prompt.keyboard.kind !== 'item_confirmation') throw new Error('Missing Joker confirmation');
+  const activated = await f.send({ kind: 'item_activate_confirm', token: prompt.keyboard.token });
+  assert.equal(activated.text, 'Ваши лимиты в казино больше не ограничены.');
+  assert.equal(await f.db.transaction(store => store.itemCount(1, 'joker', f.db.time)), 0);
+  f.db.player().kc = amount;
+  const reply = await f.chat('ч3 все', 1, 2_000_000_001, { eventId: 'joker-all-in' });
+  assert.equal(reply.text, '✅ [id1|Игрок 1] — 2.500.000 KC на ч3');
+  assert.equal(f.db.player().kc, 0);
+  const bet = f.db.state.casino.get('bet:joker-all-in:0');
+  assert.ok(bet?.kind === 'bet');
+  assert.equal(bet.amount, amount);
+  assert.equal(bet.target, 44);
+  assert.equal((await f.chat('ч3 все', 1, 2_000_000_001, { eventId: 'joker-all-in' })).randomId, reply.randomId);
+  assert.equal(f.db.player().kc, 0);
+  const round = f.db.state.casino.get(roundKey(2_000_000_001, 'roulette'));
+  assert.ok(round?.kind === 'round');
+  f.db.time = new Date(round.closesAt);
+  await f.drain();
+  assert.equal(f.db.player().kc, 4 * amount);
+  assert.ok(f.db.state.notifications.some(notice => notice.text.includes('— Приз: 10.000.000 KC')));
+  await f.drain();
+  assert.equal(f.db.player().kc, 4 * amount);
+});
+
+test('joker removes the million-KC limit for single and relative stakes in all chat modes until expiry', async () => {
+  const cases = [
+    ['roulette', 'ч3 всё', 5_000_000],
+    ['dream', 'дрим 5 пол', 2_500_000],
+    ['double', 'дабл 5 2кк', 2_000_000],
+    ['crash', 'краш 1.7 2.000.000', 2_000_000]
+  ] as const;
+  for (const [mode, text, stake] of cases) {
+    const f = await fixture();
+    const balance = 5_000_000 * game.kcScale;
+    f.db.player().kc = balance;
+    assert.equal((await f.chat(text)).text, betMaximum(mode));
+    assert.equal(f.db.player().kc, balance);
+    f.db.player().jokerUntil = new Date(f.db.time.getTime() + 10 * 60_000);
+    assert.match((await f.chat(text)).text, /^✅/u, text);
+    assert.equal(f.db.player().kc, balance - stake * game.kcScale);
+    const bet = [...f.db.state.casino.values()].find(record => record.kind === 'bet');
+    assert.ok(bet?.kind === 'bet');
+    assert.equal(bet.amount, stake * game.kcScale);
+    f.advance(10 * 60_000);
+    f.db.player().kc = balance;
+    assert.equal((await f.chat(text, 1, 2_000_000_002)).text, betMaximum(mode));
+    assert.equal(f.db.player().kc, balance);
+  }
+});
+
+test('joker removes the round budget while the ten-bet cap still applies to large stakes', async () => {
   const f = await fixture();
   const player = f.db.player();
   player.jokerUntil = new Date(f.db.time.getTime() + 10 * 60_000);
   player.kc = game.maxAmount - game.maxAmount % game.kcScale;
   f.db.player(2).kc = game.maxAmount - game.maxAmount % game.kcScale;
-  for (let index = 0; index < 10; index += 1) assert.match((await f.chat('дабл 5 1000000')).text, /✅/u, `bet ${index + 1}`);
+  const replies = await Promise.all(Array.from({ length: 16 }, () => f.chat('дабл 5 2000000')));
+  assert.equal(replies.filter(reply => reply.text.startsWith('✅')).length, 10);
+  assert.ok(replies.filter(reply => !reply.text.startsWith('✅')).every(reply => reply.text === '💰 Не более 10 ставок в режиме «Дабл».'));
   const balance = f.db.player().kc;
-  assert.equal((await f.chat('дабл 5 1000')).text, '💰 Не более 10 ставок в режиме «Дабл».');
+  assert.equal((await f.chat('дабл 5 2000000')).text, '💰 Не более 10 ставок в режиме «Дабл».');
   assert.equal(f.db.player().kc, balance);
   assert.match((await f.chat('дабл 2 1000000', 2, 2_000_000_002)).text, /✅/u);
   assert.equal((await f.chat('дабл 3 1000', 2, 2_000_000_002)).text, betMaximum('double'));
+});
+
+test('large Joker bets preserve aggregated winnings, director income and losing-stake fees', async () => {
+  const f = await fixture((purpose, maximum) => purpose.endsWith(':roulette') ? 20 : maximum - 1);
+  f.db.player().jokerUntil = new Date(f.db.time.getTime() + 10 * 60_000);
+  f.db.player().kc = 10_000_000 * game.kcScale;
+  await f.send({ kind: 'director_view' });
+  f.root().holderId = 3;
+  f.db.state.dealer.holderId = 4;
+  const reply = await f.chat('ч3 2кк\nч3 3кк\nч1 2кк');
+  assert.equal(reply.text.split('\n').filter(line => line.startsWith('✅')).length, 3);
+  assert.equal(f.db.player().kc, 3_000_000 * game.kcScale);
+  assert.equal(f.root().earnedKC, 70_000 * game.kcScale);
+  const round = f.db.state.casino.get(roundKey(2_000_000_001, 'roulette'));
+  assert.ok(round?.kind === 'round');
+  assert.equal(round.total, 7_000_000 * game.kcScale);
+  assert.equal(round.liability, 28_000_000 * game.kcScale);
+  f.db.time = new Date(round.closesAt);
+  await f.drain();
+  assert.equal(f.db.player().kc, 23_000_000 * game.kcScale);
+  assert.equal(f.db.state.dealer.earnedKC, 20_000 * game.kcScale);
+  assert.ok(f.db.state.notifications.some(notice => notice.text.includes('5.000.000 KC на ч3\n— Приз: 20.000.000 KC')));
+  await f.drain();
+  assert.equal(f.db.player().kc, 23_000_000 * game.kcScale);
+});
+
+test('joker does not bypass minimum, available funds or safe maximum payout checks', async () => {
+  const f = await fixture();
+  f.db.player().jokerUntil = new Date(f.db.time.getTime() + 10 * 60_000);
+  f.db.player().kc = game.maxAmount - game.maxAmount % game.kcScale;
+  const before = f.db.player().kc;
+  assert.equal((await f.chat('ч3 все')).text, casinoTexts.limit);
+  assert.equal(f.db.player().kc, before);
+  assert.equal([...f.db.state.casino.values()].some(record => record.kind === 'round' || record.kind === 'bet'), false);
+  f.db.player().kc = 1_000_000 * game.kcScale;
+  assert.match((await f.chat('рулетка ч3 999')).text, /Минимальная ставка/u);
+  assert.equal((await f.chat('рулетка ч3 2кк')).text, casinoTexts.funds);
+  assert.equal(f.db.player().kc, 1_000_000 * game.kcScale);
 });

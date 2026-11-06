@@ -5926,7 +5926,8 @@ async function acceptBet(store, player, line, input, index, random) {
     return "";
   }
   if (amount < casinoConfig.minimum) return betMinimum(line.mode);
-  if (amount > casinoConfig.maximum) return betMaximum(line.mode);
+  const jokerActive = player.jokerUntil !== void 0 && player.jokerUntil > now;
+  if (!jokerActive && amount > casinoConfig.maximum) return betMaximum(line.mode);
   const director = await directorState(store, now);
   if (director.dueAt <= now) return casinoTexts.electionPending;
   const active = existing !== null && existing.stage !== "finished";
@@ -5937,7 +5938,7 @@ async function acceptBet(store, player, line, input, index, random) {
     if (bet.kind !== "bet" || !safeBankMoney(bet.amount)) throw new Error("Invalid previous casino stake");
     committed += BigInt(bet.amount);
   }
-  if ((player.jokerUntil === void 0 || player.jokerUntil <= now) && committed + BigInt(amount) > BigInt(casinoConfig.maximum)) return betMaximum(line.mode);
+  if (!jokerActive && committed + BigInt(amount) > BigInt(casinoConfig.maximum)) return betMaximum(line.mode);
   if (previousBets.length >= casinoConfig.maxBets) return betLimit(line.mode);
   const liability = betPayout(line.mode, amount, line.target, line.mode === "dream" ? 7 : 1);
   if (liability === null) return casinoTexts.limit;
