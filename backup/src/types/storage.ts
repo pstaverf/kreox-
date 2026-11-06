@@ -1,3 +1,5 @@
+import type { DailyTaskStore } from './tasks.js';
+import type { ReputationStore } from './reputation.js';
 import type { BossStore } from './boss.js';
 import type { MailingStore } from './mailing.js';
 import type { CasinoStore } from './casino.js';
@@ -8,7 +10,7 @@ import type { BalanceCurrency, BalanceOperation } from './admin-balance.js';
 import type { Promo, PromoActivation, PromoCreation, PromoDraft } from './promo.js';
 import type { GameInput, InventoryStack, MiningFarm, Notification, Player, Ranking, RankingMetric, PreparedReply, ProcessedMessage, Reply, Reward } from './game.js';
 
-export interface GameStore extends BossStore, ItemStore, DonateStore, BankStore, CasinoStore, MailingStore {
+export interface GameStore extends BossStore, DailyTaskStore, ReputationStore, ItemStore, DonateStore, BankStore, CasinoStore, MailingStore {
   notificationsQueued(): boolean;
   setCoinOpen(vkId: number, open: boolean): Promise<void>;
   updateBalance(vkId: number, currency: BalanceCurrency, operation: BalanceOperation, amount: number): Promise<boolean>;

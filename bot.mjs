@@ -32,7 +32,8 @@ var itemConfig = {
     { id: 6, kind: "joker", name: "🃏 Джокер" },
     { id: 7, kind: "dice", name: "🎲 Игральная кость" },
     { id: 8, kind: "vpn", name: "🌍 ВПН" },
-    { id: 9, kind: "anti_check", name: "⛔️ Античек" }
+    { id: 9, kind: "anti_check", name: "⛔️ Античек" },
+    { id: 10, kind: "asic", name: "📼 Асик" }
   ],
   drops: [
     { currency: "kc", amount: 15e4, weight: 30 },
@@ -77,6 +78,7 @@ var game = {
   notificationMaxRetryMs: 36e5,
   mining: {
     durationMs: 6 * 60 * 60 * 1e3,
+    asicDurationMs: 9 * 60 * 60 * 1e3,
     hourMs: 60 * 60 * 1e3,
     initialRate: 1e7,
     minWithdrawal: 1e8,
@@ -104,7 +106,6 @@ var game = {
       203e5
     ]
   },
-  totalTasks: 0,
   duplicateRetries: 3,
   rewards: [
     { kc: 25e4, bitcoin: 15e7, case: false },
@@ -311,18 +312,24 @@ function wholeKcNotice(text, previous) {
   }
   return text;
 }
+function signedInteger(value) {
+  if (!Number.isSafeInteger(value)) throw new Error("Invalid signed integer");
+  return `${value < 0 ? "-" : ""}${formatAmount(Math.abs(value), 1)}`;
+}
 function mention(player) {
   return `[id${player._id}|${player.name}]`;
 }
 function profileText(player, now) {
-  const percentage = game.totalTasks > 0 ? (player.completedTasks * 100 / game.totalTasks).toFixed(2) : "0.00";
+  const totalTasks = player.assignedTasks ?? 0;
+  const percentage = totalTasks > 0 ? (player.completedTasks * 100 / totalTasks).toFixed(2) : "0.00";
   return [
     `👤Ник: ${mention(player)}`,
     `💸 Баланс: ${formatKc(player.kc)} KC`,
     `💶 Евро: ${formatAmount(player.euro, game.euroScale)}`,
     `💠 Биткоин: ${formatMining(player.bitcoin)}₿`,
-    `👍 Репутация: ${player.reputation}`,
-    `🏆 Задания: ${player.completedTasks}/${game.totalTasks} [${percentage}%]`,
+    `💫 Уровень: ${(player.taskSetsCompleted ?? 0) + 1}`,
+    `👍 Репутация: ${signedInteger(player.reputation)}`,
+    `🏆 Задания: ${player.completedTasks}/${totalTasks} [${percentage}%]`,
     ...now === void 0 || player.registeredAt === void 0 ? [] : [`🤖 В боте ${Math.max(0, Math.floor((now.getTime() - player.registeredAt.getTime()) / bankConfig.dayMs))} дней. | ${new Intl.DateTimeFormat("ru-RU", { timeZone: bankConfig.timeZone, day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(player.registeredAt).replace(", ", " ")}`],
     `🆔${player.accountId}`
   ].join("\n");
@@ -431,7 +438,7 @@ function rankingValue(score, metric) {
     case "referrals":
       return `${formatAmount(score, 1)} рефералов.`;
     case "reputation":
-      return formatAmount(score, 1);
+      return signedInteger(score);
   }
 }
 function rankingText(metric, ranking, player, score) {
@@ -1958,6 +1965,109 @@ var MongoMessagePhotos = class {
   }
 };
 
+// src/services/tasks.ts
+import { randomInt } from "node:crypto";
+
+// src/config/tasks.ts
+var taskConfig = {
+  count: 5,
+  rewardKC: 1e5 * game.kcScale,
+  rewardBitcoin: 100 * game.bitcoinScale
+};
+
+// src/services/tasks.ts
+var winGoals = [10, 12, 15, 20];
+var templates = [
+  { kind: "roulette_win", label: "Выиграть в рулетке", goals: winGoals },
+  { kind: "crash_win", label: "Выиграть в краше", goals: winGoals },
+  { kind: "dream_win", label: "Выиграть в дрим", goals: winGoals },
+  { kind: "double_win", label: "Выиграть в дабл", goals: winGoals },
+  { kind: "deposit", label: "Открыть депозит", goals: [1] },
+  { kind: "bonus", label: "Собрать бонус", goals: [4] },
+  { kind: "director_bid", label: "Сделать ставку в выборах директора", goals: [1] },
+  { kind: "item_gift", label: "Подарить игроку предмет", goals: [1] },
+  { kind: "item_sale", label: "Продать предмет", goals: [1] },
+  { kind: "gift_kc", label: "Подарить игроку KC", goals: [1e3 * game.kcScale] },
+  { kind: "case_open", label: "Открыть кейс", goals: [1] },
+  { kind: "farm_start", label: "Запустить майнинг-ферму", goals: [1] }
+];
+function moscowTaskDay(time) {
+  if (!Number.isFinite(time.getTime())) throw new Error("Invalid task time");
+  return new Date(time.getTime() + casinoConfig.moscowOffsetMs).toISOString().slice(0, 10);
+}
+function newDailyTasks(vkId, day, random = randomInt) {
+  if (!Number.isSafeInteger(vkId) || vkId <= 0 || !/^\d{4}-\d{2}-\d{2}$/u.test(day)) throw new Error("Invalid daily task owner or day");
+  const available = [...templates];
+  const tasks = [];
+  for (let index = 0; index < taskConfig.count; index += 1) {
+    const choice = random(available.length);
+    if (!Number.isSafeInteger(choice) || choice < 0 || choice >= available.length) throw new Error("Invalid daily task choice");
+    const [template] = available.splice(choice, 1);
+    if (template === void 0) throw new Error("Missing daily task template");
+    const goalIndex = template.goals.length === 1 ? 0 : random(template.goals.length);
+    const goal = template.goals[goalIndex];
+    if (goal === void 0) throw new Error("Invalid daily task goal");
+    tasks.push({ kind: template.kind, goal, progress: 0 });
+  }
+  return { _id: `${vkId}:${day}`, vkId, day, version: 0, tasks, completed: false, rewarded: false };
+}
+async function ensureDailyTasks(store, vkId, now) {
+  const day = moscowTaskDay(now);
+  const current = await store.dailyTasks(vkId, day);
+  if (current !== null) return current;
+  const created = newDailyTasks(vkId, day);
+  await store.createDailyTasks(created);
+  return created;
+}
+async function progressDailyTask(store, vkId, kind, now, amount = 1, roundId) {
+  if (!Number.isSafeInteger(amount) || amount <= 0) throw new Error("Invalid daily task progress");
+  const daily = await ensureDailyTasks(store, vkId, now);
+  const task = daily.tasks.find((value) => value.kind === kind);
+  if (task === void 0 || task.progress >= task.goal) return;
+  if (roundId !== void 0) {
+    if (roundId.length === 0 || roundId.length > 250) throw new Error("Invalid winning round");
+    if (task.seenRounds?.includes(roundId)) return;
+    task.seenRounds = [...task.seenRounds ?? [], roundId];
+  }
+  task.progress += Math.min(task.goal - task.progress, amount);
+  const completedDelta = task.progress === task.goal ? 1 : 0;
+  daily.completed = daily.tasks.every((value) => value.progress >= value.goal);
+  await store.saveDailyTasks(daily, completedDelta);
+  if (daily.completed && !daily.rewarded) await store.awardDailyTasks(daily);
+}
+function taskLine(task, index) {
+  const template = templates.find((value) => value.kind === task.kind);
+  if (template === void 0) throw new Error("Unknown daily task");
+  const progress = task.kind === "gift_kc" ? `${formatKc(task.progress)}/${formatKc(task.goal)} KC` : `${task.progress}/${task.goal}`;
+  return `${index + 1}. ${template.label} — ${progress}${task.progress >= task.goal ? " ✅" : ""}`;
+}
+async function dailyTasksAction(store, player) {
+  let pending = false;
+  for (const previous of await store.pendingDailyTasks(player._id)) {
+    if (!await store.awardDailyTasks(previous)) {
+      pending = true;
+      break;
+    }
+  }
+  const daily = await ensureDailyTasks(store, player._id, await store.now());
+  if (daily.completed && !daily.rewarded && !await store.awardDailyTasks(daily)) pending = true;
+  const rewards = "💰 100.000 KC\n\n💠 100₿";
+  const text = daily.completed && daily.rewarded ? `✅ Вы успешно выполнили все задания!
+
+💰 Награды:
+
+${rewards}
+
+💫 +1 уровень` : `📍 Ваши задания на сегодня:
+
+${daily.tasks.map(taskLine).join("\n")}
+
+💰 Награда за выполнение:
+
+${rewards}`;
+  return { text: `${text}${pending ? "\n\n⚠️ Награда ожидает начисления: достигнут предел баланса." : ""}`, keyboard: { kind: "tasks" } };
+}
+
 // src/services/casino-winnings.ts
 async function settleWinningGroup(store, round, selected) {
   const pending = await store.casinoList({ kind: "bet", roundId: round.roundId, vkId: selected.vkId, settled: false }, casinoConfig.maxBets);
@@ -1979,6 +2089,8 @@ async function settleWinningGroup(store, round, selected) {
     value.bet.settled = true;
     await store.casinoSave(value.bet);
   }
+  const kind = `${round.mode}_win`;
+  await progressDailyTask(store, selected.vkId, kind, round.closesAt, 1, round.roundId);
   return { amount: Number(amount), payout: Number(totalPayout), count: group.length };
 }
 
@@ -2034,6 +2146,7 @@ async function directorAction(store, player, command, input) {
   }
   state.total += draft.amount;
   await store.casinoSave(state, state.dueAt);
+  await progressDailyTask(store, player._id, "director_bid", await store.now());
   await store.setDirectorDraft(player._id, null);
   return { text: directorSuccess(draft.amount), keyboard: { kind: "main" } };
 }
@@ -2560,7 +2673,7 @@ function caseDrops(kind) {
 
 // src/services/item-rules.ts
 function isItemKind(value) {
-  return value === "zhdun_case" || value === "referral_case" || value === "croupier" || value === "aristocrat_case" || value === "joker" || value === "dice" || value === "vpn" || value === "anti_check" || typeof value === "string" && bossCaseDetails(value) !== null;
+  return value === "zhdun_case" || value === "referral_case" || value === "croupier" || value === "aristocrat_case" || value === "joker" || value === "dice" || value === "vpn" || value === "anti_check" || value === "asic" || typeof value === "string" && bossCaseDetails(value) !== null;
 }
 function isOpenableCase(value) {
   return value === "zhdun_case" || value === "referral_case" || value === "aristocrat_case" || value.startsWith("boss_case:");
@@ -2715,7 +2828,7 @@ async function loadChatMembers(vk, peerId, groupId) {
 }
 
 // src/handlers/messages.ts
-import { randomInt } from "node:crypto";
+import { randomInt as randomInt2 } from "node:crypto";
 import { setTimeout } from "node:timers/promises";
 import { ExecuteError as ExecuteError2 } from "vk-io";
 
@@ -3122,6 +3235,13 @@ function parseCommand(text, payload, isChat = false) {
     const target = parsePlayerTarget(check[1]);
     return target === null || target.kind === "screen" ? { kind: "check_invalid" } : { kind: "check", target };
   }
+  const rep = isChat ? /^([+-])реп(?:\s+(.+))?$/iu.exec(text?.trim() ?? "") : null;
+  if (rep !== null) {
+    const direction = rep[1] === "+" ? 1 : -1;
+    if (rep[2] === void 0) return { kind: "reputation", direction };
+    const target = parsePlayerTarget(rep[2]);
+    return target === null || target.kind === "screen" ? { kind: "reputation_invalid" } : { kind: "reputation", direction, target };
+  }
   const casino = parseCasinoText(text, isChat);
   if (casino !== null) return casino;
   const ranking = parseChatRanking(text, isChat);
@@ -3195,7 +3315,7 @@ function parseCommand(text, payload, isChat = false) {
     if (value.command === "mining_confirm" && typeof value.level === "number" && Number.isSafeInteger(value.level) && value.level >= 0 && value.level < game.maxAmount) {
       return { kind: "mining_confirm", level: value.level };
     }
-    if (value.command === "menu" || value.command === "mining" || value.command === "profile" || value.command === "bonus" || value.command === "mining_start" || value.command === "mining_withdraw" || value.command === "mining_upgrade" || value.command === "referrals" || value.command === "development") {
+    if (value.command === "menu" || value.command === "mining" || value.command === "profile" || value.command === "bonus" || value.command === "mining_start" || value.command === "mining_withdraw" || value.command === "mining_upgrade" || value.command === "mining_asic" || value.command === "tasks" || value.command === "referrals" || value.command === "development") {
       return { kind: value.command };
     }
   }
@@ -3392,7 +3512,8 @@ function itemDetails(kind, count, use = false) {
     dice: "📋 Пока в инвентаре, комиссия в костях уменьшается до 1%.",
     joker: "После активации снимает лимит в казино на 10 минут.",
     vpn: "📋 Скрывает вас из топа; повторное использование возвращает обратно.",
-    anti_check: "При активации вас нельзя будет чекнуть на 1 час."
+    anti_check: "При активации вас нельзя будет чекнуть на 1 час.",
+    asic: "📋 Запускает вашу ферму на 9 часов"
   };
   const description = passive[kind];
   if (description !== void 0) return `📒 Предмет "${itemName(kind)}" (x${count}):${kind === "joker" ? `
@@ -3644,13 +3765,14 @@ function buildKeyboard(spec) {
         [button(labels.battlePass, { kind: "development" })],
         [button(labels.profile, { kind: "profile" }), button(labels.bonus, { kind: "bonus" }), button(labels.rating, { kind: "ranking", metric: "kc" })],
         [button(labels.promo, { kind: "promo" }), Keyboard.textButton({ label: labels.city, color: Keyboard.PRIMARY_COLOR, payload: { command: "city" } }), button(labels.mining, { kind: "mining" })],
-        [Keyboard.textButton({ label: labels.donate, color: Keyboard.POSITIVE_COLOR, payload: { command: "donate" } }), button(labels.boss, { kind: "boss" }), button(labels.tasks, { kind: "development" })],
+        [Keyboard.textButton({ label: labels.donate, color: Keyboard.POSITIVE_COLOR, payload: { command: "donate" } }), button(labels.boss, { kind: "boss" }), button(labels.tasks, { kind: "tasks" })],
         [button(labels.help, { kind: "help" })]
       ]).oneTime(false);
     case "profile":
       return Keyboard.keyboard([[button(labels.referral, { kind: "referrals" }), button(labels.inventory, { kind: "inventory", page: 0 })], [button(labels.menu, { kind: "menu" })]]).oneTime(false);
     case "mining":
       return Keyboard.keyboard([
+        ...spec.asic === true ? [[button("Асик", { kind: "mining_asic" })]] : [],
         [button(labels.startMining, { kind: "mining_start" }), button(labels.withdrawMining, { kind: "mining_withdraw" })],
         [button(labels.upgradeMining, { kind: "mining_upgrade" }), Keyboard.textButton({ label: labels.back, payload: { command: "menu" } })]
       ]).oneTime(false);
@@ -3666,6 +3788,8 @@ function buildKeyboard(spec) {
         [button(labels.thieves, { kind: "ranking", metric: "stolenKC" })],
         [Keyboard.textButton({ label: labels.back, payload: { command: "menu" } })]
       ]).oneTime(false);
+    case "tasks":
+      return Keyboard.keyboard([[button(labels.back, { kind: "menu" })]]).oneTime(false);
     case "referrals":
       return Keyboard.keyboard([[Keyboard.textButton({ label: labels.back, payload: { command: "profile" } })]]).oneTime(false);
     case "inventory": {
@@ -3771,7 +3895,7 @@ function createMessageHandler(vk, game2, groupId, wakeNotifications, resolvePhot
     } catch (error) {
       logError("message_processing", error, { eventId, vkId: context.senderId });
       try {
-        await sendReply(vk, context.peerId, -randomInt(1, game.maxRandomId + 1), { text: texts.error, keyboard: { kind: context.isChat ? "none" : "main" } }, context.isChat);
+        await sendReply(vk, context.peerId, -randomInt2(1, game.maxRandomId + 1), { text: texts.error, keyboard: { kind: context.isChat ? "none" : "main" } }, context.isChat);
       } catch (sendError) {
         logError("error_reply", sendError, { eventId });
       }
@@ -4077,7 +4201,7 @@ async function migrateMailingRecipients(db) {
 }
 
 // src/repositories/mongo.ts
-import { randomInt as randomInt3 } from "node:crypto";
+import { randomInt as randomInt4 } from "node:crypto";
 
 // src/services/donate-rules.ts
 function isDonateCommand(command) {
@@ -4785,7 +4909,7 @@ function normalizeName(name) {
 }
 
 // src/services/mining.ts
-import { randomInt as randomInt2 } from "node:crypto";
+import { randomInt as randomInt3 } from "node:crypto";
 function initialFarm() {
   return {
     rate: game.mining.initialRate,
@@ -4827,7 +4951,7 @@ function nextUpgradeCost(level, current) {
   return cost <= BigInt(game.maxAmount) ? Number(cost) : null;
 }
 function randomMiningIncrease() {
-  return randomInt2(
+  return randomInt3(
     game.mining.minIncrease / game.mining.precision,
     game.mining.maxIncrease / game.mining.precision + 1
   ) * game.mining.precision;
@@ -4878,6 +5002,8 @@ var MongoGameDatabase = class {
       { key: { kind: 1, runId: 1, damage: -1, accountId: 1 } },
       { key: { kind: 1, subscribed: 1, vkId: 1 } }
     ]);
+    await this.db.collection("daily_tasks").createIndex({ vkId: 1, completed: 1, rewarded: 1, day: 1 });
+    await this.db.collection("reputation_cooldowns").createIndex({ nextAt: 1 }, { expireAfterSeconds: 0 });
     await this.db.collection("deposits").createIndex({ vkId: 1, state: 1, depositId: 1 });
     await this.db.collection("deposits").createIndex({ vkId: 1, depositId: 1 }, { unique: true });
     await this.db.collection("deposits").createIndex({ state: 1, nextAttemptAt: 1, _id: 1 });
@@ -4992,6 +5118,8 @@ var MongoGameStore = class extends MongoBossStore {
     this.session = session;
     this.responseIds = responseIds;
     this.players = db.collection("players");
+    this.reputationCooldowns = db.collection("reputation_cooldowns");
+    this.dailyTaskRecords = db.collection("daily_tasks");
     this.items = db.collection("inventory");
     this.messages = db.collection("processed_messages");
     this.counters = db.collection("counters");
@@ -5007,12 +5135,87 @@ var MongoGameStore = class extends MongoBossStore {
     return this.queuedNotifications;
   }
   players;
+  reputationCooldowns;
+  dailyTaskRecords;
   items;
   messages;
   counters;
   notifications;
   mailingCampaigns;
   mailingAudience;
+  async dailyTasks(vkId, day) {
+    return this.dailyTaskRecords.findOne({ _id: `${vkId}:${day}` }, { session: this.session });
+  }
+  async createDailyTasks(tasks) {
+    const inserted = await this.dailyTaskRecords.insertOne(tasks, { session: this.session });
+    if (!inserted.acknowledged) throw new Error("Daily tasks insert failed");
+    const updated = await this.players.updateOne({ _id: tasks.vkId, $or: [
+      { assignedTasks: { $exists: false } },
+      { assignedTasks: { $gte: 0, $lte: game.maxAmount - taskConfig.count } }
+    ] }, { $inc: { assignedTasks: taskConfig.count } }, { session: this.session });
+    if (updated.matchedCount !== 1) throw new Error("Daily task owner or counter is invalid");
+  }
+  async saveDailyTasks(tasks, completedDelta) {
+    if (completedDelta !== 0 && completedDelta !== 1) throw new Error("Invalid completed task count");
+    const saved = await this.dailyTaskRecords.replaceOne(
+      { _id: tasks._id, version: tasks.version },
+      { ...tasks, version: tasks.version + 1 },
+      { session: this.session }
+    );
+    if (saved.matchedCount !== 1) throw new DuplicateWriteError();
+    tasks.version += 1;
+    if (completedDelta > 0) {
+      const updated = await this.players.updateOne(
+        { _id: tasks.vkId, completedTasks: { $gte: 0, $lt: game.maxAmount } },
+        { $inc: { completedTasks: completedDelta } },
+        { session: this.session }
+      );
+      if (updated.matchedCount !== 1) throw new Error("Completed task counter is invalid");
+    }
+  }
+  async pendingDailyTasks(vkId) {
+    return this.dailyTaskRecords.find({ vkId, completed: true, rewarded: false }, { session: this.session }).sort({ day: 1 }).limit(100).toArray();
+  }
+  async awardDailyTasks(tasks) {
+    if (!tasks.completed || tasks.rewarded) return false;
+    const credited = await this.players.updateOne({
+      _id: tasks.vkId,
+      kc: { $gte: 0, $lte: game.maxAmount - taskConfig.rewardKC },
+      bitcoin: { $gte: 0, $lte: game.maxAmount - taskConfig.rewardBitcoin },
+      $or: [{ taskSetsCompleted: { $exists: false } }, { taskSetsCompleted: { $gte: 0, $lt: game.maxAmount - 1 } }]
+    }, { $inc: { kc: taskConfig.rewardKC, bitcoin: taskConfig.rewardBitcoin, taskSetsCompleted: 1 } }, { session: this.session });
+    if (credited.matchedCount !== 1) return false;
+    const marked = await this.dailyTaskRecords.updateOne(
+      { _id: tasks._id, version: tasks.version, completed: true, rewarded: false },
+      { $set: { rewarded: true }, $inc: { version: 1 } },
+      { session: this.session }
+    );
+    if (marked.matchedCount !== 1) throw new DuplicateWriteError();
+    tasks.rewarded = true;
+    tasks.version += 1;
+    return true;
+  }
+  async reputationCooldown(senderId, targetId) {
+    const value = await this.reputationCooldowns.findOne({ _id: `${senderId}:${targetId}` }, { session: this.session });
+    return value?.nextAt ?? null;
+  }
+  async saveReputationCooldown(senderId, targetId, nextAt) {
+    const result = await this.reputationCooldowns.updateOne(
+      { _id: `${senderId}:${targetId}` },
+      { $set: { senderId, targetId, nextAt } },
+      { session: this.session, upsert: true }
+    );
+    if (!result.acknowledged || result.matchedCount + result.upsertedCount !== 1) throw new Error("Reputation cooldown update failed");
+  }
+  async changeReputation(vkId, delta) {
+    if (![1, 2, -1, -2].includes(delta)) throw new Error("Invalid reputation change");
+    const player = await this.players.findOneAndUpdate({
+      _id: vkId,
+      reputation: { $gte: -game.maxAmount - Math.min(delta, 0), $lte: game.maxAmount - Math.max(delta, 0) },
+      $expr: { $eq: ["$reputation", { $trunc: "$reputation" }] }
+    }, { $inc: { reputation: delta } }, { session: this.session, returnDocument: "after", includeResultMetadata: false, projection: { reputation: 1 } });
+    return player?.reputation ?? null;
+  }
   async setCoinOpen(vkId, open2) {
     const result = await this.players.updateOne({ _id: vkId }, open2 ? { $set: { coinOpen: true } } : { $unset: { coinOpen: "" } }, { session: this.session });
     if (result.matchedCount !== 1) throw new Error("Missing coin player");
@@ -5120,7 +5323,7 @@ var MongoGameStore = class extends MongoBossStore {
         { session: this.session, projection: { accountId: 1, _id: 0 } }
       ).limit(accountCapacity).toArray();
       const available = availableAccountIds(taken.map((player2) => player2.accountId));
-      const selected = available.length > 0 ? available[randomInt3(available.length)] : void 0;
+      const selected = available.length > 0 ? available[randomInt4(available.length)] : void 0;
       if (selected === void 0) {
         throw new Error("Account counter is inconsistent");
       }
@@ -5284,6 +5487,38 @@ var MongoGameStore = class extends MongoBossStore {
     return true;
   }
 };
+
+// src/services/reputation.ts
+var cooldownMs = 60 * 60 * 1e3;
+var missing = "⚠️ Укажите игрока для взаимодействия!";
+async function reputationAction(store, actor, command, input, random) {
+  const reply3 = (text) => ({ text, keyboard: { kind: "none" } });
+  if (!input.isChat) return reply3("");
+  if (command.kind === "reputation_invalid") return reply3(missing);
+  const target = command.target?.kind === "number" ? await store.playerByAccountId(command.target.id) : command.target?.kind === "vk" ? await store.player(command.target.id) : input.replySenderId !== void 0 && isPositiveId(input.replySenderId) ? await store.player(input.replySenderId) : null;
+  if (target === null) return reply3(missing);
+  const now = await store.now();
+  const nextAt = await store.reputationCooldown(actor._id, target._id);
+  if (nextAt !== null && nextAt > now) {
+    const seconds = Math.ceil((nextAt.getTime() - now.getTime()) / 1e3);
+    return reply3(`⚠️ Подождите ${Math.floor(seconds / 60)} мин. ${seconds % 60} сек. до следующей смены репутации.`);
+  }
+  const magnitude = random(`reputation:${input.eventId}`, 2) + 1;
+  const delta = command.direction * magnitude;
+  const reputation = await store.changeReputation(target._id, delta);
+  if (reputation === null) return reply3("⚠️ Достигнут предел репутации.");
+  await store.saveReputationCooldown(actor._id, target._id, new Date(now.getTime() + cooldownMs));
+  const increased = delta > 0;
+  await store.enqueueItemNotification(
+    `reputation:${input.eventId}`,
+    target._id,
+    `${mention(actor)} ${increased ? "повысил" : "понизил"} вам репутацию.`,
+    { kind: "none" }
+  );
+  return reply3(`${increased ? "👍 Вы успешно повысили" : "👎 Вы успешно понизили"} репутацию игрока ${mention(target)}.
+
+😎 Репутация: ${signedInteger(reputation)} (${increased ? "+" : "-"}${magnitude})`);
+}
 
 // src/services/boss.ts
 async function currentBoss(store) {
@@ -5911,6 +6146,7 @@ async function itemView(store, player, itemKind, use = false, eventId) {
   const now = await store.now();
   const count = await store.itemCount(player._id, itemKind, now);
   if (count === 0) return { text: await unavailableText(store, player, itemKind, now), keyboard: { kind: "profile" } };
+  if (use && itemKind === "asic") return { text: "💡 Используйте асик в разделе «⛏️ Майнинг».", keyboard: { kind: "item_back", itemKind } };
   if (use && itemKind === "dice") return { text: "🎲 Этот предмет пассивный. Ваша комиссия в костях уже равна 1%.", keyboard: { kind: "item_back", itemKind } };
   if (use && itemKind === "vpn") {
     if (eventId === void 0 || eventId.length === 0 || eventId.length > 200) throw new Error("Missing VPN activation event ID");
@@ -5940,6 +6176,7 @@ async function open(store, player, kind, quantity, roll) {
   if (result !== "ok") {
     return back2(result === "items" ? await unavailableText(store, player, kind, now) : itemTexts.limit, kind);
   }
+  await progressDailyTask(store, player._id, "case_open", now, quantity);
   await store.setItemDraft(player._id, null);
   return { text: caseResultText(player, rewards, kind), keyboard: { kind: "item_use", itemKind: kind } };
 }
@@ -6013,6 +6250,7 @@ async function itemAction(store, player, command, input, roll) {
         if (result !== "ok") {
           return back2(result === "items" ? await unavailableText(store, player, draft.itemKind, now) : itemTexts.limit, draft.itemKind);
         }
+        await progressDailyTask(store, player._id, "item_gift", now);
         await store.enqueueItemNotification(
           `gift:${input.eventId}`,
           target._id,
@@ -6048,11 +6286,13 @@ async function itemAction(store, player, command, input, roll) {
       if (seller === null) {
         return { text: itemTexts.invalidOffer, keyboard: { kind: "profile" } };
       }
-      const result = await store.purchaseOffer(offer, player, seller, await store.now());
+      const now = await store.now();
+      const result = await store.purchaseOffer(offer, player, seller, now);
       if (result !== "ok") {
         const text = result === "funds" ? itemTexts.funds : result === "expired" ? itemTexts.expired : result === "invalid" ? itemTexts.invalidOffer : result === "items" ? itemTexts.none : itemTexts.limit;
         return { text, keyboard: { kind: "profile" } };
       }
+      await progressDailyTask(store, seller._id, "item_sale", now);
       await store.enqueueItemNotification(`sold:${offer._id}`, seller._id, soldText(player, offer), { kind: "item_back", itemKind: offer.itemKind });
       return { text: boughtText(player), keyboard: { kind: "profile" } };
     }
@@ -6147,6 +6387,7 @@ async function transfer(store, sender, receiver, currency, amount, input) {
   if (sender[currency] < amount) return back3(currency === "kc" ? bankTexts.funds : bankTexts.fundsCurrency, "bank_transfer_menu");
   const net = transferNet(amount, currency);
   if (!await store.transferMoney(sender, receiver, currency, amount, net)) return back3(bankTexts.limit, "bank_transfer_menu");
+  if (currency === "kc" && net > 0) await progressDailyTask(store, sender._id, "gift_kc", await store.now(), net);
   await store.enqueueItemNotification(`transfer:${input.eventId}`, receiver._id, transferReceivedText(sender, net, currency), { kind: "none" });
   if (!input.isChat) await store.setBankDraft(sender._id, null);
   return { text: transferSuccessText(receiver, net, currency, input.isChat ?? false), keyboard: { kind: input.isChat ? "none" : "bank_transfer_menu" } };
@@ -6212,6 +6453,7 @@ async function bankAction(store, player, command, input, resolved, random) {
       if (draft?.step !== "deposit_days" || draft.token !== command.token) return back3(bankTexts.stale, "bank_deposits");
       const created = await store.createDeposit(player, draft.amount, command.days, now);
       if (created === "funds" || created === "limit") return back3(created === "funds" ? bankTexts.funds : bankTexts.depositLimit, "bank_deposits");
+      await progressDailyTask(store, player._id, "deposit", now);
       return depositMenu(store, player);
     }
     case "bank_deposit":
@@ -6289,7 +6531,7 @@ async function bankText(store, player, draft, input, resolved) {
 }
 
 // src/services/game.ts
-import { randomInt as randomInt4 } from "node:crypto";
+import { randomInt as randomInt5 } from "node:crypto";
 
 // src/services/promo-texts.ts
 var promoTexts = {
@@ -6485,17 +6727,43 @@ ${promoTexts.name}`);
 async function miningAction(store, player, command) {
   const now = await store.now();
   const farm = settleFarm(player.mining ?? initialFarm(), now);
+  const hasAsic = await store.itemCount(player._id, "asic", now) > 0;
   let text;
   switch (command.kind) {
     case "mining":
-      text = miningText(farm, now);
+      text = miningText(farm, now) + (hasAsic ? "\n\n💡 Вы можете использовать предмет для фермы!" : "");
       break;
+    case "mining_asic": {
+      if (!hasAsic) {
+        text = "⚠️ У вас нет данного предмета!";
+      } else if (farm.activeUntil.getTime() > now.getTime()) {
+        text = "💽 Ваша ферма еще работает!";
+      } else {
+        farm.activeUntil = new Date(now.getTime() + game.mining.asicDurationMs);
+        const date = new Intl.DateTimeFormat("ru-RU", {
+          timeZone: "Europe/Moscow",
+          day: "numeric",
+          month: "long",
+          year: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+          hourCycle: "h23"
+        }).format(farm.activeUntil).replace(/ г\. в /u, " ").replace(", ", " ");
+        const started = await store.saveMining(player, farm, 0);
+        if (started) await progressDailyTask(store, player._id, "farm_start", now);
+        text = started ? `💽 Ваша ферма активирована до ${date}!` : texts.miningLimit;
+      }
+      break;
+    }
     case "mining_start":
       if (farm.activeUntil.getTime() > now.getTime()) {
         text = texts.miningAlreadyStarted;
       } else {
         farm.activeUntil = new Date(now.getTime() + game.mining.durationMs);
-        text = await store.saveMining(player, farm, 0) ? texts.miningStarted : texts.miningLimit;
+        const started = await store.saveMining(player, farm, 0);
+        if (started) await progressDailyTask(store, player._id, "farm_start", now);
+        text = started ? texts.miningStarted : texts.miningLimit;
       }
       break;
     case "mining_withdraw": {
@@ -6535,12 +6803,12 @@ async function miningAction(store, player, command) {
     default:
       return assertNever(command);
   }
-  return { text, keyboard: { kind: "mining" } };
+  return { text, keyboard: hasAsic ? { kind: "mining", asic: true } : { kind: "mining" } };
 }
 
 // src/services/game.ts
 var GameService = class {
-  constructor(database, resolveReferralUrl, resolveItemTarget, caseRoll = () => randomInt4(100), donateRoll = (_purpose, maximum) => randomInt4(maximum), bankRoll = (maximum) => randomInt4(maximum), casinoRoll = casinoRandom) {
+  constructor(database, resolveReferralUrl, resolveItemTarget, caseRoll = () => randomInt5(100), donateRoll = (_purpose, maximum) => randomInt5(maximum), bankRoll = (maximum) => randomInt5(maximum), casinoRoll = casinoRandom) {
     this.database = database;
     this.resolveReferralUrl = resolveReferralUrl;
     this.resolveItemTarget = resolveItemTarget;
@@ -6703,9 +6971,13 @@ var GameService = class {
         }
       }
       if (registered !== null && input.command.kind === "giveaway_claim") return claimGiveaway(store, input, registered, input.command, giveawayState);
+      if (registered !== null && (input.command.kind === "reputation" || input.command.kind === "reputation_invalid")) {
+        return reputationAction(store, registered, input.command, input, casinoRoll);
+      }
       return { text: registered === null ? texts.registrationLimit : texts.welcome, keyboard: { kind: "main" } };
     }
     const command = input.command;
+    if (command.kind === "reputation" || command.kind === "reputation_invalid") return reputationAction(store, player, command, input, casinoRoll);
     if (command.kind === "check_invalid") return { text: `${mention(player)}, либо вы указали игрока неверно, либо этого пользователя не существует.`, keyboard: { kind: "none" } };
     if (command.kind === "check") {
       if (!input.isChat) return { text: "", keyboard: { kind: "none" } };
@@ -6814,6 +7086,8 @@ var GameService = class {
         return { text: `${mention(player)}, меню:
 
 ${profileText(player, input.isChat ? void 0 : await store.now())}`, keyboard: { kind: "main" } };
+      case "tasks":
+        return dailyTasksAction(store, player);
       case "bonus": {
         const now = await store.now();
         const remaining = player.nextBonusAt.getTime() - now.getTime();
@@ -6823,10 +7097,12 @@ ${profileText(player, input.isChat ? void 0 : await store.now())}`, keyboard: { 
         const day = bonusDay(player, now);
         const reward = rewardForDay(day);
         const claimed = await store.claim(player, day, reward, now);
+        if (claimed) await progressDailyTask(store, player._id, "bonus", now);
         return { text: claimed ? bonusText(day, reward) : texts.balanceLimit, keyboard: { kind: "main" } };
       }
       case "mining":
       case "mining_start":
+      case "mining_asic":
       case "mining_withdraw":
       case "mining_upgrade":
       case "mining_confirm":

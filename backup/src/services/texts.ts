@@ -96,19 +96,26 @@ export function wholeKcNotice(text: string, previous: number): string {
   return text;
 }
 
+export function signedInteger(value: number): string {
+  if (!Number.isSafeInteger(value)) throw new Error('Invalid signed integer');
+  return `${value < 0 ? '-' : ''}${formatAmount(Math.abs(value), 1)}`;
+}
+
 export function mention(player: Pick<Player, '_id' | 'name'>): string {
   return `[id${player._id}|${player.name}]`;
 }
 
 export function profileText(player: Player, now?: Date): string {
-  const percentage = game.totalTasks > 0 ? (player.completedTasks * 100 / game.totalTasks).toFixed(2) : '0.00';
+  const totalTasks = player.assignedTasks ?? 0;
+  const percentage = totalTasks > 0 ? (player.completedTasks * 100 / totalTasks).toFixed(2) : '0.00';
   return [
     `👤Ник: ${mention(player)}`,
     `💸 Баланс: ${formatKc(player.kc)} KC`,
     `💶 Евро: ${formatAmount(player.euro, game.euroScale)}`,
     `💠 Биткоин: ${formatMining(player.bitcoin)}₿`,
-    `👍 Репутация: ${player.reputation}`,
-    `🏆 Задания: ${player.completedTasks}/${game.totalTasks} [${percentage}%]`,
+    `💫 Уровень: ${(player.taskSetsCompleted ?? 0) + 1}`,
+    `👍 Репутация: ${signedInteger(player.reputation)}`,
+    `🏆 Задания: ${player.completedTasks}/${totalTasks} [${percentage}%]`,
     ...(now === undefined || player.registeredAt === undefined ? [] : [`🤖 В боте ${Math.max(0, Math.floor((now.getTime() - player.registeredAt.getTime()) / bankConfig.dayMs))} дней. | ${new Intl.DateTimeFormat('ru-RU', { timeZone: bankConfig.timeZone, day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(player.registeredAt).replace(', ', ' ')}`]),
     `🆔${player.accountId}`
   ].join('\n');
@@ -208,7 +215,7 @@ function rankingValue(score: number, metric: RankingMetric): string {
     case 'mining': return `${formatMining(score)}₿/час`;
     case 'euro': return `${formatAmount(score, game.euroScale)} 💶`;
     case 'referrals': return `${formatAmount(score, 1)} рефералов.`;
-    case 'reputation': return formatAmount(score, 1);
+    case 'reputation': return signedInteger(score);
   }
 }
 

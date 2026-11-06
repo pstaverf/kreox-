@@ -1,3 +1,4 @@
+import type { ReputationCommand } from './reputation.js';
 import type { BossCommand, BossKeyboard } from './boss.js';
 import type { GiveawayCommand } from './giveaway.js';
 import type { DiceCommand } from './dice.js';
@@ -20,6 +21,8 @@ export interface Player {
   bitcoin: number;
   reputation: number;
   completedTasks: number;
+  assignedTasks?: number;
+  taskSetsCompleted?: number;
   bonusDay: number;
   lastBonusAt: Date | null;
   nextBonusAt: Date;
@@ -63,6 +66,7 @@ export interface InventoryStack {
 
 export type Command =
   | BossCommand
+  | ReputationCommand
   | { kind: 'help' }
   | GiveawayCommand
   | DiceCommand
@@ -79,6 +83,7 @@ export type Command =
   | { kind: 'profile' }
   | { kind: 'menu' }
   | { kind: 'bonus' }
+  | { kind: 'tasks' }
   | { kind: 'inventory'; page: number }
   | { kind: 'item'; itemId: number }
   | { kind: 'development' }
@@ -103,7 +108,8 @@ export type KeyboardSpec =
   | { kind: 'promo' | 'promo_currency' | 'promo_back' }
   | { kind: 'promo_confirm'; token: string }
   | { kind: 'promo_list'; after: string | null }
-  | { kind: 'mining' | 'ranking' | 'referrals' }
+  | { kind: 'mining'; asic?: boolean }
+  | { kind: 'ranking' | 'referrals' | 'tasks' }
   | { kind: 'mining_upgrade'; level: number }
   | { kind: 'main' }
   | { kind: 'profile' }
@@ -195,6 +201,7 @@ export interface Notification {
 export type MiningCommand =
   | { kind: 'mining' }
   | { kind: 'mining_start' }
+  | { kind: 'mining_asic' }
   | { kind: 'mining_withdraw' }
   | { kind: 'mining_upgrade' }
   | { kind: 'mining_confirm'; level: number };

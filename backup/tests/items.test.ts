@@ -61,7 +61,7 @@ async function fixture(roll: () => number = () => 0) {
 test('catalog/admin syntax keeps grant catalog IDs separate from personal inventory IDs', async () => {
   const { send, text, db } = await fixture();
   const catalog = await text('!itemlist', 888801846);
-  assert.equal(catalog.text, '📖 ItemList:\n\n🆔 1 — 💼 Кейс «Ждун»\n\n🆔 2 — 👬 Кейс «Реферальный»\n\n🆔 3 — 🤴 Крупьер\n\n🆔 4 — 💙 Босс-кейс (Ахиллес)\n\n🆔 5 — 🏛️ Кейс «Аристократ»\n\n🆔 6 — 🃏 Джокер\n\n🆔 7 — 🎲 Игральная кость\n\n🆔 8 — 🌍 ВПН\n\n🆔 9 — ⛔️ Античек');
+  assert.equal(catalog.text, '📖 ItemList:\n\n🆔 1 — 💼 Кейс «Ждун»\n\n🆔 2 — 👬 Кейс «Реферальный»\n\n🆔 3 — 🤴 Крупьер\n\n🆔 4 — 💙 Босс-кейс (Ахиллес)\n\n🆔 5 — 🏛️ Кейс «Аристократ»\n\n🆔 6 — 🃏 Джокер\n\n🆔 7 — 🎲 Игральная кость\n\n🆔 8 — 🌍 ВПН\n\n🆔 9 — ⛔️ Античек\n\n🆔 10 — 📼 Асик');
   assert.equal((await text('!giveitem 0 2', 888801846)).text, 'Done.');
   assert.equal(db.state.items[0]?.vkId, 1);
   assert.equal(db.state.items[0]?.kind, 'referral_case');
@@ -500,7 +500,7 @@ test('giveitem accepts every current item catalog ID including Aristocrat case I
   });
   assert.equal((await text('!giveitem 0 5 10', 888801846)).text, 'Done.');
   assert.equal(db.state.items.filter(item => item.vkId === 1 && item.kind === 'aristocrat_case').length, 10);
-  assert.equal((await text('!giveitem 0 10 10', 888801846)).text, itemTexts.adminUsage);
+  assert.equal((await text('!giveitem 0 11 10', 888801846)).text, itemTexts.adminUsage);
   assert.equal(db.state.items.filter(item => item.vkId === 1).length, 10);
 });
 

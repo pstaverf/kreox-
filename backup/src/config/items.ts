@@ -12,7 +12,8 @@ export const itemConfig = {
     { id: 6, kind: 'joker', name: '🃏 Джокер' },
     { id: 7, kind: 'dice', name: '🎲 Игральная кость' },
     { id: 8, kind: 'vpn', name: '🌍 ВПН' },
-    { id: 9, kind: 'anti_check', name: '⛔️ Античек' }
+    { id: 9, kind: 'anti_check', name: '⛔️ Античек' },
+    { id: 10, kind: 'asic', name: '📼 Асик' }
   ],
   drops: [
     { currency: 'kc', amount: 150_000, weight: 30 },

@@ -27,6 +27,7 @@ export const game = {
   notificationMaxRetryMs: 3_600_000,
   mining: {
     durationMs: 6 * 60 * 60 * 1_000,
+    asicDurationMs: 9 * 60 * 60 * 1_000,
     hourMs: 60 * 60 * 1_000,
     initialRate: 10_000_000,
     minWithdrawal: 100_000_000,
@@ -39,7 +40,6 @@ export const game = {
       4_100_000, 4_900_000, 5_900_000, 7_800_000, 9_800_000, 10_900_000,
       12_700_000, 14_200_000, 17_000_000, 20_300_000]
   },
-  totalTasks: 0,
   duplicateRetries: 3,
   rewards: [
     { kc: 250_000, bitcoin: 150_000_000, case: false },

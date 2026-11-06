@@ -1,3 +1,5 @@
+import { dailyTasksAction, progressDailyTask } from './tasks.js';
+import { reputationAction } from './reputation.js';
 import { isBossCommand } from './boss-rules.js';
 import { bossAction, createBoss } from './boss.js';
 import { bossTexts } from './boss-texts.js';
@@ -197,9 +199,13 @@ export class GameService {
         }
       }
       if (registered !== null && input.command.kind === 'giveaway_claim') return claimGiveaway(store, input, registered, input.command, giveawayState);
+      if (registered !== null && (input.command.kind === 'reputation' || input.command.kind === 'reputation_invalid')) {
+        return reputationAction(store, registered, input.command, input, casinoRoll);
+      }
       return { text: registered === null ? texts.registrationLimit : texts.welcome, keyboard: { kind: 'main' } };
     }
     const command = input.command;
+    if (command.kind === 'reputation' || command.kind === 'reputation_invalid') return reputationAction(store, player, command, input, casinoRoll);
     if (command.kind === 'check_invalid') return { text: `${mention(player)}, либо вы указали игрока неверно, либо этого пользователя не существует.`, keyboard: { kind: 'none' } };
     if (command.kind === 'check') {
       if (!input.isChat) return { text: '', keyboard: { kind: 'none' } };
@@ -311,6 +317,8 @@ export class GameService {
         return { text: profileText(player, input.isChat ? undefined : await store.now()), keyboard: { kind: 'profile' } };
       case 'menu':
         return { text: `${mention(player)}, меню:\n\n${profileText(player, input.isChat ? undefined : await store.now())}`, keyboard: { kind: 'main' } };
+      case 'tasks':
+        return dailyTasksAction(store, player);
       case 'bonus': {
         const now = await store.now();
         const remaining = player.nextBonusAt.getTime() - now.getTime();
@@ -320,10 +328,12 @@ export class GameService {
         const day = bonusDay(player, now);
         const reward = rewardForDay(day);
         const claimed = await store.claim(player, day, reward, now);
+        if (claimed) await progressDailyTask(store, player._id, 'bonus', now);
         return { text: claimed ? bonusText(day, reward) : texts.balanceLimit, keyboard: { kind: 'main' } };
       }
       case 'mining':
       case 'mining_start':
+      case 'mining_asic':
       case 'mining_withdraw':
       case 'mining_upgrade':
       case 'mining_confirm':

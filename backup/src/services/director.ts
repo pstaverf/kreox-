@@ -1,3 +1,4 @@
+import { progressDailyTask } from './tasks.js';
 import { roundKc } from './kc-money.js';
 import { casinoConfig } from '../config/casino.js';
 import { accountCapacity, game } from '../config/game.js';
@@ -51,6 +52,7 @@ export async function directorAction(store: GameStore, player: Player, command: 
   }
   state.total += draft.amount;
   await store.casinoSave(state, state.dueAt);
+  await progressDailyTask(store, player._id, 'director_bid', await store.now());
   await store.setDirectorDraft(player._id, null);
   return { text: directorSuccess(draft.amount), keyboard: { kind: 'main' } };
 }

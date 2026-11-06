@@ -51,7 +51,8 @@ export function itemDetails(kind: ItemKind, count: number, use = false): string 
     dice: '📋 Пока в инвентаре, комиссия в костях уменьшается до 1%.',
     joker: 'После активации снимает лимит в казино на 10 минут.',
     vpn: '📋 Скрывает вас из топа; повторное использование возвращает обратно.',
-    anti_check: 'При активации вас нельзя будет чекнуть на 1 час.'
+    anti_check: 'При активации вас нельзя будет чекнуть на 1 час.',
+    asic: '📋 Запускает вашу ферму на 9 часов'
   };
   const description = passive[kind];
   if (description !== undefined) return `📒 Предмет "${itemName(kind)}" (x${count}):${kind === 'joker' ? `\n📋 ${description}` : `\n\n${description}`}`;

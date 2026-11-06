@@ -1,3 +1,4 @@
+import { progressDailyTask } from './tasks.js';
 import { itemConfig } from '../config/items.js';
 import { itemName } from './item-names.js';
 import { buyDealer } from './donate.js';
@@ -47,6 +48,7 @@ export async function itemView(store: GameStore, player: Player, itemKind: ItemK
   const now = await store.now();
   const count = await store.itemCount(player._id, itemKind, now);
   if (count === 0) return { text: await unavailableText(store, player, itemKind, now), keyboard: { kind: 'profile' } };
+  if (use && itemKind === 'asic') return { text: '💡 Используйте асик в разделе «⛏️ Майнинг».', keyboard: { kind: 'item_back', itemKind } };
   if (use && itemKind === 'dice') return { text: '🎲 Этот предмет пассивный. Ваша комиссия в костях уже равна 1%.', keyboard: { kind: 'item_back', itemKind } };
   if (use && itemKind === 'vpn') {
     if (eventId === undefined || eventId.length === 0 || eventId.length > 200) throw new Error('Missing VPN activation event ID');
@@ -76,6 +78,7 @@ async function open(store: GameStore, player: Player, kind: ItemKind, quantity: 
   if (result !== 'ok') {
     return back(result === 'items' ? await unavailableText(store, player, kind, now) : itemTexts.limit, kind);
   }
+  await progressDailyTask(store, player._id, 'case_open', now, quantity);
   await store.setItemDraft(player._id, null);
   return { text: caseResultText(player, rewards, kind), keyboard: { kind: 'item_use', itemKind: kind } };
 }
@@ -148,6 +151,7 @@ export async function itemAction(store: GameStore, player: Player, command: Item
         if (result !== 'ok') {
           return back(result === 'items' ? await unavailableText(store, player, draft.itemKind, now) : itemTexts.limit, draft.itemKind);
         }
+        await progressDailyTask(store, player._id, 'item_gift', now);
         await store.enqueueItemNotification(`gift:${input.eventId}`, target._id,
           giftReceivedText(player, draft.itemKind, draft.quantity), { kind: 'none' });
         await store.setItemDraft(player._id, null);
@@ -173,12 +177,14 @@ export async function itemAction(store: GameStore, player: Player, command: Item
       if (seller === null) {
         return { text: itemTexts.invalidOffer, keyboard: { kind: 'profile' } };
       }
-      const result = await store.purchaseOffer(offer, player, seller, await store.now());
+      const now = await store.now();
+      const result = await store.purchaseOffer(offer, player, seller, now);
       if (result !== 'ok') {
         const text = result === 'funds' ? itemTexts.funds : result === 'expired' ? itemTexts.expired
           : result === 'invalid' ? itemTexts.invalidOffer : result === 'items' ? itemTexts.none : itemTexts.limit;
         return { text, keyboard: { kind: 'profile' } };
       }
+      await progressDailyTask(store, seller._id, 'item_sale', now);
       await store.enqueueItemNotification(`sold:${offer._id}`, seller._id, soldText(player, offer), { kind: 'item_back', itemKind: offer.itemKind });
       return { text: boughtText(player), keyboard: { kind: 'profile' } };
     }

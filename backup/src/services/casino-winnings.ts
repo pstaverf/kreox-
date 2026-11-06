@@ -1,3 +1,5 @@
+import { progressDailyTask } from './tasks.js';
+import type { DailyTaskKind } from '../types/tasks.js';
 import { casinoConfig } from '../config/casino.js';
 import { game } from '../config/game.js';
 import type { CasinoBet, CasinoRound } from '../types/casino.js';
@@ -26,5 +28,7 @@ export async function settleWinningGroup(store: GameStore, round: CasinoRound, s
     value.bet.settled = true;
     await store.casinoSave(value.bet);
   }
+  const kind: DailyTaskKind = `${round.mode}_win`;
+  await progressDailyTask(store, selected.vkId, kind, round.closesAt, 1, round.roundId);
   return { amount: Number(amount), payout: Number(totalPayout), count: group.length };
 }

@@ -7,7 +7,7 @@ import type { AdminItemCommand, CaseRewards, ItemCommand, ItemKind, ItemOffer, P
 import { isPositiveId } from '../utils/validation.js';
 
 export function isItemKind(value: unknown): value is ItemKind {
-  return value === 'zhdun_case' || value === 'referral_case' || value === 'croupier' || value === 'aristocrat_case' || value === 'joker' || value === 'dice' || value === 'vpn' || value === 'anti_check' || (typeof value === 'string' && bossCaseDetails(value) !== null);
+  return value === 'zhdun_case' || value === 'referral_case' || value === 'croupier' || value === 'aristocrat_case' || value === 'joker' || value === 'dice' || value === 'vpn' || value === 'anti_check' || value === 'asic' || (typeof value === 'string' && bossCaseDetails(value) !== null);
 }
 export function isOpenableCase(value: ItemKind): boolean {
   return value === 'zhdun_case' || value === 'referral_case' || value === 'aristocrat_case' || value.startsWith('boss_case:');

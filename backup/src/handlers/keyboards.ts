@@ -191,13 +191,14 @@ export function buildKeyboard(spec: KeyboardSpec): KeyboardBuilder {
         [button(labels.battlePass, { kind: 'development' })],
         [button(labels.profile, { kind: 'profile' }), button(labels.bonus, { kind: 'bonus' }), button(labels.rating, { kind: 'ranking', metric: 'kc' })],
         [button(labels.promo, { kind: 'promo' }), Keyboard.textButton({ label: labels.city, color: Keyboard.PRIMARY_COLOR, payload: { command: 'city' } }), button(labels.mining, { kind: 'mining' })],
-        [Keyboard.textButton({ label: labels.donate, color: Keyboard.POSITIVE_COLOR, payload: { command: 'donate' } }), button(labels.boss, { kind: 'boss' }), button(labels.tasks, { kind: 'development' })],
+        [Keyboard.textButton({ label: labels.donate, color: Keyboard.POSITIVE_COLOR, payload: { command: 'donate' } }), button(labels.boss, { kind: 'boss' }), button(labels.tasks, { kind: 'tasks' })],
         [button(labels.help, { kind: 'help' })]
       ]).oneTime(false);
     case 'profile':
       return Keyboard.keyboard([[button(labels.referral, { kind: 'referrals' }), button(labels.inventory, { kind: 'inventory', page: 0 })], [button(labels.menu, { kind: 'menu' })]]).oneTime(false);
     case 'mining':
       return Keyboard.keyboard([
+        ...(spec.asic === true ? [[button('Асик', { kind: 'mining_asic' })]] : []),
         [button(labels.startMining, { kind: 'mining_start' }), button(labels.withdrawMining, { kind: 'mining_withdraw' })],
         [button(labels.upgradeMining, { kind: 'mining_upgrade' }), Keyboard.textButton({ label: labels.back, payload: { command: 'menu' } })]
       ]).oneTime(false);
@@ -213,6 +214,8 @@ export function buildKeyboard(spec: KeyboardSpec): KeyboardBuilder {
         [button(labels.thieves, { kind: 'ranking', metric: 'stolenKC' })],
         [Keyboard.textButton({ label: labels.back, payload: { command: 'menu' } })]
       ]).oneTime(false);
+    case 'tasks':
+      return Keyboard.keyboard([[button(labels.back, { kind: 'menu' })]]).oneTime(false);
     case 'referrals':
       return Keyboard.keyboard([[Keyboard.textButton({ label: labels.back, payload: { command: 'profile' } })]]).oneTime(false);
     case 'inventory': {

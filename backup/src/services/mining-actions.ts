@@ -1,3 +1,4 @@
+import { progressDailyTask } from './tasks.js';
 import { game } from '../config/game.js';
 import type { MiningCommand, Player, Reply } from '../types/game.js';
 import type { GameStore } from '../types/storage.js';
@@ -8,17 +9,37 @@ import { miningOfferText, miningText, miningUpgradedText, miningWithdrawalText, 
 export async function miningAction(store: GameStore, player: Player, command: MiningCommand): Promise<Reply> {
   const now = await store.now();
   const farm = settleFarm(player.mining ?? initialFarm(), now);
+  const hasAsic = await store.itemCount(player._id, 'asic', now) > 0;
   let text: string;
   switch (command.kind) {
     case 'mining':
-      text = miningText(farm, now);
+      text = miningText(farm, now) + (hasAsic ? '\n\n💡 Вы можете использовать предмет для фермы!' : '');
       break;
+    case 'mining_asic': {
+      if (!hasAsic) {
+        text = '⚠️ У вас нет данного предмета!';
+      } else if (farm.activeUntil.getTime() > now.getTime()) {
+        text = '💽 Ваша ферма еще работает!';
+      } else {
+        farm.activeUntil = new Date(now.getTime() + game.mining.asicDurationMs);
+        const date = new Intl.DateTimeFormat('ru-RU', {
+          timeZone: 'Europe/Moscow', day: 'numeric', month: 'long', year: 'numeric',
+          hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23'
+        }).format(farm.activeUntil).replace(/ г\. в /u, ' ').replace(', ', ' ');
+        const started = await store.saveMining(player, farm, 0);
+        if (started) await progressDailyTask(store, player._id, 'farm_start', now);
+        text = started ? `💽 Ваша ферма активирована до ${date}!` : texts.miningLimit;
+      }
+      break;
+    }
     case 'mining_start':
       if (farm.activeUntil.getTime() > now.getTime()) {
         text = texts.miningAlreadyStarted;
       } else {
         farm.activeUntil = new Date(now.getTime() + game.mining.durationMs);
-        text = await store.saveMining(player, farm, 0) ? texts.miningStarted : texts.miningLimit;
+        const started = await store.saveMining(player, farm, 0);
+        if (started) await progressDailyTask(store, player._id, 'farm_start', now);
+        text = started ? texts.miningStarted : texts.miningLimit;
       }
       break;
     case 'mining_withdraw': {
@@ -59,5 +80,5 @@ export async function miningAction(store: GameStore, player: Player, command: Mi
     default:
       return assertNever(command);
   }
-  return { text, keyboard: { kind: 'mining' } };
+  return { text, keyboard: hasAsic ? { kind: 'mining', asic: true } : { kind: 'mining' } };
 }

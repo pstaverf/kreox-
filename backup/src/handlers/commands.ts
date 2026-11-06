@@ -32,6 +32,13 @@ export function parseCommand(text: string | undefined, payload: unknown, isChat 
     const target = parsePlayerTarget(check[1]);
     return target === null || target.kind === 'screen' ? { kind: 'check_invalid' } : { kind: 'check', target };
   }
+  const rep = isChat ? /^([+-])реп(?:\s+(.+))?$/iu.exec(text?.trim() ?? '') : null;
+  if (rep !== null) {
+    const direction = rep[1] === '+' ? 1 : -1;
+    if (rep[2] === undefined) return { kind: 'reputation', direction };
+    const target = parsePlayerTarget(rep[2]);
+    return target === null || target.kind === 'screen' ? { kind: 'reputation_invalid' } : { kind: 'reputation', direction, target };
+  }
   const casino = parseCasinoText(text, isChat);
   if (casino !== null) return casino;
   const ranking = parseChatRanking(text, isChat);
@@ -110,7 +117,7 @@ export function parseCommand(text: string | undefined, payload: unknown, isChat 
     }
     if (value.command === 'menu' || value.command === 'mining' || value.command === 'profile'
       || value.command === 'bonus' || value.command === 'mining_start' || value.command === 'mining_withdraw'
-      || value.command === 'mining_upgrade' || value.command === 'referrals' || value.command === 'development') {
+      || value.command === 'mining_upgrade' || value.command === 'mining_asic' || value.command === 'tasks' || value.command === 'referrals' || value.command === 'development') {
       return { kind: value.command };
     }
   }

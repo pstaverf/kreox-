@@ -1,3 +1,4 @@
+import { progressDailyTask } from './tasks.js';
 import { roundKc } from './kc-money.js';
 import { bankConfig } from '../config/bank.js';
 import { game } from '../config/game.js';
@@ -27,6 +28,7 @@ async function transfer(store: GameStore, sender: Player, receiver: Player, curr
   if (sender[currency] < amount) return back(currency === 'kc' ? bankTexts.funds : bankTexts.fundsCurrency, 'bank_transfer_menu');
   const net = transferNet(amount, currency);
   if (!await store.transferMoney(sender, receiver, currency, amount, net)) return back(bankTexts.limit, 'bank_transfer_menu');
+  if (currency === 'kc' && net > 0) await progressDailyTask(store, sender._id, 'gift_kc', await store.now(), net);
   await store.enqueueItemNotification(`transfer:${input.eventId}`, receiver._id, transferReceivedText(sender, net, currency), { kind: 'none' });
   if (!input.isChat) await store.setBankDraft(sender._id, null);
   return { text: transferSuccessText(receiver, net, currency, input.isChat ?? false), keyboard: { kind: input.isChat ? 'none' : 'bank_transfer_menu' } };
@@ -84,6 +86,7 @@ export async function bankAction(store: GameStore, player: Player, command: Bank
       if (draft?.step !== 'deposit_days' || draft.token !== command.token) return back(bankTexts.stale, 'bank_deposits');
       const created = await store.createDeposit(player, draft.amount, command.days, now);
       if (created === 'funds' || created === 'limit') return back(created === 'funds' ? bankTexts.funds : bankTexts.depositLimit, 'bank_deposits');
+      await progressDailyTask(store, player._id, 'deposit', now);
       return depositMenu(store, player);
     }
     case 'bank_deposit': case 'bank_deposit_early': {

@@ -207,8 +207,8 @@ test('profile adds registration only in DMs and keeps compact lines', async () =
   const profile = await send({ kind: 'profile' });
   assert.match(profile.text, /🤖 В боте 32 дней\. \| 23\.10\.26 03:00\n🆔0$/);
   assert.equal(profile.text.includes('\n\n'), false);
-  assert.equal(profile.text.split('\n').length, 8);
-  assert.equal((await send({ kind: 'profile' }, 1, { isChat: true })).text.split('\n').length, 7);
+  assert.equal(profile.text.split('\n').length, 9);
+  assert.equal((await send({ kind: 'profile' }, 1, { isChat: true })).text.split('\n').length, 8);
 });
 
 test('deposits validate max, available KC and five active slots with persistent personal IDs', async () => {

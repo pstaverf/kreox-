@@ -1,3 +1,5 @@
+import { taskConfig } from '../src/config/tasks.js';
+import type { DailyTasks } from '../src/types/tasks.js';
 import type { BossDamage } from '../src/types/boss.js';
 import { isWholeKc, roundKc } from '../src/services/kc-money.js';
 import { mailingConfig } from '../src/config/mailing.js';
@@ -33,6 +35,8 @@ interface State {
   promos: Map<string, Promo>;
   redemptions: Set<string>;
   players: Map<number, Player>;
+  dailyTasks: Map<string, DailyTasks>;
+  reputationCooldowns: Map<string, Date>;
   items: InventoryItem[];
   messages: Map<string, ProcessedMessage>;
   registrations: number;
@@ -41,7 +45,7 @@ interface State {
 }
 
 export class MemoryDatabase implements GameDatabase {
-  state: State = { mailingAudience: new Map(), mailingCampaigns: new Map(), casino: new Map(), deposits: new Map(), dealer: { _id: 'casino', holderId: null, earnedKC: 0, nextChangeAt: new Date(0) }, offers: new Map(), promos: new Map(), redemptions: new Set(), players: new Map(), items: [], messages: new Map(), registrations: 0, responses: 0, notifications: [] };
+  state: State = { mailingAudience: new Map(), mailingCampaigns: new Map(), casino: new Map(), deposits: new Map(), dealer: { _id: 'casino', holderId: null, earnedKC: 0, nextChangeAt: new Date(0) }, offers: new Map(), promos: new Map(), redemptions: new Set(), players: new Map(), dailyTasks: new Map(), reputationCooldowns: new Map(), items: [], messages: new Map(), registrations: 0, responses: 0, notifications: [] };
   time = new Date('2026-10-23T00:00:00.000Z');
   failRemember = false;
   private queue: Promise<void> = Promise.resolve();
@@ -526,6 +530,56 @@ class MemoryStore implements GameStore {
     promo.remaining -= 1;
     this.state.redemptions.add(id);
     return 'redeemed';
+  }
+
+  async dailyTasks(vkId: number, day: string): Promise<DailyTasks | null> {
+    return structuredClone(this.state.dailyTasks.get(`${vkId}:${day}`) ?? null);
+  }
+  async createDailyTasks(tasks: DailyTasks): Promise<void> {
+    if (this.state.dailyTasks.has(tasks._id)) throw new DuplicateWriteError();
+    const player = this.state.players.get(tasks.vkId);
+    if (player === undefined || (player.assignedTasks ?? 0) > game.maxAmount - taskConfig.count) throw new Error('Invalid daily task owner');
+    player.assignedTasks = (player.assignedTasks ?? 0) + taskConfig.count;
+    this.state.dailyTasks.set(tasks._id, structuredClone(tasks));
+  }
+  async saveDailyTasks(tasks: DailyTasks, completedDelta: number): Promise<void> {
+    if (this.state.dailyTasks.get(tasks._id)?.version !== tasks.version) throw new DuplicateWriteError();
+    const player = this.state.players.get(tasks.vkId);
+    if (player === undefined || (completedDelta !== 0 && completedDelta !== 1) || player.completedTasks > game.maxAmount - completedDelta) throw new Error('Invalid task counter');
+    player.completedTasks += completedDelta;
+    tasks.version += 1;
+    this.state.dailyTasks.set(tasks._id, structuredClone(tasks));
+  }
+  async pendingDailyTasks(vkId: number): Promise<DailyTasks[]> {
+    return structuredClone([...this.state.dailyTasks.values()].filter(task => task.vkId === vkId && task.completed && !task.rewarded)
+      .sort((left, right) => left.day.localeCompare(right.day)).slice(0, 100));
+  }
+  async awardDailyTasks(tasks: DailyTasks): Promise<boolean> {
+    if (!tasks.completed || tasks.rewarded) return false;
+    const player = this.state.players.get(tasks.vkId);
+    if (player === undefined || player.kc > game.maxAmount - taskConfig.rewardKC || player.bitcoin > game.maxAmount - taskConfig.rewardBitcoin
+      || (player.taskSetsCompleted ?? 0) >= game.maxAmount - 1) return false;
+    if (this.state.dailyTasks.get(tasks._id)?.version !== tasks.version) throw new DuplicateWriteError();
+    player.kc += taskConfig.rewardKC;
+    player.bitcoin += taskConfig.rewardBitcoin;
+    player.taskSetsCompleted = (player.taskSetsCompleted ?? 0) + 1;
+    tasks.version += 1;
+    tasks.rewarded = true;
+    this.state.dailyTasks.set(tasks._id, structuredClone(tasks));
+    return true;
+  }
+
+  async reputationCooldown(senderId: number, targetId: number): Promise<Date | null> {
+    return this.state.reputationCooldowns.get(`${senderId}:${targetId}`) ?? null;
+  }
+  async saveReputationCooldown(senderId: number, targetId: number, nextAt: Date): Promise<void> {
+    this.state.reputationCooldowns.set(`${senderId}:${targetId}`, nextAt);
+  }
+  async changeReputation(vkId: number, delta: number): Promise<number | null> {
+    const player = this.state.players.get(vkId);
+    if (player === undefined || !Number.isSafeInteger(player.reputation) || !Number.isSafeInteger(player.reputation + delta)) return null;
+    player.reputation += delta;
+    return player.reputation;
   }
 
   async setCoinOpen(vkId: number, open: boolean): Promise<void> {

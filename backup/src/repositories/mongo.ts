@@ -1,3 +1,6 @@
+import { taskConfig } from '../config/tasks.js';
+import type { DailyTasks } from '../types/tasks.js';
+import type { ReputationCooldown } from '../types/reputation.js';
 import type { BossPlayer, BossRun } from '../types/boss.js';
 import { migrateWholeKc } from './mongo-kc-migration.js';
 import { roundKc } from '../services/kc-money.js';
@@ -72,6 +75,8 @@ export class MongoGameDatabase implements GameDatabase {
       { key: { kind: 1, runId: 1, damage: -1, accountId: 1 } },
       { key: { kind: 1, subscribed: 1, vkId: 1 } }
     ]);
+    await this.db.collection<DailyTasks>('daily_tasks').createIndex({ vkId: 1, completed: 1, rewarded: 1, day: 1 });
+    await this.db.collection<ReputationCooldown>('reputation_cooldowns').createIndex({ nextAt: 1 }, { expireAfterSeconds: 0 });
     await this.db.collection<Deposit>('deposits').createIndex({ vkId: 1, state: 1, depositId: 1 });
     await this.db.collection<Deposit>('deposits').createIndex({ vkId: 1, depositId: 1 }, { unique: true });
     await this.db.collection<Deposit>('deposits').createIndex({ state: 1, nextAttemptAt: 1, _id: 1 });
@@ -188,6 +193,8 @@ class MongoGameStore extends MongoBossStore implements GameStore {
   private readonly clock = new TransactionClock(() => this.readTime());
   notificationsQueued(): boolean { return this.queuedNotifications; }
   private readonly players;
+  private readonly reputationCooldowns;
+  private readonly dailyTaskRecords;
   private readonly items;
   private readonly messages;
   private readonly counters;
@@ -198,12 +205,81 @@ class MongoGameStore extends MongoBossStore implements GameStore {
   constructor(db: Db, private readonly session: ClientSession, private readonly responseIds: ResponseIds) {
     super(db, session);
     this.players = db.collection<Player>('players');
+    this.reputationCooldowns = db.collection<ReputationCooldown>('reputation_cooldowns');
+    this.dailyTaskRecords = db.collection<DailyTasks>('daily_tasks');
     this.items = db.collection<InventoryItem>('inventory');
     this.messages = db.collection<ProcessedMessage>('processed_messages');
     this.counters = db.collection<Counter>('counters');
     this.notifications = db.collection<Notification>('notifications');
     this.mailingCampaigns = db.collection<MailingCampaign>('mailing_campaigns');
     this.mailingAudience = db.collection<MailingRecipient>('mailing_recipients');
+  }
+
+  async dailyTasks(vkId: number, day: string): Promise<DailyTasks | null> {
+    return this.dailyTaskRecords.findOne({ _id: `${vkId}:${day}` }, { session: this.session });
+  }
+
+  async createDailyTasks(tasks: DailyTasks): Promise<void> {
+    const inserted = await this.dailyTaskRecords.insertOne(tasks, { session: this.session });
+    if (!inserted.acknowledged) throw new Error('Daily tasks insert failed');
+    const updated = await this.players.updateOne({ _id: tasks.vkId, $or: [
+      { assignedTasks: { $exists: false } }, { assignedTasks: { $gte: 0, $lte: game.maxAmount - taskConfig.count } }
+    ] }, { $inc: { assignedTasks: taskConfig.count } }, { session: this.session });
+    if (updated.matchedCount !== 1) throw new Error('Daily task owner or counter is invalid');
+  }
+
+  async saveDailyTasks(tasks: DailyTasks, completedDelta: number): Promise<void> {
+    if (completedDelta !== 0 && completedDelta !== 1) throw new Error('Invalid completed task count');
+    const saved = await this.dailyTaskRecords.replaceOne({ _id: tasks._id, version: tasks.version },
+      { ...tasks, version: tasks.version + 1 }, { session: this.session });
+    if (saved.matchedCount !== 1) throw new DuplicateWriteError();
+    tasks.version += 1;
+    if (completedDelta > 0) {
+      const updated = await this.players.updateOne({ _id: tasks.vkId, completedTasks: { $gte: 0, $lt: game.maxAmount } },
+        { $inc: { completedTasks: completedDelta } }, { session: this.session });
+      if (updated.matchedCount !== 1) throw new Error('Completed task counter is invalid');
+    }
+  }
+
+  async pendingDailyTasks(vkId: number): Promise<DailyTasks[]> {
+    return this.dailyTaskRecords.find({ vkId, completed: true, rewarded: false }, { session: this.session })
+      .sort({ day: 1 }).limit(100).toArray();
+  }
+
+  async awardDailyTasks(tasks: DailyTasks): Promise<boolean> {
+    if (!tasks.completed || tasks.rewarded) return false;
+    const credited = await this.players.updateOne({
+      _id: tasks.vkId, kc: { $gte: 0, $lte: game.maxAmount - taskConfig.rewardKC },
+      bitcoin: { $gte: 0, $lte: game.maxAmount - taskConfig.rewardBitcoin },
+      $or: [{ taskSetsCompleted: { $exists: false } }, { taskSetsCompleted: { $gte: 0, $lt: game.maxAmount - 1 } }]
+    }, { $inc: { kc: taskConfig.rewardKC, bitcoin: taskConfig.rewardBitcoin, taskSetsCompleted: 1 } }, { session: this.session });
+    if (credited.matchedCount !== 1) return false;
+    const marked = await this.dailyTaskRecords.updateOne({ _id: tasks._id, version: tasks.version, completed: true, rewarded: false },
+      { $set: { rewarded: true }, $inc: { version: 1 } }, { session: this.session });
+    if (marked.matchedCount !== 1) throw new DuplicateWriteError();
+    tasks.rewarded = true;
+    tasks.version += 1;
+    return true;
+  }
+
+  async reputationCooldown(senderId: number, targetId: number): Promise<Date | null> {
+    const value = await this.reputationCooldowns.findOne({ _id: `${senderId}:${targetId}` }, { session: this.session });
+    return value?.nextAt ?? null;
+  }
+
+  async saveReputationCooldown(senderId: number, targetId: number, nextAt: Date): Promise<void> {
+    const result = await this.reputationCooldowns.updateOne({ _id: `${senderId}:${targetId}` },
+      { $set: { senderId, targetId, nextAt } }, { session: this.session, upsert: true });
+    if (!result.acknowledged || result.matchedCount + result.upsertedCount !== 1) throw new Error('Reputation cooldown update failed');
+  }
+
+  async changeReputation(vkId: number, delta: number): Promise<number | null> {
+    if (![1, 2, -1, -2].includes(delta)) throw new Error('Invalid reputation change');
+    const player = await this.players.findOneAndUpdate({
+      _id: vkId, reputation: { $gte: -game.maxAmount - Math.min(delta, 0), $lte: game.maxAmount - Math.max(delta, 0) },
+      $expr: { $eq: ['$reputation', { $trunc: '$reputation' }] }
+    }, { $inc: { reputation: delta } }, { session: this.session, returnDocument: 'after', includeResultMetadata: false, projection: { reputation: 1 } });
+    return player?.reputation ?? null;
   }
 
   async setCoinOpen(vkId: number, open: boolean): Promise<void> {
